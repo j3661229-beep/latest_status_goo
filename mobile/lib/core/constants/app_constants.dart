@@ -11,7 +11,7 @@ class AppConstants {
   // API
   static const String apiBaseUrl = String.fromEnvironment(
     'FLUTTER_API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000/api/v1', // Android emulator localhost
+    defaultValue: 'http://10.10.114.30:3000/api/v1',
   );
 
   // Razorpay

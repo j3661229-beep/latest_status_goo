@@ -57,3 +57,5 @@ Dio createDio() {
 
   return dio;
 }
+
+final apiClient = createDio();

@@ -113,8 +113,11 @@ export default function FestivalsPage() {
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button type="button" onClick={() => setIsFormOpen(false)} className="btn-ghost" disabled={createMutation.isPending || updateMutation.isPending}>Cancel</button>
-              <button type="submit" className="btn-primary" disabled={createMutation.isPending || updateMutation.isPending}>
-                {editId ? 'Save Changes' : 'Create Festival'}
+              <button type="submit" className="btn-primary flex items-center gap-2" disabled={createMutation.isPending || updateMutation.isPending}>
+                {(createMutation.isPending || updateMutation.isPending) && (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                )}
+                {editId ? (updateMutation.isPending ? 'Saving...' : 'Save Changes') : (createMutation.isPending ? 'Creating...' : 'Create Festival')}
               </button>
             </div>
           </form>

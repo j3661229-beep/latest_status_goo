@@ -7,8 +7,9 @@ part 'user_model.g.dart';
 @JsonSerializable()
 class UserModel {
   final String id;
-  final String name;
-  final String email;
+  final String? name;
+  final String? email;
+  final String? phoneNumber;
   final String? displayName;
   final String? profilePhoto;
   final String? customPhotoUrl;
@@ -21,8 +22,9 @@ class UserModel {
 
   const UserModel({
     required this.id,
-    required this.name,
-    required this.email,
+    this.name,
+    this.email,
+    this.phoneNumber,
     this.displayName,
     this.profilePhoto,
     this.customPhotoUrl,
@@ -42,6 +44,9 @@ class UserModel {
   Map<String, dynamic> toJson() => _$UserModelToJson(this);
 
   UserModel copyWith({
+    String? name,
+    String? phoneNumber,
+    String? profilePhoto,
     String? displayName,
     String? customPhotoUrl,
     String? language,
@@ -51,8 +56,11 @@ class UserModel {
     int? totalSaves,
   }) {
     return UserModel(
-      id: id, name: name, email: email,
-      profilePhoto: profilePhoto,
+      id: id,
+      name: name ?? this.name,
+      email: email,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      profilePhoto: profilePhoto ?? this.profilePhoto,
       displayName: displayName ?? this.displayName,
       customPhotoUrl: customPhotoUrl ?? this.customPhotoUrl,
       language: language ?? this.language,

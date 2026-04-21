@@ -10,6 +10,7 @@ class TemplateModel {
   final String status;
   final String? categoryId;
   final CategoryModel? category;
+  final TemplateCreatorModel? creator;
 
   // Multilingual
   final String? nameHi;
@@ -62,6 +63,7 @@ class TemplateModel {
     required this.status,
     this.categoryId,
     this.category,
+    this.creator,
     this.nameHi,
     this.nameMr,
     this.nameEn,
@@ -148,4 +150,20 @@ class CategoryModel {
 
   factory CategoryModel.fromJson(Map<String, dynamic> json) => _$CategoryModelFromJson(json);
   Map<String, dynamic> toJson() => _$CategoryModelToJson(this);
+}
+
+@JsonSerializable()
+class TemplateCreatorModel {
+  final String id;
+  final String name;
+  final String? profilePhoto;
+
+  const TemplateCreatorModel({
+    required this.id,
+    required this.name,
+    this.profilePhoto,
+  });
+
+  factory TemplateCreatorModel.fromJson(Map<String, dynamic> json) => _$TemplateCreatorModelFromJson(json);
+  Map<String, dynamic> toJson() => _$TemplateCreatorModelToJson(this);
 }

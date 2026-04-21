@@ -19,6 +19,7 @@ class AppColors {
   static const Color bg = Color(0xFFF8F7FF);
   static const Color surface = Color(0xFFFFFFFF);
   static const Color surfaceBorder = Color(0xFFEDECF8);
+  static const Color shimmer = Color(0xFFEEECFF);
 
   // Text
   static const Color textPrimary = Color(0xFF1E1B4B);
@@ -32,6 +33,12 @@ class AppColors {
     colors: [primary, secondary],
   );
 
+  static const LinearGradient accentGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [accent, primary],
+  );
+
   static const LinearGradient devotionalGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -43,6 +50,29 @@ class AppColors {
     end: Alignment.bottomRight,
     colors: [Color(0xFF2DD4BF), primary],
   );
+
+  // Shared card shadow
+  static List<BoxShadow> get cardShadow => [
+    BoxShadow(
+      color: primary.withOpacity(0.08),
+      blurRadius: 16,
+      offset: const Offset(0, 6),
+    ),
+  ];
+
+  // Glam template card shadow
+  static List<BoxShadow> cardShadowFor(Color color) => [
+    BoxShadow(
+      color: color.withOpacity(0.25),
+      blurRadius: 20,
+      offset: const Offset(0, 8),
+    ),
+    BoxShadow(
+      color: color.withOpacity(0.10),
+      blurRadius: 40,
+      offset: const Offset(0, 16),
+    ),
+  ];
 }
 
 class AppTheme {
@@ -78,7 +108,7 @@ class AppTheme {
       ),
       iconTheme: const IconThemeData(color: AppColors.textPrimary),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 0,
       color: AppColors.surface,
       shape: RoundedRectangleBorder(

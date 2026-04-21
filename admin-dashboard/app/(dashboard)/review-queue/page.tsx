@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Eye, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, Clock, RefreshCw, Loader2, X } from 'lucide-react';
 import { adminApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 
@@ -15,10 +15,34 @@ const REJECTION_REASONS = [
   'Copyright music or watermark detected in video',
 ];
 
-function RejectModal({ templateName, onConfirm, onCancel }: {
+function PreviewModal({ template, onClose }: { template: any; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-md">
+      <button onClick={onClose} className="absolute top-4 right-4 text-white hover:text-primary transition-colors">
+        <X size={32} />
+      </button>
+      <div className="max-w-4xl w-full max-h-[90vh] flex flex-col items-center">
+        <div className="relative rounded-2xl overflow-hidden shadow-2xl bg-slate-900 aspect-[9/16] h-[75vh]">
+          {template.type === 'VIDEO' ? (
+            <video src={template.videoUrl || template.imageUrl} controls autoPlay className="w-full h-full object-contain" />
+          ) : (
+            <img src={template.imageUrl} alt={template.nameEn} className="w-full h-full object-contain" />
+          )}
+        </div>
+        <div className="mt-6 text-center text-white">
+          <h2 className="text-2xl font-900">{template.nameEn || template.nameHi}</h2>
+          <p className="text-white/60 mt-1">{template.quoteHi}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RejectModal({ templateName, onConfirm, onCancel, isRejecting }: {
   templateName: string;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
+  isRejecting?: boolean;
 }) {
   const [reason, setReason] = useState('');
   return (
@@ -32,6 +56,7 @@ function RejectModal({ templateName, onConfirm, onCancel }: {
           <label className="text-xs font-700 text-slate-600 uppercase tracking-wide mb-1.5 block">Quick Select</label>
           {REJECTION_REASONS.map(r => (
             <button key={r} onClick={() => setReason(r)}
+              disabled={isRejecting}
               className={`w-full text-left text-xs px-3 py-2 rounded-lg border transition-colors ${
                 reason === r ? 'border-danger bg-red-50 text-danger font-700' : 'border-surface-border text-muted hover:border-slate-300'
               }`}>
@@ -40,16 +65,18 @@ function RejectModal({ templateName, onConfirm, onCancel }: {
           ))}
         </div>
         <textarea value={reason} onChange={e => setReason(e.target.value)}
+          disabled={isRejecting}
           placeholder="Or write a custom reason..."
           rows={3}
           className="w-full border border-surface-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary resize-none mt-2" />
         <div className="text-xs text-muted text-right mb-4">{reason.length} chars (min 10)</div>
         <div className="flex gap-3">
-          <button onClick={onCancel} className="btn-ghost flex-1">Cancel</button>
+          <button onClick={onCancel} disabled={isRejecting} className="btn-ghost flex-1">Cancel</button>
           <button onClick={() => reason.length >= 10 && onConfirm(reason)}
-            disabled={reason.length < 10}
-            className="btn-danger flex-1 disabled:opacity-40 disabled:cursor-not-allowed">
-            Send Rejection
+            disabled={reason.length < 10 || isRejecting}
+            className="btn-danger flex-1 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            {isRejecting ? <Loader2 size={16} className="animate-spin" /> : null}
+            {isRejecting ? 'Sending...' : 'Send Rejection'}
           </button>
         </div>
       </div>
@@ -57,12 +84,20 @@ function RejectModal({ templateName, onConfirm, onCancel }: {
   );
 }
 
-function ReviewCard({ template, onApprove, onReject, isApproving }: {
+function ReviewCard({ template, onApprove, onReject, onPreview, isApproving, isRejecting }: {
   template: any;
   onApprove: () => void;
   onReject: () => void;
+  onPreview: () => void;
   isApproving?: boolean;
+  isRejecting?: boolean;
 }) {
+  const isPending = template.status === 'PENDING';
+  const isApproved = template.status === 'APPROVED';
+  const isRejected = template.status === 'REJECTED';
+
+  const badgeClass = isPending ? 'badge-pending' : isApproved ? 'badge-success' : 'badge-danger';
+
   return (
     <div className="bg-white rounded-2xl border border-surface-border shadow-card overflow-hidden">
       {/* Thumbnail */}
@@ -89,7 +124,7 @@ function ReviewCard({ template, onApprove, onReject, isApproving }: {
             <div className="font-800 text-slate-800 text-sm">{template.nameEn || template.nameHi}</div>
             <div className="text-xs text-muted">{template.nameHi} · {template.nameMr}</div>
           </div>
-          <span className="badge-pending shrink-0">PENDING</span>
+          <span className={`${badgeClass} shrink-0`}>{template.status}</span>
         </div>
 
         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -114,17 +149,28 @@ function ReviewCard({ template, onApprove, onReject, isApproving }: {
         </div>
 
         <div className="grid grid-cols-3 gap-1.5">
-          <button className="flex items-center justify-center gap-1 btn-ghost text-xs py-2">
+          <button onClick={onPreview} className="flex items-center justify-center gap-1 btn-ghost text-xs py-2">
             <Eye size={13} /> Preview
           </button>
-          <button onClick={onApprove} disabled={isApproving}
-            className="flex items-center justify-center gap-1 btn-success text-xs py-2 disabled:opacity-50">
-            <CheckCircle size={13} /> Approve
-          </button>
-          <button onClick={onReject}
-            className="flex items-center justify-center gap-1 btn-danger text-xs py-2">
-            <XCircle size={13} /> Reject
-          </button>
+          
+          {isPending ? (
+            <>
+              <button onClick={onApprove} disabled={isApproving || isRejecting}
+                className="flex items-center justify-center gap-1 btn-success text-xs py-2 disabled:opacity-50">
+                {isApproving ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                {isApproving ? '...' : 'Approve'}
+              </button>
+              <button onClick={onReject} disabled={isApproving || isRejecting}
+                className="flex items-center justify-center gap-1 btn-danger text-xs py-2 disabled:opacity-50">
+                {isRejecting ? <Loader2 size={13} className="animate-spin" /> : <XCircle size={13} />}
+                {isRejecting ? '...' : 'Reject'}
+              </button>
+            </>
+          ) : (
+            <div className="col-span-2 flex items-center justify-center text-[10px] font-800 text-muted uppercase tracking-wider bg-surface rounded-lg">
+              Action completed
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -134,10 +180,12 @@ function ReviewCard({ template, onApprove, onReject, isApproving }: {
 export default function ReviewQueuePage() {
   const queryClient = useQueryClient();
   const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['review-queue', activeTab],
     queryFn: () => {
       if (activeTab === 'pending') return adminApi.getPendingTemplates({ page: 1, limit: 20 });
@@ -158,6 +206,8 @@ export default function ReviewQueuePage() {
 
   const rejectMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) => adminApi.rejectTemplate(id, note),
+    onMutate: ({ id }) => setRejectingId(id),
+    onSettled: () => setRejectingId(null),
     onSuccess: () => {
       setRejectTarget(null);
       queryClient.invalidateQueries({ queryKey: ['review-queue'] });
@@ -181,8 +231,10 @@ export default function ReviewQueuePage() {
           <h1 className="text-xl md:text-2xl font-900 text-slate-800">Review Queue</h1>
           <p className="text-muted text-sm mt-1">Template submissions awaiting approval</p>
         </div>
-        <button onClick={() => refetch()} className="btn-ghost flex items-center gap-2 self-start sm:self-auto">
-          <RefreshCw size={14} /> Refresh
+        <button onClick={() => refetch()} disabled={isLoading || isRefetching}
+          className="btn-ghost flex items-center gap-2 self-start sm:self-auto disabled:opacity-50">
+          <RefreshCw size={14} className={isRefetching ? 'animate-spin' : ''} /> 
+          {isRefetching ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
@@ -226,12 +278,21 @@ export default function ReviewQueuePage() {
             <ReviewCard
               key={template.id}
               template={template}
+              onPreview={() => setPreviewTarget(template)}
               onApprove={() => approveMutation.mutate(template.id)}
               onReject={() => setRejectTarget({ id: template.id, name: template.nameEn ?? template.nameHi ?? 'Template' })}
               isApproving={approvingId === template.id}
+              isRejecting={rejectingId === template.id}
             />
           ))}
         </div>
+      )}
+
+      {previewTarget && (
+        <PreviewModal
+          template={previewTarget}
+          onClose={() => setPreviewTarget(null)}
+        />
       )}
 
       {rejectTarget && (
@@ -239,6 +300,7 @@ export default function ReviewQueuePage() {
           templateName={rejectTarget.name}
           onConfirm={(note) => rejectMutation.mutate({ id: rejectTarget.id, note })}
           onCancel={() => setRejectTarget(null)}
+          isRejecting={rejectingId === rejectTarget.id}
         />
       )}
     </div>

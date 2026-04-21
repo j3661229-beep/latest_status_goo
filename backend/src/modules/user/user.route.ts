@@ -65,7 +65,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // PUT /user/me
   fastify.put('/me', { preHandler: [fastify.authenticate] }, async (req, reply) => {
     const { userId } = req.user as any;
-    const { name, displayName, language, timezone } = req.body as any;
+    const { name, displayName, language, timezone, profilePhoto } = req.body as any;
 
     const user = await fastify.prisma.user.update({
       where: { id: userId },
@@ -74,6 +74,7 @@ export async function userRoutes(fastify: FastifyInstance) {
         ...(displayName && { displayName }),
         ...(language && { language }),
         ...(timezone && { timezone }),
+        ...(profilePhoto && { profilePhoto }),
         updatedAt: new Date(),
       },
     });

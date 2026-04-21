@@ -1,17 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Upload, CheckCircle, Image, Video, ChevronRight, ChevronLeft, Send, AlertCircle, Crosshair } from 'lucide-react';
 import { creatorApi } from '@/lib/api';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3;
 
 const STEPS = [
-  { step: 1, label: 'Type & Category' },
-  { step: 2, label: 'Multilingual Content' },
-  { step: 3, label: 'Upload & Overlay' },
-  { step: 4, label: 'Review & Submit' },
+  { step: 1, label: 'Details' },
+  { step: 2, label: 'Upload & Overlay' },
+  { step: 3, label: 'Review & Submit' },
 ];
 
 const defaultForm = {
@@ -47,7 +47,7 @@ function StepIndicator({ current }: { current: Step }) {
               {done ? <CheckCircle size={12} /> : <span>{step}</span>}
               {(done || active) && <span>{label}</span>}
             </div>
-            {step < 4 && <div className={`w-8 h-0.5 ${step < current ? 'bg-success' : 'bg-surface-border'}`} />}
+            {step < 3 && <div className={`w-8 h-0.5 ${step < current ? 'bg-success' : 'bg-surface-border'}`} />}
           </div>
         );
       })}
@@ -57,6 +57,19 @@ function StepIndicator({ current }: { current: Step }) {
 
 // ── Live Phone Preview ──────────────────────────────────────
 function PhonePreview({ form }: { form: typeof defaultForm }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (form.imageFile) {
+      const isVideo = form.type === 'VIDEO';
+      const url = URL.createObjectURL(form.imageFile);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [form.imageFile, form.type]);
+
   return (
     <div className="sticky top-0">
       <h3 className="font-800 text-slate-800 mb-3 text-sm">📱 Live Preview</h3>
@@ -65,7 +78,16 @@ function PhonePreview({ form }: { form: typeof defaultForm }) {
         <div className="bg-slate-900 rounded-[32px] p-3 shadow-2xl">
           {/* Screen */}
           <div className="rounded-[24px] overflow-hidden bg-black aspect-[9/16] relative"
-            style={{ background: form.gradient }}>
+            style={{ 
+              background: previewUrl && form.type === 'IMAGE' ? `url(${previewUrl}) center/cover no-repeat` : form.gradient 
+            }}>
+            {previewUrl && form.type === 'VIDEO' && (
+              <video 
+                src={previewUrl} 
+                autoPlay loop muted playsInline 
+                className="absolute inset-0 w-full h-full object-cover" 
+              />
+            )}
             {/* Mock WhatsApp status header */}
             <div className="absolute top-2 left-2 right-2 flex items-center gap-1.5">
               <div className="flex-1 h-0.5 bg-white/50 rounded-full" />
@@ -142,6 +164,7 @@ export default function UploadTemplatePage() {
 
   const uploadMutation = useMutation({
     mutationFn: async (formData: typeof defaultForm) => {
+      const defaultName = formData.nameHi || `Status_${Date.now()}`;
       // 1. Create DRAFT template
       const res1 = await creatorApi.createTemplate({
         type: formData.type,
@@ -152,11 +175,35 @@ export default function UploadTemplatePage() {
 
       const templateId = res1.template.id;
 
-      // 2. Update all metadata onto it (mocking image upload for now)
+      // 2. Upload to Cloudinary
+      let imageUrl = '';
+      let videoUrl = '';
+      let videoThumbUrl = '';
+      let videoDuration = 0;
+
+      if (formData.imageFile) {
+        const tagsArray = formData.tags.split(',').map(s => s.trim()).filter(Boolean);
+        const signData = await creatorApi.getCloudinarySignature({ 
+          folder: 'templates'
+        });
+
+        const uploadRes = await uploadToCloudinary(formData.imageFile, signData);
+        
+        if (formData.type === 'IMAGE') {
+          imageUrl = uploadRes.url;
+        } else {
+          videoUrl = uploadRes.url;
+          // Cloudinary video thumbnail trick: change extension to jpg
+          videoThumbUrl = uploadRes.url.replace(/\.[^.]+$/, '.jpg');
+          videoDuration = uploadRes.duration || 0;
+        }
+      }
+
+      // 3. Update all metadata onto it
       await creatorApi.updateTemplate(templateId, {
-        nameHi: formData.nameHi, nameMr: formData.nameMr, nameEn: formData.nameEn,
-        quoteHi: formData.quoteHi, quoteMr: formData.quoteMr, quoteEn: formData.quoteEn,
-        tags: formData.tags.split(',').map(s => s.trim()).filter(Boolean),
+        nameHi: defaultName, nameMr: defaultName, nameEn: defaultName,
+        quoteHi: formData.quoteHi, quoteMr: formData.quoteHi, quoteEn: formData.quoteHi,
+        tags: [],
         isPremium: formData.isPremium,
         photoZoneEnabled: formData.photoZoneEnabled,
         photoZoneX: formData.photoZoneX, photoZoneY: formData.photoZoneY,
@@ -164,10 +211,13 @@ export default function UploadTemplatePage() {
         nameZoneEnabled: formData.nameZoneEnabled,
         nameZoneX: formData.nameZoneX, nameZoneY: formData.nameZoneY,
         gradient: formData.gradient,
-        imageUrl: undefined, // File upload handled via presigned URL in production
+        imageUrl,
+        videoUrl,
+        videoThumbUrl,
+        videoDuration,
       });
 
-      // 3. Submit for review
+      // 4. Submit for review
       await creatorApi.submitTemplate(templateId);
       return templateId;
     },
@@ -184,9 +234,7 @@ export default function UploadTemplatePage() {
 
   const canProceed = () => {
     if (step === 1) return !!form.categoryId;
-    if (step === 2) return form.nameHi.length >= 2 && form.nameMr.length >= 2 && form.nameEn.length >= 2
-      && form.quoteHi.length >= 5 && form.quoteMr.length >= 5 && form.quoteEn.length >= 5;
-    if (step === 3) return true;
+    if (step === 2) return true;
     return true;
   };
 
@@ -204,7 +252,7 @@ export default function UploadTemplatePage() {
       <div>
         <h1 className="text-2xl font-900 text-slate-800">Upload Template</h1>
         <p className="text-muted text-sm mt-1">
-          Complete all 4 steps to submit your template for review
+          Complete all 3 steps to submit your template for review
         </p>
       </div>
 
@@ -214,10 +262,10 @@ export default function UploadTemplatePage() {
         {/* Form Area */}
         <div className="col-span-2 bg-white rounded-2xl p-6 shadow-card border border-surface-border">
 
-          {/* STEP 1: Type & Category */}
+          {/* STEP 1: Details */}
           {step === 1 && (
             <div className="space-y-5">
-              <h2 className="font-800 text-slate-800 text-base">Step 1: Type & Category</h2>
+              <h2 className="font-800 text-slate-800 text-base">Step 1: Details</h2>
 
               {/* Template Type */}
               <div>
@@ -287,54 +335,10 @@ export default function UploadTemplatePage() {
             </div>
           )}
 
-          {/* STEP 2: Multilingual Content */}
+          {/* STEP 2: Upload & Overlay */}
           {step === 2 && (
             <div className="space-y-5">
-              <h2 className="font-800 text-slate-800 text-base">Step 2: Multilingual Content</h2>
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-600">
-                <AlertCircle size={12} className="inline mr-1" />
-                All three languages are required for template approval.
-              </div>
-
-              {[
-                { lang: 'Hindi (हिंदी) *', fieldName: 'namHi', nameKey: 'nameHi', quoteKey: 'quoteHi', flag: '🇮🇳', placeholder: { name: 'जय श्री राम', quote: '🙏 राम नाम सत्य है...' } },
-                { lang: 'Marathi (मराठी) *', fieldName: 'namMr', nameKey: 'nameMr', quoteKey: 'quoteMr', flag: '🟠', placeholder: { name: 'जय श्री राम', quote: '🙏 राम नाम सत्य आहे...' } },
-                { lang: 'English *', fieldName: 'namEn', nameKey: 'nameEn', quoteKey: 'quoteEn', flag: '🇺🇸', placeholder: { name: 'Jai Shri Ram', quote: '🙏 The name of Ram is truth...' } },
-              ].map(({ lang, nameKey, quoteKey, flag, placeholder }) => (
-                <div key={nameKey} className="border border-surface-border rounded-xl p-4 space-y-3">
-                  <div className="text-xs font-800 text-slate-600 uppercase tracking-wide">{flag} {lang}</div>
-                  <input
-                    value={(form as any)[nameKey]}
-                    onChange={e => update({ [nameKey]: e.target.value } as any)}
-                    placeholder={placeholder.name}
-                    className="w-full px-4 py-2.5 text-sm border border-surface-border rounded-xl focus:outline-none focus:border-primary"
-                  />
-                  <textarea
-                    value={(form as any)[quoteKey]}
-                    onChange={e => update({ [quoteKey]: e.target.value } as any)}
-                    placeholder={placeholder.quote}
-                    rows={2}
-                    className="w-full px-4 py-2.5 text-sm border border-surface-border rounded-xl focus:outline-none focus:border-primary resize-none"
-                  />
-                </div>
-              ))}
-
-              <div>
-                <label className="text-xs font-700 text-slate-600 uppercase tracking-wide mb-2 block">Tags (comma separated)</label>
-                <input
-                  value={form.tags}
-                  onChange={e => update({ tags: e.target.value })}
-                  placeholder="e.g. devotional, ram, hindi, morning"
-                  className="w-full px-4 py-2.5 text-sm border border-surface-border rounded-xl focus:outline-none focus:border-primary"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: Upload & Overlay */}
-          {step === 3 && (
-            <div className="space-y-5">
-              <h2 className="font-800 text-slate-800 text-base">Step 3: Upload & Configure Overlay Zones</h2>
+              <h2 className="font-800 text-slate-800 text-base">Step 2: Upload & Configure Overlay Zones</h2>
 
               {/* Upload Zone */}
               <div
@@ -422,10 +426,10 @@ export default function UploadTemplatePage() {
             </div>
           )}
 
-          {/* STEP 4: Review & Submit */}
-          {step === 4 && (
+          {/* STEP 3: Review & Submit */}
+          {step === 3 && (
             <div className="space-y-5">
-              <h2 className="font-800 text-slate-800 text-base">Step 4: Review & Submit</h2>
+              <h2 className="font-800 text-slate-800 text-base">Step 3: Review & Submit</h2>
 
               {submitOk ? (
                 <div className="text-center py-12">
@@ -447,9 +451,7 @@ export default function UploadTemplatePage() {
                     </div>
                     <hr className="border-surface-border" />
                     <div className="space-y-2 text-sm">
-                      <div><span className="text-muted">🇮🇳 Hindi:</span> <span className="font-700 text-slate-700">{form.nameHi}</span></div>
-                      <div><span className="text-muted">🟠 Marathi:</span> <span className="font-700 text-slate-700">{form.nameMr}</span></div>
-                      <div><span className="text-muted">🇺🇸 English:</span> <span className="font-700 text-slate-700">{form.nameEn}</span></div>
+                      <div><span className="text-muted">Will use auto-generated name</span></div>
                     </div>
                   </div>
 
@@ -457,8 +459,6 @@ export default function UploadTemplatePage() {
                   <div className="space-y-2">
                     {[
                       { ok: !!form.categoryId, label: 'Category selected' },
-                      { ok: form.nameHi.length >= 2 && form.nameMr.length >= 2 && form.nameEn.length >= 2, label: 'Names in all 3 languages' },
-                      { ok: form.quoteHi.length >= 5 && form.quoteMr.length >= 5 && form.quoteEn.length >= 5, label: 'Quotes in all 3 languages' },
                       { ok: form.nameZoneEnabled, label: 'Name overlay zone configured' },
                     ].map(({ ok, label }) => (
                       <div key={label} className={`flex items-center gap-2 text-sm ${ok ? 'text-success' : 'text-danger'}`}>
@@ -469,8 +469,17 @@ export default function UploadTemplatePage() {
                     ))}
                   </div>
 
-                  <button onClick={handleSubmit} className="btn-primary w-full flex items-center justify-center gap-2 py-3 text-base">
-                    <Send size={16} /> Submit for Review
+                  <button 
+                    onClick={handleSubmit} 
+                    disabled={uploadMutation.isPending}
+                    className="btn-primary w-full flex items-center justify-center gap-2 py-3 text-base disabled:opacity-60 disabled:cursor-wait"
+                  >
+                    {uploadMutation.isPending ? (
+                      <div className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Send size={16} />
+                    )}
+                    {uploadMutation.isPending ? 'Submitting Template...' : 'Submit for Review'}
                   </button>
                   <p className="text-xs text-muted text-center">You'll receive a push notification when your template is reviewed (typically within 24 hours)</p>
                 </>
@@ -486,8 +495,8 @@ export default function UploadTemplatePage() {
                 className="btn-ghost flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                 <ChevronLeft size={14} /> Previous
               </button>
-              {step < 4 ? (
-                <button onClick={() => setStep(s => (s < 4 ? (s + 1) as Step : s))}
+              {step < 3 ? (
+                <button onClick={() => setStep(s => (s < 3 ? (s + 1) as Step : s))}
                   disabled={!canProceed()}
                   className="btn-primary flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
                   Next <ChevronRight size={14} />

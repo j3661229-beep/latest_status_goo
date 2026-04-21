@@ -102,6 +102,34 @@ export default function CreatorLoginPage() {
             )}
           </div>
 
+          {/* Dev Login (Local Only) */}
+          {process.env.NODE_ENV !== 'production' && (
+             <div className="mt-4 flex justify-center">
+               <button
+                 onClick={async () => {
+                   try {
+                     setLoading(true);
+                     const res = await fetch('http://localhost:3000/api/v1/auth/dev-login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: 'creator@statusgo.local' })
+                     });
+                     if (!res.ok) throw new Error('Dev login failed');
+                     const data = await res.json();
+                     localStorage.setItem('creator_access_token', data.accessToken);
+                     router.replace('/dashboard');
+                   } catch (err: any) {
+                     setError(err.message || 'Dev login failed');
+                     setLoading(false);
+                   }
+                 }}
+                 className="text-white/50 text-xs hover:text-white underline"
+               >
+                 [Dev: Login as Test Creator]
+               </button>
+             </div>
+          )}
+
           {/* Divider */}
           <div className="flex items-center gap-3 my-6">
             <div className="flex-1 h-px bg-white/10" />

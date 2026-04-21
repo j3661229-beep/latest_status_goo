@@ -137,10 +137,15 @@ export default function UsersPage() {
                           updateUserMutation.mutate({ id: u.id, data: { isActive: !u.isActive } });
                         }
                       }}
-                      className={`p-1.5 rounded-lg hover:bg-surface transition-colors ${u.isActive ? 'text-muted hover:text-danger' : 'text-danger hover:text-success'}`} 
+                      disabled={updateUserMutation.isPending}
+                      className={`p-1.5 rounded-lg hover:bg-surface transition-colors disabled:opacity-30 ${u.isActive ? 'text-muted hover:text-danger' : 'text-danger hover:text-success'}`} 
                       title={u.isActive ? "Ban User" : "Unban User"}
                     >
-                      <Ban size={13} />
+                      {updateUserMutation.isPending && updateUserMutation.variables?.id === u.id ? (
+                        <div className="w-3.5 h-3.5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                      ) : (
+                        <Ban size={13} />
+                      )}
                     </button>
                   </div>
                 </td>

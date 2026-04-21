@@ -1,7 +1,7 @@
 // src/modules/creator/creator.route.ts
 import { FastifyInstance } from 'fastify';
 import { TemplateStatus } from '@prisma/client';
-import { R2Service } from '../../lib/storage/r2.service';
+import { CloudinaryService } from '../../lib/storage/cloudinary.service';
 import { OneSignalService } from '../../lib/notification/onesignal.service';
 
 export async function creatorRoutes(fastify: FastifyInstance) {
@@ -105,10 +105,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     // Validate required fields
     const missing = [];
     if (!existing.nameHi) missing.push('nameHi');
-    if (!existing.nameMr) missing.push('nameMr');
-    if (!existing.nameEn) missing.push('nameEn');
-    if (!existing.quoteHi) missing.push('quoteHi');
-    if (!existing.quoteMr) missing.push('quoteMr');
+    if (!existing.categoryId) missing.push('categoryId');
     if (!existing.categoryId) missing.push('categoryId');
 
     if (missing.length > 0) {
@@ -159,18 +156,26 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true });
   });
 
-  // POST /creator/upload/presign-image
-  fastify.post('/upload/presign-image', { preHandler: [requireCreator] }, async (req, reply) => {
-    const { filename, mimeType, fileSize } = req.body as any;
+  // POST /creator/upload/sign-cloudinary
+  fastify.post('/upload/sign-cloudinary', { preHandler: [requireCreator] }, async (req, reply) => {
+    const { folder = 'templates', tags } = req.body as any;
+    
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const params: Record<string, any> = {
+      timestamp,
+      folder: `status-go/${folder}`,
+    };
 
-    try {
-      const result = await R2Service.getPresignedUploadUrl({
-        filename, mimeType, fileSize, folder: 'templates',
-      });
-      return reply.send(result);
-    } catch (err: any) {
-      return reply.status(400).send({ error: err.message });
-    }
+    // Extract deeply nested signature string correctly
+    const signData = await CloudinaryService.getSignature(params); 
+
+    return reply.send({
+      signature: signData.signature,
+      apiKey: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY ?? signData.apiKey,
+      cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? signData.cloudName,
+      folder: params.folder,
+      timestamp,
+    });
   });
 
   // GET /creator/stats

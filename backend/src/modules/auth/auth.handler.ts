@@ -4,7 +4,7 @@ import { PrismaClient, Language, Plan, UserRole } from '@prisma/client';
 import { GoogleAuthService } from '../../lib/auth/google.service';
 import { JWTService } from '../../lib/auth/jwt.service';
 import { RefreshTokenStore } from '../../lib/auth/token.store';
-import type { GoogleAuthBody, RefreshBody, AdminLoginBody } from './auth.schema';
+import type { GoogleAuthBody, RefreshBody, AdminLoginBody, OTPSendBody, OTPVerifyBody } from './auth.schema';
 import type { Redis } from 'ioredis';
 import * as bcrypt from 'bcryptjs';
 
@@ -67,6 +67,7 @@ export class AuthHandler {
         language: user.language,
         profilePhoto: user.profilePhoto,
       },
+      onboardingRequired: false,
     });
   }
 
@@ -230,5 +231,76 @@ export class AuthHandler {
       await this.tokenStore.invalidate(payload.userId);
     }
     return reply.send({ success: true });
+  }
+
+  // POST /auth/otp/send
+  async otpSend(req: FastifyRequest<{ Body: OTPSendBody }>, reply: FastifyReply) {
+    // In a real app, integrate with Twilio/Firebase here
+    // For now, it's just a simulation as per user request
+    return reply.status(200).send({
+      success: true,
+      message: 'OTP sent to ' + req.body.phoneNumber,
+      devNote: 'Verification code is 123456',
+    });
+  }
+
+  // POST /auth/otp/verify
+  async otpVerify(req: FastifyRequest<{ Body: OTPVerifyBody }>, reply: FastifyReply) {
+    const { phoneNumber, otp } = req.body;
+
+    // 1. Hardcoded OTP check
+    if (otp !== '123456') {
+      return reply.status(400).send({ error: 'Invalid OTP' });
+    }
+
+    // 2. Upsert user by phone number
+    // Note: Since email is unique and optional, we don't set it here.
+    // If user exists by phone, we get it. If not, we create a partial profile.
+    let user = await this.prisma.user.findUnique({
+      where: { phoneNumber },
+    });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          phoneNumber,
+          language: Language.HINDI,
+          plan: Plan.FREE,
+          role: UserRole.USER,
+          isActive: true,
+          lastActiveAt: new Date(),
+        } as any, // Cast to any because Prisma types might be stale
+      });
+    } else {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastActiveAt: new Date() },
+      });
+    }
+
+    // 3. Issue tokens
+    const accessToken = await JWTService.signAccessToken({
+      userId: user.id,
+      role: user.role,
+      plan: user.plan,
+    });
+    const refreshToken = await JWTService.signRefreshToken(user.id);
+    await this.tokenStore.save(user.id, refreshToken);
+
+    return reply.status(200).send({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        plan: user.plan,
+        role: user.role,
+        language: user.language,
+        profilePhoto: user.profilePhoto,
+      },
+      onboardingRequired: !user.name, // If name is missing, they are new OTP users
+    });
   }
 }

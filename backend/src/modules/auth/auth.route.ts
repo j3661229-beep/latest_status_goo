@@ -1,7 +1,7 @@
 // src/modules/auth/auth.route.ts
 import { FastifyInstance } from 'fastify';
 import { AuthHandler } from './auth.handler';
-import { GoogleAuthSchema, AdminLoginSchema, RefreshSchema, LogoutSchema } from './auth.schema';
+import { GoogleAuthSchema, AdminLoginSchema, RefreshSchema, LogoutSchema, OTPSendSchema, OTPVerifySchema } from './auth.schema';
 
 export async function authRoutes(fastify: FastifyInstance) {
   const handler = new AuthHandler(fastify.prisma, fastify.redis);
@@ -75,7 +75,42 @@ export async function authRoutes(fastify: FastifyInstance) {
     handler: handler.logout.bind(handler),
   });
 
-  // POST /auth/dev-login (dev only — kept for Flutter mobile testing convenience)
+  // POST /auth/otp/send
+  fastify.post('/otp/send', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['phoneNumber'],
+        properties: { phoneNumber: { type: 'string' } },
+      },
+    },
+    preHandler: async (req, reply) => {
+      const result = OTPSendSchema.safeParse(req.body);
+      if (!result.success) reply.status(400).send({ error: 'Invalid body', details: result.error.flatten() });
+    },
+    handler: handler.otpSend.bind(handler),
+  });
+
+  // POST /auth/otp/verify
+  fastify.post('/otp/verify', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['phoneNumber', 'otp'],
+        properties: { 
+          phoneNumber: { type: 'string' },
+          otp: { type: 'string', minLength: 6, maxLength: 6 }
+        },
+      },
+    },
+    preHandler: async (req, reply) => {
+      const result = OTPVerifySchema.safeParse(req.body);
+      if (!result.success) reply.status(400).send({ error: 'Invalid body', details: result.error.flatten() });
+    },
+    handler: handler.otpVerify.bind(handler),
+  });
+
+  // POST /auth/dev-login (dev only)
   fastify.post('/dev-login', {
     handler: handler.devLogin.bind(handler),
   });

@@ -95,8 +95,9 @@ enum JobStatus {
 model User {
   id                String    @id @default(cuid())
   googleId          String?   @unique
-  email             String    @unique
-  name              String
+  email             String?   @unique
+  phoneNumber       String?   @unique
+  name              String?
   profilePhoto      String?
   password          String?
   displayName       String?

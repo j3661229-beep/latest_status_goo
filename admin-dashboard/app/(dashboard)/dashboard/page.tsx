@@ -57,7 +57,7 @@ export default function DashboardPage() {
     refetchInterval: 5 * 60 * 1000,
   });
 
-  if (isLoading) {
+  if (isLoading || !stats) {
     return (
       <div className="space-y-6 md:space-y-8">
         <div>
@@ -71,15 +71,15 @@ export default function DashboardPage() {
     );
   }
 
-  const s = stats!;
+  const s = stats;
 
-  // Real language distribution from DB
-  const totalLangUsers = (s.languageDist || []).reduce((sum: number, l: any) => sum + l.count, 0);
+  // Safe access with fallbacks
+  const totalLangUsers = (s.languageDist || []).reduce((sum: number, l: any) => sum + (l.count || 0), 0);
   const langDist = (s.languageDist || []).map((l: any) => ({
     language: LANG_LABELS[l.language] || l.language,
-    value: totalLangUsers > 0 ? Math.round((l.count / totalLangUsers) * 100) : 0,
+    value: totalLangUsers > 0 ? Math.round(((l.count || 0) / totalLangUsers) * 100) : 0,
     color: LANG_COLORS[l.language] || '#94a3b8',
-    count: l.count,
+    count: l.count || 0,
   }));
 
   return (
@@ -91,14 +91,14 @@ export default function DashboardPage() {
       </div>
 
       {/* Review Queue Alert */}
-      {s.templates.pending > 0 && (
+      {(s?.templates?.pending || 0) > 0 && (
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-primary to-secondary p-4 md:p-5">
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <AlertCircle size={18} className="text-white" />
                 <span className="text-white font-800 text-sm md:text-base">
-                  {s.templates.pending} templates waiting for review
+                  {(s?.templates?.pending || 0)} templates waiting for review
                 </span>
               </div>
               <p className="text-white/70 text-xs md:text-sm">Needs your attention — approve or reject from Review Queue</p>
@@ -116,39 +116,39 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         <KpiCard
           title="Total Users"
-          value={formatNumber(s.users.total)}
+          value={formatNumber(s?.users?.total || 0)}
           icon={Users}
-          subtitle={`+${s.users.new24h} today · +${formatNumber(s.users.new7d)} this week`}
+          subtitle={`+${s?.users?.new24h || 0} today · +${formatNumber(s?.users?.new7d || 0)} this week`}
         />
         <KpiCard
           title="Approved Templates"
-          value={s.templates.approved}
+          value={s?.templates?.approved || 0}
           icon={Image}
-          subtitle={`${s.templates.images} images · ${s.templates.videos} videos`}
+          subtitle={`${s?.templates?.images || 0} images · ${s?.templates?.videos || 0} videos`}
         />
         <KpiCard
           title="Pending Review"
-          value={s.templates.pending}
+          value={s?.templates?.pending || 0}
           icon={Clock}
           subtitle="Awaiting admin approval"
         />
         <KpiCard
           title="Premium Users"
-          value={formatNumber(s.users.premium)}
+          value={formatNumber(s?.users?.premium || 0)}
           icon={Star}
-          subtitle={`${s.users.total > 0 ? Math.round(s.users.premium / s.users.total * 100) : 0}% conversion rate`}
+          subtitle={`${(s?.users?.total || 0) > 0 ? Math.round((s?.users?.premium || 0) / (s?.users?.total || 1) * 100) : 0}% conversion rate`}
         />
         <KpiCard
           title="Active Subscriptions"
-          value={formatNumber(s.revenue.activeSubscriptions)}
+          value={formatNumber(s?.revenue?.activeSubscriptions || 0)}
           icon={DollarSign}
           subtitle="Razorpay active plans"
         />
         <KpiCard
           title="Verified Creators"
-          value={`${s.creators.verified}/${s.creators.total}`}
+          value={`${s?.creators?.verified || 0}/${s?.creators?.total || 0}`}
           icon={Users}
-          subtitle={`${s.creators.total - s.creators.verified} awaiting verification`}
+          subtitle={`${(s?.creators?.total || 0) - (s?.creators?.verified || 0)} awaiting verification`}
         />
       </div>
 

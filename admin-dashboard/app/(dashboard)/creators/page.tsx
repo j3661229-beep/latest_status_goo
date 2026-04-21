@@ -292,12 +292,17 @@ export default function CreatorsPage() {
                                 updateCreatorMutation.mutate({ id: c.id, data: { isVerified: !c.isVerified } });
                               }
                             }}
-                            className={`p-1.5 rounded-lg hover:bg-surface transition-colors ${
+                            disabled={updateCreatorMutation.isPending}
+                            className={`p-1.5 rounded-lg hover:bg-surface transition-colors disabled:opacity-30 ${
                               c.isVerified ? 'text-success hover:text-danger' : 'text-muted hover:text-success'
                             }`}
                             title={c.isVerified ? 'Remove Verification' : 'Verify Creator'}
                           >
-                            <BadgeCheck size={14} />
+                            {updateCreatorMutation.isPending && updateCreatorMutation.variables?.id === c.id ? (
+                                <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                            ) : (
+                                <BadgeCheck size={14} />
+                            )}
                           </button>
                           <button
                             onClick={() => {

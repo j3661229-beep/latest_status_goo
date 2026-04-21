@@ -57,8 +57,8 @@ export const creatorApi = {
   deleteTemplate: (id: string) =>
     api.delete(`/creator/templates/${id}`).then(r => r.data),
 
-  getPresignedUrl: (data: { filename: string; mimeType: string; fileSize: number }) =>
-    api.post('/creator/upload/presign-image', data).then(r => r.data),
+  getCloudinarySignature: (data: { folder: string; tags?: string[] }) =>
+    api.post('/creator/upload/sign-cloudinary', data).then(r => r.data),
 
   // Profile
   getProfile: () => api.get('/creator/profile').then(r => r.data),
