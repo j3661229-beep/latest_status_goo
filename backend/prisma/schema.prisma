@@ -1,0 +1,494 @@
+// prisma/schema.prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "relationJoins"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ════════════════════════════════════════════════
+//  ENUMS
+// ════════════════════════════════════════════════
+
+enum UserRole {
+  USER
+  CREATOR
+  MANAGER
+  SUPER_ADMIN
+}
+
+enum Language {
+  HINDI
+  MARATHI
+  ENGLISH
+  GUJARATI
+  PUNJABI
+  TAMIL
+  TELUGU
+}
+
+enum Plan {
+  FREE
+  PREMIUM
+  ANNUAL
+}
+
+enum TemplateType {
+  IMAGE
+  VIDEO
+}
+
+enum TemplateStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum SubStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING
+  FAILED
+}
+
+enum NotifType {
+  DAILY_STATUS
+  FESTIVAL_ALERT
+  NEW_CONTENT
+  PREMIUM_OFFER
+  STREAK_REMINDER
+  WELCOME
+  TEMPLATE_APPROVED
+  TEMPLATE_REJECTED
+  ADMIN_PENDING_REVIEW
+}
+
+enum SharePlatform {
+  WHATSAPP_STATUS
+  WHATSAPP_CHAT
+  FACEBOOK
+  INSTAGRAM_STORIES
+  INSTAGRAM_FEED
+  DOWNLOAD
+  OTHER
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ════════════════════════════════════════════════
+//  USER
+// ════════════════════════════════════════════════
+
+model User {
+  id                String    @id @default(cuid())
+  googleId          String?   @unique
+  email             String    @unique
+  name              String
+  profilePhoto      String?
+  password          String?
+  displayName       String?
+  customPhotoUrl    String?
+  language          Language  @default(HINDI)
+  plan              Plan      @default(FREE)
+  planExpiresAt     DateTime?
+  role              UserRole  @default(USER)
+  isActive          Boolean   @default(true)
+  oneSignalPlayerId String?
+  timezone          String    @default("Asia/Kolkata")
+  streakCount       Int       @default(0)
+  lastStreakDate    DateTime?
+  lastActiveAt      DateTime?
+  totalShares       Int       @default(0)
+  totalSaves        Int       @default(0)
+  appVersion        String?
+  deviceModel       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  savedStatus       SavedStatus[]
+  shareHistory      ShareHistory[]
+  subscriptions     Subscription[]
+  notificationLogs  NotificationLog[]
+  createdTemplates  Template[]         @relation("CreatorTemplates")
+  reviewedTemplates Template[]         @relation("ReviewerTemplates")
+  creatorProfile    CreatorProfile?
+  analyticsEvents   AnalyticsEvent[]
+
+  @@index([email])
+  @@index([googleId])
+  @@index([role])
+  @@index([plan, planExpiresAt])
+  @@index([language])
+  @@index([lastActiveAt])
+  @@index([createdAt(sort: Desc)])
+  @@index([isActive, role])
+}
+
+// ════════════════════════════════════════════════
+//  CREATOR PROFILE
+// ════════════════════════════════════════════════
+
+model CreatorProfile {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName     String
+  bio             String?   @db.VarChar(500)
+  portfolioUrl    String?
+  specialization  String[]
+  totalUploads    Int       @default(0)
+  approvedCount   Int       @default(0)
+  rejectedCount   Int       @default(0)
+  pendingCount    Int       @default(0)
+  totalAppUses    Int       @default(0)
+  totalEarnings   Int       @default(0)
+  approvalRate    Float     @default(0)
+  isVerified      Boolean   @default(false)
+  verifiedAt      DateTime?
+  isSuspended     Boolean   @default(false)
+  suspendedReason String?
+  joinedAt        DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([isVerified])
+  @@index([approvalRate(sort: Desc)])
+}
+
+// ════════════════════════════════════════════════
+//  CATEGORY
+// ════════════════════════════════════════════════
+
+model Category {
+  id            String     @id @default(cuid())
+  slug          String     @unique
+  nameEn        String
+  nameHi        String
+  nameMr        String
+  nameGu        String?
+  namePa        String?
+  emoji         String
+  gradient      String
+  coverImage    String?
+  description   String?
+  sortOrder     Int        @default(0)
+  isActive      Boolean    @default(true)
+  templateCount Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  templates     Template[]
+  festivals     Festival[]
+
+  @@index([slug])
+  @@index([isActive, sortOrder])
+}
+
+// ════════════════════════════════════════════════
+//  TEMPLATE (CORE TABLE)
+// ════════════════════════════════════════════════
+
+model Template {
+  id             String         @id @default(cuid())
+  type           TemplateType
+  status         TemplateStatus @default(DRAFT)
+
+  // Relations
+  categoryId     String
+  category       Category       @relation(fields: [categoryId], references: [id])
+  creatorId      String
+  creator        User           @relation("CreatorTemplates", fields: [creatorId], references: [id])
+  reviewerId     String?
+  reviewer       User?          @relation("ReviewerTemplates", fields: [reviewerId], references: [id])
+
+  // Review metadata
+  reviewNote     String?        @db.Text
+  submittedAt    DateTime?
+  reviewedAt     DateTime?
+
+  // Multilingual content
+  nameHi         String?        @db.VarChar(100)
+  nameMr         String?        @db.VarChar(100)
+  nameEn         String?        @db.VarChar(100)
+  nameGu         String?        @db.VarChar(100)
+  namePa         String?        @db.VarChar(100)
+  quoteHi        String?        @db.Text
+  quoteMr        String?        @db.Text
+  quoteEn        String?        @db.Text
+  quoteGu        String?        @db.Text
+  quotePa        String?        @db.Text
+
+  // Photo overlay configuration (values 0.0–1.0 relative)
+  photoZoneEnabled Boolean  @default(false)
+  photoZoneX       Float?
+  photoZoneY       Float?
+  photoZoneSize    Float?
+  photoZoneShape   String?
+
+  // Name overlay configuration
+  nameZoneEnabled Boolean  @default(false)
+  nameZoneX       Float?
+  nameZoneY       Float?
+  nameFontSize    Float?   @default(0.04)
+  nameColor       String?  @default("#FFFFFF")
+  nameFont        String?  @default("Nunito")
+
+  // Image template
+  imageUrl        String?
+  imageThumbUrl   String?
+  imageWidth      Int?
+  imageHeight     Int?
+
+  // Video template
+  videoUrl        String?
+  videoThumbUrl   String?
+  videoDuration   Int?
+  videoStreamId   String?
+  videoFileSize   Int?
+
+  // Gradient fallback
+  gradient        String?
+
+  // Metadata
+  tags            String[]
+  festivalId      String?
+  isFeatured      Boolean  @default(false)
+  isTrending      Boolean  @default(false)
+  isPremium       Boolean  @default(false)
+  isNew           Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  primaryLanguage Language @default(HINDI)
+
+  // Analytics counters (batch-updated via BullMQ every 30s)
+  useCount        Int      @default(0)
+  shareCount      Int      @default(0)
+  saveCount       Int      @default(0)
+  viewCount       Int      @default(0)
+  downloadCount   Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  savedBy         SavedStatus[]
+  shareHistory    ShareHistory[]
+
+  @@index([type, status])
+  @@index([categoryId, status, sortOrder])
+  @@index([creatorId, status])
+  @@index([status, isFeatured])
+  @@index([status, isTrending])
+  @@index([status, isPremium])
+  @@index([status, isNew])
+  @@index([useCount(sort: Desc)])
+  @@index([shareCount(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([primaryLanguage, status])
+  @@index([tags])
+}
+
+// ════════════════════════════════════════════════
+//  SAVED STATUS
+// ════════════════════════════════════════════════
+
+model SavedStatus {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  savedAt    DateTime @default(now())
+
+  @@unique([userId, templateId])
+  @@index([userId, savedAt(sort: Desc)])
+  @@index([templateId])
+}
+
+// ════════════════════════════════════════════════
+//  SHARE HISTORY
+// ════════════════════════════════════════════════
+
+model ShareHistory {
+  id         String        @id @default(cuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  templateId String
+  template   Template      @relation(fields: [templateId], references: [id])
+  platform   SharePlatform
+  sharedAt   DateTime      @default(now())
+
+  @@index([userId, sharedAt(sort: Desc)])
+  @@index([templateId, sharedAt])
+  @@index([platform, sharedAt])
+  @@index([sharedAt])
+}
+
+// ════════════════════════════════════════════════
+//  SUBSCRIPTION
+// ════════════════════════════════════════════════
+
+model Subscription {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan              Plan
+  amount            Int
+  currency          String    @default("INR")
+  status            SubStatus
+  razorpayOrderId   String?   @unique
+  razorpayPaymentId String?   @unique
+  razorpaySignature String?
+  razorpayMethod    String?
+  invoiceUrl        String?
+  startsAt          DateTime
+  expiresAt         DateTime
+  cancelledAt       DateTime?
+  failureReason     String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@index([status, createdAt])
+  @@index([razorpayOrderId])
+}
+
+// ════════════════════════════════════════════════
+//  FESTIVAL
+// ════════════════════════════════════════════════
+
+model Festival {
+  id               String    @id @default(cuid())
+  nameHi           String
+  nameMr           String
+  nameEn           String
+  nameGu           String?
+  namePa           String?
+  date             DateTime
+  isRecurring      Boolean   @default(true)
+  notifyDaysBefore Int       @default(2)
+  emoji            String
+  categoryId       String?
+  category         Category? @relation(fields: [categoryId], references: [id])
+  isActive         Boolean   @default(true)
+  region           String[]  @default([])
+  sortOrder        Int       @default(0)
+  createdAt        DateTime  @default(now())
+
+  @@index([date])
+  @@index([isActive, date])
+}
+
+// ════════════════════════════════════════════════
+//  NOTIFICATION LOG
+// ════════════════════════════════════════════════
+
+model NotificationLog {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  body        String    @db.Text
+  type        NotifType
+  data        Json?
+  isRead      Boolean   @default(false)
+  oneSignalId String?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  sentAt      DateTime  @default(now())
+
+  @@index([userId, isRead, sentAt(sort: Desc)])
+  @@index([sentAt])
+  @@index([type, sentAt])
+}
+
+// ════════════════════════════════════════════════
+//  PUSH CAMPAIGN
+// ════════════════════════════════════════════════
+
+model PushCampaign {
+  id             String    @id @default(cuid())
+  title          String
+  body           String    @db.Text
+  imageUrl       String?
+  deepLink       String?
+  targetSegment  String
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  status         String    @default("draft")
+  oneSignalId    String?
+  deliveredCount Int       @default(0)
+  openedCount    Int       @default(0)
+  createdBy      String
+  createdAt      DateTime  @default(now())
+}
+
+// ════════════════════════════════════════════════
+//  ANALYTICS EVENT (append-only)
+// ════════════════════════════════════════════════
+
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  event      String
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  templateId String?
+  sessionId  String?
+  metadata   Json?
+  platform   String?  @default("android")
+  appVersion String?
+  createdAt  DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([templateId, event])
+}
+
+// ════════════════════════════════════════════════
+//  APP CONFIG
+// ════════════════════════════════════════════════
+
+model AppConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   @db.Text
+  type        String   @default("string")
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+}
+
+// ════════════════════════════════════════════════
+//  AUDIT LOG
+// ════════════════════════════════════════════════
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

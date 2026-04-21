@@ -1,0 +1,35 @@
+{
+  "name": "status-go",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Status Go (स्टेटस गो) — Daily Status Maker for Indian Users",
+  "packageManager": "npm@10.8.0",
+  "workspaces": [
+    "backend",
+    "admin-dashboard",
+    "creator-dashboard"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:migrate": "npm run migrate --workspace=backend",
+    "db:seed": "npm run seed --workspace=backend",
+    "db:studio": "npm run studio --workspace=backend",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:reset": "docker compose down -v && docker compose up -d"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "dependencies": {
+    "@esbuild/win32-x64": "^0.27.7",
+    "@prisma/client": "^5.22.0"
+  }
+}

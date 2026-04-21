@@ -1,0 +1,103 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────
+#  Status Go — Local Development Stack
+#  PostgreSQL 16  +  Redis 7  +  Redis Commander UI
+#  Run:  docker compose up -d
+#  Stop: docker compose down
+#  Reset (wipe data): docker compose down -v && docker compose up -d
+# ─────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL 16 ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: statusgo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: statusgo
+      POSTGRES_PASSWORD: statusgo_dev_password
+      POSTGRES_DB: statusgo_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U statusgo -d statusgo_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - statusgo_net
+
+  # ── Redis 7 ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: statusgo_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass statusgo_redis_password
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1
+      --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "statusgo_redis_password", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - statusgo_net
+
+  # ── Redis Commander (GUI) ──────────────────────
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: statusgo_redis_ui
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: "local:redis:6379:0:statusgo_redis_password"
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - statusgo_net
+
+  # ── pgAdmin (Optional DB GUI) ─────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: statusgo_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@statusgo.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - statusgo_net
+    profiles:
+      - tools  # Only starts with: docker compose --profile tools up -d
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  statusgo_net:
+    driver: bridge
