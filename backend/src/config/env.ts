@@ -26,16 +26,18 @@ const envSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().optional().default('placeholder'),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().default('placeholder'),
 
-  // Cloudflare R2
-  CF_R2_ACCOUNT_ID: z.string().optional(),
-  CF_R2_ACCESS_KEY: z.string().optional(),
-  CF_R2_SECRET_KEY: z.string().optional(),
-  CF_R2_BUCKET_NAME: z.string().default('status-go-assets'),
-  CF_R2_PUBLIC_URL: z.string().default('https://assets.statusgo.app'),
+  // Google Cloud Storage (file uploads)
+  GCP_PROJECT_NAME: z.string().optional().default('My First Project'),
+  GCS_PROJECT_ID: z.string().optional().default('my-first-project-123456'),
+  GCP_PROJECT_NUMBER: z.string().optional().default('123456789'),
+  GCS_BUCKET_NAME: z.string().optional().default('statusgo-media'),
+  GCS_CDN_BASE_URL: z.string().optional().default('https://storage.googleapis.com/statusgo-media'),
+  // GCS_SA_KEY_JSON: base64-encoded service account key JSON (set in production)
+  GCS_SA_KEY_JSON: z.string().optional(),
 
-  // Cloudflare Stream
-  CF_STREAM_ACCOUNT_ID: z.string().optional(),
-  CF_STREAM_TOKEN: z.string().optional(),
+  // Firebase Admin (for phone OTP verification on backend if needed)
+  FIREBASE_PROJECT_ID: z.string().optional().default('your-firebase-project-id'),
+  FIREBASE_SA_KEY_JSON: z.string().optional(),
 
   // OneSignal
   ONESIGNAL_APP_ID: z.string().optional(),

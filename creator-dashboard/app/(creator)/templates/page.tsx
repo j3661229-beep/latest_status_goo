@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Search, Filter, Plus, Trash2, Edit } from 'lucide-react';
 import Link from 'next/link';
 import { creatorApi } from '@/lib/api';
-import { formatNumber } from '@/lib/utils';
 
 export default function CreatorTemplatesPage() {
   const queryClient = useQueryClient();
@@ -73,12 +72,12 @@ export default function CreatorTemplatesPage() {
           <div className="text-sm text-muted">You haven't uploaded any templates yet.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {templates.map((t: any) => (
-            <div key={t.id} className="bg-white rounded-2xl border border-surface-border overflow-hidden group">
+            <div key={t.id} className="bg-white rounded-2xl border border-surface-border overflow-hidden shadow-card hover:shadow-lg hover:border-blue-200 transition-all group">
               <div 
-                className="h-40 bg-slate-100 flex items-center justify-center relative"
-                style={{ background: t.gradient || '#f1f5f9' }}
+                className="h-44 bg-slate-100 flex items-center justify-center relative"
+                style={{ background: t.gradient || 'linear-gradient(135deg, #2563EB, #0EA5E9)' }}
               >
                 <div className="absolute top-2 right-2">
                   <span className={BADGE[t.status]}>{t.status}</span>

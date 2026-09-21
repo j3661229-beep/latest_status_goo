@@ -55,7 +55,10 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
   });
 
   // POST /subscribe/create
-  fastify.post('/create', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  fastify.post('/create', { 
+    preHandler: [fastify.authenticate],
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     const { userId } = req.user as any;
     const { plan } = req.body as { plan: 'PREMIUM' | 'ANNUAL' };
 
@@ -87,7 +90,10 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
   });
 
   // POST /subscribe/verify
-  fastify.post('/verify', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  fastify.post('/verify', { 
+    preHandler: [fastify.authenticate],
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     const { userId } = req.user as any;
     const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body as any;
 

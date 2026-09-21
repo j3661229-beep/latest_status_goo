@@ -9,9 +9,9 @@ import { adminApi } from '@/lib/api';
 import { formatNumber, formatCurrency, formatRelativeTime } from '@/lib/utils';
 
 const LANG_COLORS: Record<string, string> = {
-  HINDI:   '#7C5CFC',
-  MARATHI: '#FF6B9D',
-  ENGLISH: '#2DD4BF',
+  HINDI:   '#2563EB',
+  MARATHI: '#0284C7',
+  ENGLISH: '#0EA5E9',
 };
 const LANG_LABELS: Record<string, string> = {
   HINDI:   'Hindi',
@@ -166,7 +166,7 @@ export default function DashboardPage() {
                   </div>
                   <div
                     className="w-8 h-10 rounded-lg shrink-0"
-                    style={{ background: t.gradient || 'linear-gradient(135deg, #7C5CFC, #FF6B9D)' }}
+                    style={{ background: t.gradient || 'linear-gradient(135deg, #2563EB, #0EA5E9)' }}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-700 text-slate-800 truncate">{t.nameEn || t.nameHi || 'Untitled'}</div>

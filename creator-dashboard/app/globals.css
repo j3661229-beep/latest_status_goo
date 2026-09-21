@@ -13,23 +13,27 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-primary text-white font-bold px-4 py-2.5 rounded-xl
-           hover:bg-primary-dark transition-colors duration-200 text-sm;
+    @apply bg-blue-600 text-white font-bold px-4 py-2.5 rounded-xl
+           hover:bg-blue-700 hover:shadow-primary-glow active:scale-[0.99] transition-all duration-150 text-sm shadow-sm;
   }
   .btn-ghost {
-    @apply text-muted-foreground font-semibold px-4 py-2 rounded-xl
-           hover:bg-surface-border transition-colors duration-200 text-sm;
+    @apply text-slate-600 hover:text-slate-900 font-semibold px-4 py-2 rounded-xl
+           hover:bg-slate-100 transition-colors duration-150 text-sm;
+  }
+  .btn-outline {
+    @apply border border-slate-300 text-slate-700 bg-white font-semibold px-4 py-2.5 rounded-xl
+           hover:border-blue-600 hover:text-blue-600 hover:bg-blue-50/30 transition-all duration-150 text-sm;
   }
   .stat-card {
-    @apply bg-white rounded-2xl p-5 shadow-card border border-surface-border;
+    @apply bg-white rounded-2xl p-5 shadow-card border border-slate-200/80 hover:shadow-card-hover hover:border-blue-200 transition-all duration-200;
   }
-  .badge-approved { @apply bg-green-100 text-green-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-pending  { @apply bg-amber-100 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-rejected { @apply bg-red-100 text-red-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-draft    { @apply bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-approved { @apply bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-pending  { @apply bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-rejected { @apply bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-draft    { @apply bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold px-2.5 py-1 rounded-full; }
   .upload-zone {
-    @apply border-2 border-dashed border-surface-border rounded-2xl p-8
+    @apply border-2 border-dashed border-slate-300 rounded-2xl p-8 bg-slate-50/50
            flex flex-col items-center justify-center cursor-pointer
-           hover:border-primary hover:bg-primary/5 transition-all duration-200;
+           hover:border-blue-500 hover:bg-blue-50/40 transition-all duration-200;
   }
 }

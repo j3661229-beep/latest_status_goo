@@ -98,7 +98,7 @@ export default function UsersPage() {
                 </td>
                 <td>
                   <span className={`text-xs font-700 px-2 py-1 rounded-md ${
-                    u.role === 'SUPER_ADMIN' ? 'bg-purple-100 text-purple-700' :
+                    u.role === 'SUPER_ADMIN' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
                     u.role === 'CREATOR' ? 'bg-amber-100 text-amber-700' :
                     'bg-slate-100 text-slate-600'
                   }`}>

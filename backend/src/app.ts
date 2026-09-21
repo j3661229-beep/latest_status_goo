@@ -1,8 +1,10 @@
 // src/app.ts
-import Fastify from 'fastify';
+import Fastify, { FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
+import compress from '@fastify/compress';
 import { env } from './config/env';
 
 // Plugins
@@ -19,6 +21,22 @@ import { subscriptionRoutes } from './modules/subscriptions/sub.route';
 import { festivalRoutes } from './modules/festivals/festival.route';
 import { creatorRoutes } from './modules/creator/creator.route';
 import { adminRoutes } from './modules/admin/admin.route';
+import { uploadRoutes } from './modules/upload/upload.route';
+
+// ── Per-route rate limit configurations ─────────────────────
+// Applied via config.rateLimit on individual routes
+const RATE_LIMITS = {
+  auth:        { max: 20,  timeWindow: '1 minute'  },  // general auth
+  adminLogin:  { max: 10,  timeWindow: '5 minutes' },  // admin/creator login
+  otpSend:     { max: 5,   timeWindow: '5 minutes' },  // OTP send
+  otpVerify:   { max: 10,  timeWindow: '5 minutes' },  // OTP verify
+  refresh:     { max: 30,  timeWindow: '1 minute'  },  // token refresh
+  payment:     { max: 5,   timeWindow: '1 minute'  },  // payment create/verify
+  search:      { max: 60,  timeWindow: '1 minute'  },  // search
+  campaign:    { max: 5,   timeWindow: '1 minute'  },  // push campaigns
+} as const;
+
+export { RATE_LIMITS };
 
 export async function buildApp() {
   const app = Fastify({
@@ -30,6 +48,11 @@ export async function buildApp() {
           options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
         },
       }),
+      // Redact sensitive fields from all log output
+      redact: {
+        paths: ['req.headers.authorization', 'body.password', 'body.refreshToken', 'body.idToken', 'body.otp'],
+        censor: '[REDACTED]',
+      },
     },
     trustProxy: true,
     disableRequestLogging: false,
@@ -57,12 +80,29 @@ export async function buildApp() {
     global: true,
     max: 200,
     timeWindow: '1 minute',
-    keyGenerator: (req) => req.ip,
-    errorResponseBuilder: (_req, context) => ({
+    keyGenerator: (req: FastifyRequest) => req.ip ?? 'unknown',
+    errorResponseBuilder: (_req: FastifyRequest, context: { ttl: number }) => ({
       statusCode: 429,
       error: 'Too Many Requests',
       message: `Rate limit exceeded. Retry in ${Math.round(context.ttl / 1000)}s`,
     }),
+  });
+
+  // ── Multipart (file uploads) ─────────────────────────────
+  await app.register(multipart, {
+    limits: {
+      fieldNameSize: 100,
+      fieldSize: 100,
+      fields: 10,
+      fileSize: 10 * 1024 * 1024,  // 10 MB
+      files: 1,
+    },
+  });
+
+  // ── Compression (improves response times significantly) ───
+  await app.register(compress, {
+    global: true,
+    encodings: ['gzip', 'deflate'],
   });
 
   // ── Infrastructure Plugins ───────────────────────────────
@@ -111,6 +151,7 @@ export async function buildApp() {
   await app.register(festivalRoutes,      { prefix: `${V1}/festivals` });
   await app.register(creatorRoutes,       { prefix: `${V1}/creator` });
   await app.register(adminRoutes,         { prefix: `${V1}/admin` });
+  await app.register(uploadRoutes,        { prefix: `${V1}/upload` });
 
   // Fallback for plan list
   app.get(`${V1}/plans`, async (_req, reply) => {

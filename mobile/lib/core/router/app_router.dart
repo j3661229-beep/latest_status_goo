@@ -150,7 +150,7 @@ class _NavItem {
 class _NavItemWidget extends StatelessWidget {
   final _NavItem item;
   final bool isActive;
-  const _NavItemWidget({super.key, required this.item, required this.isActive});
+  const _NavItemWidget({required this.item, required this.isActive});
 
   @override
   Widget build(BuildContext context) {

@@ -39,6 +39,10 @@ export async function userRoutes(fastify: FastifyInstance) {
         id: user.id, name: user.name, email: user.email,
         displayName: user.displayName, profilePhoto: user.profilePhoto,
         customPhotoUrl: user.customPhotoUrl, language: user.language,
+        state: user.state, region: user.region,
+        businessName: user.businessName, businessPhone: user.businessPhone,
+        businessAddress: user.businessAddress, businessDesignation: user.businessDesignation,
+        businessLogo: user.businessLogo, frameType: user.frameType,
         plan: user.plan, role: user.role, streakCount: user.streakCount,
         totalShares: user.totalShares, totalSaves: user.totalSaves,
         lastActiveAt: user.lastActiveAt, createdAt: user.createdAt,
@@ -65,16 +69,28 @@ export async function userRoutes(fastify: FastifyInstance) {
   // PUT /user/me
   fastify.put('/me', { preHandler: [fastify.authenticate] }, async (req, reply) => {
     const { userId } = req.user as any;
-    const { name, displayName, language, timezone, profilePhoto } = req.body as any;
+    const {
+      name, displayName, language, timezone, profilePhoto,
+      state, region,
+      businessName, businessPhone, businessAddress, businessDesignation, businessLogo, frameType,
+    } = req.body as any;
 
     const user = await fastify.prisma.user.update({
       where: { id: userId },
       data: {
-        ...(name && { name }),
-        ...(displayName && { displayName }),
-        ...(language && { language }),
-        ...(timezone && { timezone }),
-        ...(profilePhoto && { profilePhoto }),
+        ...(name !== undefined && { name }),
+        ...(displayName !== undefined && { displayName }),
+        ...(language !== undefined && { language }),
+        ...(timezone !== undefined && { timezone }),
+        ...(profilePhoto !== undefined && { profilePhoto }),
+        ...(state !== undefined && { state }),
+        ...(region !== undefined && { region }),
+        ...(businessName !== undefined && { businessName }),
+        ...(businessPhone !== undefined && { businessPhone }),
+        ...(businessAddress !== undefined && { businessAddress }),
+        ...(businessDesignation !== undefined && { businessDesignation }),
+        ...(businessLogo !== undefined && { businessLogo }),
+        ...(frameType !== undefined && { frameType }),
         updatedAt: new Date(),
       },
     });
@@ -154,10 +170,13 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     await fastify.prisma.savedStatus.deleteMany({ where: { userId, templateId } });
 
-    fastify.prisma.template.update({
-      where: { id: templateId },
-      data: { saveCount: { decrement: 1 } },
-    }).catch(() => {});
+    // Use GREATEST(0, saveCount-1) to prevent saveCount going negative
+    // This is safe even if called multiple times (idempotent floor at 0)
+    fastify.prisma.$executeRaw`
+      UPDATE "Template"
+      SET "saveCount" = GREATEST(0, "saveCount" - 1)
+      WHERE id = ${templateId}
+    `.catch((err: Error) => fastify.log.warn({ err, templateId }, 'saveCount decrement failed'));
 
     return reply.send({ saved: false });
   });

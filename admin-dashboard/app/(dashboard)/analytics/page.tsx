@@ -9,7 +9,7 @@ import { adminApi } from '@/lib/api';
 import { formatNumber } from '@/lib/utils';
 import { TrendingUp } from 'lucide-react';
 
-const PLATFORM_COLORS = ['#25D366', '#128C7E', '#E4405F', '#1877F2', '#7C5CFC'];
+const PLATFORM_COLORS = ['#25D366', '#128C7E', '#E4405F', '#1877F2', '#2563EB'];
 
 function SkeletonBox({ h = 'h-64' }: { h?: string }) {
   return <div className={`${h} rounded-2xl bg-slate-100 animate-pulse`} />;
@@ -84,8 +84,8 @@ export default function AnalyticsPage() {
             <AreaChart data={dau}>
               <defs>
                 <linearGradient id="dauGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#7C5CFC" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#7C5CFC" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#2563EB" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <XAxis
@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
                 labelFormatter={(v) => new Date(v).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
                 formatter={(v: number) => [formatNumber(v), 'Active Users']}
               />
-              <Area type="monotone" dataKey="count" stroke="#7C5CFC" strokeWidth={2.5} fill="url(#dauGradient)" dot={false} />
+              <Area type="monotone" dataKey="count" stroke="#2563EB" strokeWidth={2.5} fill="url(#dauGradient)" dot={false} />
             </AreaChart>
           </ResponsiveContainer>
         )}

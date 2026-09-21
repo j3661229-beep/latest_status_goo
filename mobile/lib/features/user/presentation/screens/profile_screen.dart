@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/data/auth_repository.dart';
 import '../../../auth/presentation/providers/current_user_provider.dart';
+import '../../../auth/domain/models/user_model.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -186,6 +188,23 @@ class ProfileScreen extends ConsumerWidget {
                     ]),
 
                     const SizedBox(height: 16),
+                    _SectionLabel('Business Branding & Frames (क्राफ्टो फीचर्स)'),
+                    _SettingsCard(children: [
+                      _SettingRow(
+                        icon: Icons.storefront_rounded,
+                        label: 'Business Details & Branding',
+                        value: user?.businessName?.isNotEmpty == true ? user!.businessName : 'सेट करें (Setup)',
+                        onTap: () => _showBusinessBrandingDialog(context, ref, user),
+                      ),
+                      _SettingRow(
+                        icon: Icons.crop_portrait_rounded,
+                        label: 'Default Frame Style',
+                        value: _getFrameTypeName(user?.frameType),
+                        onTap: () => _showBusinessBrandingDialog(context, ref, user),
+                      ),
+                    ]),
+
+                    const SizedBox(height: 16),
                     _SectionLabel('Support'),
                     _SettingsCard(children: [
                       _SettingRow(icon: Icons.help_outline_rounded, label: 'Help & FAQ', onTap: () {}),
@@ -243,6 +262,328 @@ class ProfileScreen extends ConsumerWidget {
       case 'ENGLISH': return 'English';
       default: return code;
     }
+  }
+
+  String _getFrameTypeName(String? type) {
+    switch (type) {
+      case 'businessClassic': return 'Classic Business';
+      case 'businessModern': return 'Modern Business';
+      case 'political': return 'Political / Leader';
+      case 'minimal': return 'Minimal Clean';
+      default: return 'Personal Frame';
+    }
+  }
+
+  void _showBusinessBrandingDialog(BuildContext context, WidgetRef ref, UserModel? user) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _BusinessBrandingSheet(user: user, ref: ref),
+    );
+  }
+}
+
+class _BusinessBrandingSheet extends StatefulWidget {
+  final UserModel? user;
+  final WidgetRef ref;
+
+  const _BusinessBrandingSheet({required this.user, required this.ref});
+
+  @override
+  State<_BusinessBrandingSheet> createState() => _BusinessBrandingSheetState();
+}
+
+class _BusinessBrandingSheetState extends State<_BusinessBrandingSheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _desigController;
+  late final TextEditingController _addressController;
+  late String _selectedFrameType;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.user?.businessName ?? '');
+    _phoneController = TextEditingController(text: widget.user?.businessPhone ?? widget.user?.phoneNumber ?? '');
+    _desigController = TextEditingController(text: widget.user?.businessDesignation ?? '');
+    _addressController = TextEditingController(text: widget.user?.businessAddress ?? '');
+    _selectedFrameType = widget.user?.frameType ?? 'personal';
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _desigController.dispose();
+    _addressController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+    try {
+      await widget.ref.read(authRepositoryProvider).updateBusinessBranding(
+        businessName: _nameController.text.trim(),
+        businessPhone: _phoneController.text.trim(),
+        businessDesignation: _desigController.text.trim(),
+        businessAddress: _addressController.text.trim(),
+        frameType: _selectedFrameType,
+      );
+
+      widget.ref.invalidate(currentUserProvider);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'बिजनेस ब्रांडिंग और फ्रेम सफलतापूर्वक सेव हो गई!',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('सेव करने में त्रुटि: $e'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Sheet Title
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.storefront_rounded, color: AppColors.primary, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'बिजनेस ब्रांडिंग और फ्रेम',
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'यह जानकारी आपके स्टेटस पोस्टर्स पर दिखेगी',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Frame Type Selector
+            Text(
+              'डिफ़ॉल्ट फ्रेम स्टाइल (Frame Style)',
+              style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildFrameChip('personal', '👤 व्यक्तिगत (Personal)'),
+                _buildFrameChip('businessClassic', '🏢 क्लासिक बिजनेस'),
+                _buildFrameChip('businessModern', '✨ मॉडर्न बिजनेस'),
+                _buildFrameChip('political', '🚩 नेता / राजनेता'),
+                _buildFrameChip('minimal', '🔹 मिनिमल'),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Form Inputs
+            _buildTextField(
+              controller: _nameController,
+              label: 'बिजनेस / दुकान का नाम (Business Name)',
+              hint: 'उदा. शर्मा इलेक्ट्रॉनिक्स / Sharma Jewellers',
+              icon: Icons.business_rounded,
+            ),
+            const SizedBox(height: 12),
+
+            _buildTextField(
+              controller: _phoneController,
+              label: 'मोबाइल / WhatsApp नंबर',
+              hint: '+91 98765 43210',
+              icon: Icons.phone_rounded,
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 12),
+
+            _buildTextField(
+              controller: _desigController,
+              label: 'पद / टैगलाइन (Designation / Tagline)',
+              hint: 'उदा. प्रोपराइटर / समाजसेवी / संचालक',
+              icon: Icons.badge_rounded,
+            ),
+            const SizedBox(height: 12),
+
+            _buildTextField(
+              controller: _addressController,
+              label: 'पता / शहर (Shop Address / City)',
+              hint: 'उदा. मेन मार्केट, इंदौर (म.प्र.)',
+              icon: Icons.location_on_rounded,
+            ),
+            const SizedBox(height: 24),
+
+            // Save Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 2,
+                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : Text(
+                        'सेव और लागू करें (Save & Apply)',
+                        style: GoogleFonts.outfit(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFrameChip(String type, String label) {
+    final isSelected = _selectedFrameType == type;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (val) {
+        if (val) setState(() => _selectedFrameType = type);
+      },
+      selectedColor: AppColors.primary,
+      backgroundColor: const Color(0xFFF3F4F6),
+      labelStyle: GoogleFonts.outfit(
+        color: isSelected ? Colors.white : AppColors.textPrimary,
+        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+        fontSize: 12,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+        ),
+        const SizedBox(height: 5),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          style: GoogleFonts.outfit(fontSize: 14, color: AppColors.textPrimary),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: GoogleFonts.outfit(fontSize: 13, color: AppColors.textMuted),
+            prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

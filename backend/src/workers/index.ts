@@ -120,10 +120,140 @@ const cacheWorker = new Worker(
   { connection }
 );
 
-// ── CRON: Plan Expiry ─────────────────────────────────────────
-// Checks for expired subscriptions daily at 3:30 AM IST (22:00 UTC)
-// CRON queue (kept for manual job dispatch from API)
-const _planExpiryQueue = new Queue('cron', { connection });
+// ── CRON Worker: Processes scheduled jobs ─────────────────────
+const cronQueue = new Queue('cron', { connection });
+
+const cronWorker = new Worker(
+  'cron',
+  async (job) => {
+    const log = (msg: string) => console.log(`[cron:${job.name}] ${msg}`);
+    log(`Starting job id=${job.id}`);
+    try {
+      if (job.name === 'plan_expiry') {
+        await checkPlanExpiry();
+      } else if (job.name === 'festival_alerts') {
+        await checkFestivalAlerts();
+      } else {
+        log(`Unknown job name: ${job.name}`);
+      }
+      log(`Completed successfully`);
+    } catch (err: any) {
+      log(`ERROR: ${err.message}`);
+      throw err; // Re-throw so BullMQ marks job as failed and retries
+    }
+  },
+  {
+    connection,
+    concurrency: 1, // CRON jobs run serially
+  }
+);
+
+// Register repeatable jobs (idempotent — safe to call on every startup)
+// jobId acts as a singleton: BullMQ will only keep one instance of each
+async function registerCronJobs() {
+  // Plan expiry: every hour at :00
+  await cronQueue.add(
+    'plan_expiry',
+    {},
+    {
+      repeat: { pattern: '0 * * * *' }, // every hour
+      jobId: 'cron:plan_expiry',         // singleton — prevents duplicates on restart
+      removeOnComplete: { count: 10 },
+      removeOnFail: { count: 50 },
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 }, // retry after 1min, 2min, 4min
+    }
+  );
+
+  // Festival alerts: every 6 hours at :00
+  await cronQueue.add(
+    'festival_alerts',
+    {},
+    {
+      repeat: { pattern: '0 */6 * * *' }, // every 6 hours
+      jobId: 'cron:festival_alerts',
+      removeOnComplete: { count: 10 },
+      removeOnFail: { count: 50 },
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 120_000 }, // retry after 2min, 4min, 8min
+    }
+  );
+
+  console.log('✅ BullMQ CRON jobs registered: plan_expiry (hourly), festival_alerts (every 6h)');
+}
+
+// Register CRON jobs in production; in dev, run once immediately for testing
+if (env.NODE_ENV === 'production') {
+  registerCronJobs().catch((err) => {
+    console.error('[cron] Failed to register CRON jobs:', err.message);
+    process.exit(1);
+  });
+} else {
+  // Development: register jobs but also run plan_expiry once immediately for debugging
+  registerCronJobs()
+    .then(() => checkPlanExpiry())
+    .catch((err) => console.warn('[cron:dev] Non-fatal startup error:', err.message));
+}
+
+// Error handlers — upgraded to structured logging
+notificationWorker.on('failed', (job, err) => {
+  console.error(JSON.stringify({
+    level: 'error',
+    worker: 'notifications',
+    jobId: job?.id,
+    jobName: job?.name,
+    error: err.message,
+    attemptsMade: job?.attemptsMade,
+  }));
+});
+
+cacheWorker.on('failed', (job, err) => {
+  console.error(JSON.stringify({
+    level: 'error',
+    worker: 'cache',
+    jobId: job?.id,
+    error: err.message,
+  }));
+});
+
+cronWorker.on('failed', (job, err) => {
+  console.error(JSON.stringify({
+    level: 'error',
+    worker: 'cron',
+    jobId: job?.id,
+    jobName: job?.name,
+    error: err.message,
+    attemptsMade: job?.attemptsMade,
+  }));
+});
+
+console.log('✅ Workers running: notifications, cache, cron');
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('[workers] SIGTERM received — shutting down gracefully');
+  await Promise.allSettled([
+    notificationWorker.close(),
+    cacheWorker.close(),
+    cronWorker.close(),
+    cronQueue.close(),
+  ]);
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('[workers] SIGINT received — shutting down');
+  await Promise.allSettled([
+    notificationWorker.close(),
+    cacheWorker.close(),
+    cronWorker.close(),
+    cronQueue.close(),
+  ]);
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
 
 async function checkPlanExpiry() {
   console.log('[cron] Checking plan expiry...');
@@ -186,29 +316,6 @@ async function checkFestivalAlerts() {
   }
 }
 
-// Simple CRON-like scheduling (use proper CRON scheduler in production, e.g., BullMQ's repeat)
-if (env.NODE_ENV === 'production') {
-  // Run plan expiry every hour
-  setInterval(checkPlanExpiry, 60 * 60 * 1000);
-  // Run festival alerts every 6 hours
-  setInterval(checkFestivalAlerts, 6 * 60 * 60 * 1000);
-}
 
-// Error handlers
-notificationWorker.on('failed', (job, err) => {
-  console.error(`[notifications] Job ${job?.id} failed:`, err.message);
-});
-cacheWorker.on('failed', (job, err) => {
-  console.error(`[cache] Job ${job?.id} failed:`, err.message);
-});
+// ── CRON helper functions are used by cronWorker above ────────
 
-console.log('✅ Workers running: notifications, cache');
-console.log('✅ CRON jobs: plan_expiry, festival_alerts');
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  await notificationWorker.close();
-  await cacheWorker.close();
-  await prisma.$disconnect();
-  process.exit(0);
-});

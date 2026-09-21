@@ -57,6 +57,14 @@ export const creatorApi = {
   deleteTemplate: (id: string) =>
     api.delete(`/creator/templates/${id}`).then(r => r.data),
 
+  uploadTemplateMedia: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload/template', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data);
+  },
+
   getCloudinarySignature: (data: { folder: string; tags?: string[] }) =>
     api.post('/creator/upload/sign-cloudinary', data).then(r => r.data),
 

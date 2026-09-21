@@ -25,7 +25,7 @@ const defaultForm = {
   photoZoneX: 0.5, photoZoneY: 0.25, photoZoneSize: 0.2, photoZoneShape: 'circle',
   nameZoneEnabled: true,
   nameZoneX: 0.5, nameZoneY: 0.75,
-  gradient: 'linear-gradient(135deg, #7C5CFC 0%, #FF6B9D 100%)',
+  gradient: 'linear-gradient(135deg, #2563EB 0%, #0EA5E9 100%)',
   imageFile: null as File | null,
   isPremium: false,
 };
@@ -175,25 +175,28 @@ export default function UploadTemplatePage() {
 
       const templateId = res1.template.id;
 
-      // 2. Upload to Cloudinary
+      // 2. Upload to GCS via backend API
       let imageUrl = '';
       let videoUrl = '';
       let videoThumbUrl = '';
       let videoDuration = 0;
 
       if (formData.imageFile) {
-        const tagsArray = formData.tags.split(',').map(s => s.trim()).filter(Boolean);
-        const signData = await creatorApi.getCloudinarySignature({ 
-          folder: 'templates'
-        });
-
-        const uploadRes = await uploadToCloudinary(formData.imageFile, signData);
+        let uploadRes: { url: string; duration?: number };
+        try {
+          uploadRes = await creatorApi.uploadTemplateMedia(formData.imageFile);
+        } catch {
+          // Fallback to Cloudinary if backend upload fails
+          const signData = await creatorApi.getCloudinarySignature({ 
+            folder: 'templates'
+          });
+          uploadRes = await uploadToCloudinary(formData.imageFile, signData);
+        }
         
         if (formData.type === 'IMAGE') {
           imageUrl = uploadRes.url;
         } else {
           videoUrl = uploadRes.url;
-          // Cloudinary video thumbnail trick: change extension to jpg
           videoThumbUrl = uploadRes.url.replace(/\.[^.]+$/, '.jpg');
           videoDuration = uploadRes.duration || 0;
         }
@@ -306,14 +309,14 @@ export default function UploadTemplatePage() {
                 <label className="text-xs font-700 text-slate-600 uppercase tracking-wide mb-3 block">Background Gradient</label>
                 <div className="flex gap-2 flex-wrap">
                   {[
+                    'linear-gradient(135deg, #2563EB 0%, #0EA5E9 100%)',
+                    'linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%)',
+                    'linear-gradient(135deg, #0284C7 0%, #38BDF8 100%)',
+                    'linear-gradient(135deg, #0F172A 0%, #2563EB 100%)',
                     'linear-gradient(135deg, #F7971E 0%, #FFD200 100%)',
-                    'linear-gradient(135deg, #7C5CFC 0%, #FF6B9D 100%)',
-                    'linear-gradient(135deg, #2DD4BF 0%, #7C5CFC 100%)',
-                    'linear-gradient(135deg, #FF6B9D 0%, #FFB347 100%)',
-                    'linear-gradient(135deg, #4776E6 0%, #8E54E9 100%)',
-                    'linear-gradient(135deg, #1a1a2e 0%, #7C5CFC 100%)',
                     'linear-gradient(135deg, #10B981 0%, #2DD4BF 100%)',
-                    'linear-gradient(135deg, #FF4500 0%, #FF6B35 100%)',
+                    'linear-gradient(135deg, #FF6B9D 0%, #FFB347 100%)',
+                    'linear-gradient(135deg, #EF4444 0%, #F97316 100%)',
                   ].map(g => (
                     <button key={g} onClick={() => update({ gradient: g })}
                       className={`w-10 h-10 rounded-lg transition-transform ${form.gradient === g ? 'ring-2 ring-offset-2 ring-primary scale-110' : 'hover:scale-105'}`}

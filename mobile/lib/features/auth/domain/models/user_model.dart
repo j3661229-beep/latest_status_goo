@@ -19,6 +19,18 @@ class UserModel {
   final int streakCount;
   final int totalShares;
   final int totalSaves;
+  // Location for personalised feed
+  final String? state;
+  final String? region;
+  final bool onboardingCompleted;
+
+  // Business Branding & Frame Customization (Crafto Suite)
+  final String? businessName;
+  final String? businessPhone;
+  final String? businessAddress;
+  final String? businessDesignation;
+  final String? businessLogo;
+  final String frameType;
 
   const UserModel({
     required this.id,
@@ -34,6 +46,15 @@ class UserModel {
     this.streakCount = 0,
     this.totalShares = 0,
     this.totalSaves = 0,
+    this.state,
+    this.region,
+    this.onboardingCompleted = false,
+    this.businessName,
+    this.businessPhone,
+    this.businessAddress,
+    this.businessDesignation,
+    this.businessLogo,
+    this.frameType = 'personal',
   });
 
   bool get isPremium => plan == 'PREMIUM' || plan == 'ANNUAL';
@@ -54,6 +75,15 @@ class UserModel {
     int? streakCount,
     int? totalShares,
     int? totalSaves,
+    String? state,
+    String? region,
+    bool? onboardingCompleted,
+    String? businessName,
+    String? businessPhone,
+    String? businessAddress,
+    String? businessDesignation,
+    String? businessLogo,
+    String? frameType,
   }) {
     return UserModel(
       id: id,
@@ -69,6 +99,15 @@ class UserModel {
       streakCount: streakCount ?? this.streakCount,
       totalShares: totalShares ?? this.totalShares,
       totalSaves: totalSaves ?? this.totalSaves,
+      state: state ?? this.state,
+      region: region ?? this.region,
+      onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      businessName: businessName ?? this.businessName,
+      businessPhone: businessPhone ?? this.businessPhone,
+      businessAddress: businessAddress ?? this.businessAddress,
+      businessDesignation: businessDesignation ?? this.businessDesignation,
+      businessLogo: businessLogo ?? this.businessLogo,
+      frameType: frameType ?? this.frameType,
     );
   }
 }

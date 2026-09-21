@@ -1,5 +1,5 @@
 // src/types/fastify.d.ts
-import { FastifyRequest } from 'fastify';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import { Redis } from 'ioredis';
 
@@ -20,4 +20,9 @@ declare module 'fastify' {
   interface FastifyRequest {
     user: JWTPayload;
   }
+
+  interface FastifyContextConfig {
+    rateLimit?: any;
+  }
 }
+

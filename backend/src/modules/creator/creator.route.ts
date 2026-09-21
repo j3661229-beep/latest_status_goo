@@ -102,11 +102,12 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Only DRAFT templates can be submitted' });
     }
 
-    // Validate required fields
+    // Validate required fields before submission
     const missing = [];
     if (!existing.nameHi) missing.push('nameHi');
     if (!existing.categoryId) missing.push('categoryId');
-    if (!existing.categoryId) missing.push('categoryId');
+    // Must have either image or video URL
+    if (!existing.imageUrl && !existing.videoUrl) missing.push('imageUrl or videoUrl');
 
     if (missing.length > 0) {
       return reply.status(400).send({ error: 'Missing required fields', missing });
@@ -157,22 +158,47 @@ export async function creatorRoutes(fastify: FastifyInstance) {
   });
 
   // POST /creator/upload/sign-cloudinary
-  fastify.post('/upload/sign-cloudinary', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.post('/upload/sign-cloudinary', { 
+    preHandler: [requireCreator],
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     const { folder = 'templates', tags } = req.body as any;
-    
+
+    // Security: validate folder is one of the allowed values (prevent path traversal)
+    const ALLOWED_FOLDERS = ['templates', 'thumbnails'];
+    const safeFolder = ALLOWED_FOLDERS.includes(folder) ? folder : 'templates';
+
     const timestamp = Math.round(new Date().getTime() / 1000);
     const params: Record<string, any> = {
       timestamp,
-      folder: `status-go/${folder}`,
+      folder: `status-go/${safeFolder}`,
+      // Restrict allowed formats server-side so Cloudinary rejects invalid types
+      allowed_formats: 'jpg,jpeg,png,webp,mp4',
     };
 
-    // Extract deeply nested signature string correctly
-    const signData = await CloudinaryService.getSignature(params); 
+    if (Array.isArray(tags) && tags.length > 0) {
+      // Validate tags are simple strings, max 20 chars each
+      const safeTags = tags
+        .filter((t: any) => typeof t === 'string')
+        .map((t: string) => t.trim().slice(0, 20))
+        .filter(Boolean)
+        .slice(0, 10);
+      if (safeTags.length > 0) params.tags = safeTags.join(',');
+    }
+
+    // CloudinaryService.getSignature() reads from server-side CLOUDINARY_URL env var
+    // Do NOT use NEXT_PUBLIC_ prefixed vars here — they don't exist in Node.js
+    const signData = await CloudinaryService.getSignature(params);
+
+    if (!signData.apiKey || !signData.cloudName) {
+      fastify.log.error('Cloudinary not configured: CLOUDINARY_URL env var is missing or invalid');
+      return reply.status(503).send({ error: 'Upload service not configured' });
+    }
 
     return reply.send({
       signature: signData.signature,
-      apiKey: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY ?? signData.apiKey,
-      cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? signData.cloudName,
+      apiKey: signData.apiKey,        // from server CLOUDINARY_URL — correct
+      cloudName: signData.cloudName,  // from server CLOUDINARY_URL — correct
       folder: params.folder,
       timestamp,
     });

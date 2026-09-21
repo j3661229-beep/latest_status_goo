@@ -109,6 +109,17 @@ model User {
   isActive          Boolean   @default(true)
   oneSignalPlayerId String?
   timezone          String    @default("Asia/Kolkata")
+  // Location for personalised template feed
+  state             String?   @db.VarChar(100)
+  region            String?   @db.VarChar(100)
+  onboardingCompleted Boolean @default(false)
+  // Business branding & frame customization (Crafto style)
+  businessName        String?   @db.VarChar(150)
+  businessPhone       String?   @db.VarChar(20)
+  businessAddress     String?   @db.VarChar(255)
+  businessDesignation String?   @db.VarChar(100)
+  businessLogo        String?
+  frameType           String?   @default("PERSONAL")
   streakCount       Int       @default(0)
   lastStreakDate    DateTime?
   lastActiveAt      DateTime?
@@ -136,6 +147,7 @@ model User {
   @@index([lastActiveAt])
   @@index([createdAt(sort: Desc)])
   @@index([isActive, role])
+  @@index([state, region])
 }
 
 // ════════════════════════════════════════════════
@@ -270,6 +282,10 @@ model Template {
   isTrending      Boolean  @default(false)
   isPremium       Boolean  @default(false)
   isNew           Boolean  @default(true)
+  // Coordinator / Admin picks
+  isCoordinatorPick  Boolean  @default(false)
+  coordinatorNote    String?  @db.VarChar(300)
+  coordinatorState   String?  @db.VarChar(100)  // null = all states
   sortOrder       Int      @default(0)
   primaryLanguage Language @default(HINDI)
 

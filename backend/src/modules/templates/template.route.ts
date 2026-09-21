@@ -5,6 +5,9 @@ import { TemplateHandler } from './template.handler';
 export async function templateRoutes(fastify: FastifyInstance) {
   const handler = new TemplateHandler(fastify.prisma, fastify.redis);
 
+  // GET /templates/home — single call home feed (featured + trending + coordinator picks)
+  fastify.get('/home', { preHandler: [fastify.authenticate] }, handler.getHomeFeed.bind(handler));
+
   // Public + authenticated list endpoints
   fastify.get('/', { preHandler: [fastify.authenticate] }, handler.list.bind(handler));
   fastify.get('/featured', { preHandler: [fastify.authenticate] }, handler.featured.bind(handler));

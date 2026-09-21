@@ -3,16 +3,117 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient, SharePlatform } from '@prisma/client';
 import type { Redis } from 'ioredis';
 import { TemplateService } from './template.service';
+import { CK, TTL } from '../../lib/cache/keys';
+import { CacheService } from '../../lib/cache/cache.service';
+
+// Reusable Prisma select for template list items (avoids over-fetching)
+const templateSelect = {
+  id: true,
+  type: true,
+  status: true,
+  nameHi: true,
+  nameMr: true,
+  nameEn: true,
+  quoteHi: true,
+  quoteMr: true,
+  quoteEn: true,
+  imageUrl: true,
+  imageThumbUrl: true,
+  videoThumbUrl: true,
+  gradient: true,
+  tags: true,
+  isFeatured: true,
+  isTrending: true,
+  isPremium: true,
+  isNew: true,
+  isCoordinatorPick: true,
+  useCount: true,
+  shareCount: true,
+  primaryLanguage: true,
+  photoZoneEnabled: true,
+  photoZoneX: true,
+  photoZoneY: true,
+  photoZoneSize: true,
+  photoZoneShape: true,
+  nameZoneEnabled: true,
+  nameZoneX: true,
+  nameZoneY: true,
+  nameFontSize: true,
+  nameColor: true,
+  nameFont: true,
+  category: { select: { id: true, slug: true, nameHi: true, nameEn: true, emoji: true } },
+} as const;
 
 export class TemplateHandler {
   private service: TemplateService;
+  private prisma: PrismaClient;
+  private cache: CacheService;
 
   constructor(prisma: PrismaClient, redis: Redis) {
     this.service = new TemplateService(prisma, redis);
     this.prisma = prisma;
+    this.cache = new CacheService(redis);
   }
 
-  private prisma: PrismaClient;
+  // GET /templates/home?state=&lang=
+  async getHomeFeed(req: FastifyRequest, reply: FastifyReply) {
+    const { state = 'all', lang = 'HINDI' } = req.query as any;
+    const cacheKey = CK.homeFeed(state, lang);
+    const cached = await this.cache.get(cacheKey);
+    if (cached) return reply.send(cached);
+
+    const [featured, trending, coordinatorPicks, festivalToday, categories] = await Promise.all([
+      // Featured: isFeatured=true, max 10
+      this.prisma.template.findMany({
+        where: { status: 'APPROVED', isFeatured: true },
+        orderBy: [{ sortOrder: 'asc' }, { useCount: 'desc' }],
+        take: 10,
+        select: templateSelect,
+      }),
+      // Trending: high use count, max 15
+      this.prisma.template.findMany({
+        where: { status: 'APPROVED', isTrending: true },
+        orderBy: { useCount: 'desc' },
+        take: 15,
+        select: templateSelect,
+      }),
+      // Coordinator picks: those with null state (all users) OR matching user's state
+      this.prisma.template.findMany({
+        where: {
+          status: 'APPROVED',
+          isCoordinatorPick: true,
+          ...(state && state !== 'all'
+            ? { OR: [{ coordinatorState: null }, { coordinatorState: state }] }
+            : { coordinatorState: null }),
+        },
+        orderBy: { sortOrder: 'asc' },
+        take: 8,
+        select: { ...templateSelect, coordinatorNote: true },
+      }),
+      // Festival today or tomorrow
+      this.prisma.festival.findFirst({
+        where: {
+          isActive: true,
+          date: {
+            gte: new Date(new Date().setHours(0, 0, 0, 0)),
+            lt: new Date(new Date().setHours(0, 0, 0, 0) + 2 * 86400000),
+          },
+        },
+        orderBy: { date: 'asc' },
+      }),
+      // Categories
+      this.prisma.category.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: 'asc' },
+        take: 12,
+        select: { id: true, slug: true, nameHi: true, nameEn: true, nameMr: true, emoji: true, gradient: true, templateCount: true },
+      }),
+    ]);
+
+    const result = { featured, trending, coordinatorPicks, festivalToday, categories };
+    await this.cache.set(cacheKey, result, TTL.homeFeed);
+    return reply.send(result);
+  }
 
   // GET /templates
   async list(req: FastifyRequest, reply: FastifyReply) {

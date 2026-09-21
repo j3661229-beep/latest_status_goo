@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Eye, CheckCircle, XCircle, Clock, RefreshCw, Loader2, X } from 'lucide-react';
+import { Eye, CheckCircle, XCircle, Clock, RefreshCw, Loader2, X, Pin } from 'lucide-react';
 import { adminApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 
@@ -15,23 +15,132 @@ const REJECTION_REASONS = [
   'Copyright music or watermark detected in video',
 ];
 
+function ZoneOverlay({ template }: { template: any }) {
+  // Render creator-defined photo and name zones so admin can verify placement
+  const containerRef = { width: '100%', height: '100%', position: 'relative' as const };
+
+  const photoZoneStyle: React.CSSProperties | null = template.photoZoneEnabled ? {
+    position: 'absolute',
+    left: `${(template.photoZoneX - (template.photoZoneSize || 0.2) / 2) * 100}%`,
+    top: `${(template.photoZoneY - (template.photoZoneSize || 0.2) / 2) * 100}%`,
+    width: `${(template.photoZoneSize || 0.2) * 100}%`,
+    aspectRatio: '1',
+    borderRadius: template.photoZoneShape === 'circle' ? '50%'
+      : template.photoZoneShape === 'rounded' ? '12px' : '4px',
+    border: '3px solid rgba(255,255,255,0.9)',
+    overflow: 'hidden',
+    boxShadow: '0 0 0 2px rgba(0,0,0,0.3)',
+  } : null;
+
+  const nameZoneStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: `${(template.nameZoneX ?? 0.5) * 100}%`,
+    top: `${(template.nameZoneY ?? 0.75) * 100}%`,
+    transform: 'translateX(-50%)',
+    color: template.nameColor ?? '#ffffff',
+    fontSize: `${(template.nameFontSize ?? 0.04) * 100}cqh`,
+    fontWeight: (template.nameZoneWeight ?? 'bold') as any,
+    fontFamily: template.nameFont ?? 'system-ui',
+    textShadow: '0 2px 8px rgba(0,0,0,0.7)',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+    textAlign: (template.nameZoneAlignment ?? 'center') as any,
+  };
+
+  return (
+    <div style={containerRef}>
+      {/* Photo zone overlay */}
+      {photoZoneStyle && (
+        <div style={photoZoneStyle}>
+          {/* Sample face avatar */}
+          <div style={{
+            width: '100%', height: '100%',
+            background: 'linear-gradient(135deg, #2563EB, #0EA5E9)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '2em',
+          }}>
+            👤
+          </div>
+        </div>
+      )}
+      {/* Name zone overlay */}
+      {template.nameZoneEnabled !== false && (
+        <div style={nameZoneStyle}>
+          Jayesh Jain
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PreviewModal({ template, onClose }: { template: any; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-md">
       <button onClick={onClose} className="absolute top-4 right-4 text-white hover:text-primary transition-colors">
         <X size={32} />
       </button>
-      <div className="max-w-4xl w-full max-h-[90vh] flex flex-col items-center">
-        <div className="relative rounded-2xl overflow-hidden shadow-2xl bg-slate-900 aspect-[9/16] h-[75vh]">
+      <div className="max-w-4xl w-full max-h-[90vh] flex gap-6 items-start">
+        {/* Template preview with zone overlay */}
+        <div className="relative rounded-2xl overflow-hidden shadow-2xl bg-slate-900 aspect-[9/16] h-[75vh] flex-shrink-0"
+          style={{ containerType: 'size' }}>
           {template.type === 'VIDEO' ? (
-            <video src={template.videoUrl || template.imageUrl} controls autoPlay className="w-full h-full object-contain" />
+            <video src={template.videoUrl || template.imageUrl} controls autoPlay className="absolute inset-0 w-full h-full object-contain" />
           ) : (
-            <img src={template.imageUrl} alt={template.nameEn} className="w-full h-full object-contain" />
+            <img src={template.imageUrl} alt={template.nameEn} className="absolute inset-0 w-full h-full object-contain" />
           )}
+          {/* Zone overlays on top of the image */}
+          <ZoneOverlay template={template} />
         </div>
-        <div className="mt-6 text-center text-white">
-          <h2 className="text-2xl font-900">{template.nameEn || template.nameHi}</h2>
-          <p className="text-white/60 mt-1">{template.quoteHi}</p>
+
+        {/* Metadata panel */}
+        <div className="flex-1 text-white space-y-4 min-w-[240px]">
+          <div>
+            <h2 className="text-xl font-900">{template.nameEn || template.nameHi}</h2>
+            <p className="text-white/50 text-sm">{template.nameHi} · {template.nameMr}</p>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-white/50">Category</span>
+              <span className="font-700">{template.category?.nameEn ?? '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Type</span>
+              <span className="font-700">{template.type}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Creator</span>
+              <span className="font-700">{template.creator?.name ?? 'Unknown'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Premium</span>
+              <span className="font-700">{template.isPremium ? '⭐ Yes' : 'No (Free)'}</span>
+            </div>
+          </div>
+          <div className="border-t border-white/10 pt-3 space-y-1 text-xs">
+            <div className="text-white/50 uppercase tracking-wider font-700 mb-2">Zone Config</div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Photo Zone</span>
+              <span className={template.photoZoneEnabled ? 'text-green-400' : 'text-white/30'}>
+                {template.photoZoneEnabled ? `✓ ${template.photoZoneShape ?? 'circle'} @ ${Math.round((template.photoZoneX ?? 0.5) * 100)}%, ${Math.round((template.photoZoneY ?? 0.25) * 100)}%` : 'Disabled'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Name Zone</span>
+              <span className={template.nameZoneEnabled !== false ? 'text-blue-400' : 'text-white/30'}>
+                {template.nameZoneEnabled !== false ? `✓ @ ${Math.round((template.nameZoneX ?? 0.5) * 100)}%, ${Math.round((template.nameZoneY ?? 0.75) * 100)}%` : 'Disabled'}
+              </span>
+            </div>
+          </div>
+          {template.quoteHi && (
+            <div className="border-t border-white/10 pt-3">
+              <div className="text-white/50 text-xs uppercase tracking-wider mb-1">Quote (Hindi)</div>
+              <p className="text-sm text-white/80 leading-relaxed">{template.quoteHi}</p>
+            </div>
+          )}
+          <div className="bg-white/10 rounded-xl p-3 text-xs text-white/60">
+            <p className="font-700 text-white/80 mb-1">👆 Zone Preview</p>
+            <p>The overlays show exactly where the user's photo (👤) and name "Jayesh Jain" will appear. Verify positioning before approving.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -84,11 +193,12 @@ function RejectModal({ templateName, onConfirm, onCancel, isRejecting }: {
   );
 }
 
-function ReviewCard({ template, onApprove, onReject, onPreview, isApproving, isRejecting }: {
+function ReviewCard({ template, onApprove, onReject, onPreview, onToggleCoordinatorPick, isApproving, isRejecting }: {
   template: any;
   onApprove: () => void;
   onReject: () => void;
   onPreview: () => void;
+  onToggleCoordinatorPick?: () => void;
   isApproving?: boolean;
   isRejecting?: boolean;
 }) {
@@ -102,7 +212,7 @@ function ReviewCard({ template, onApprove, onReject, onPreview, isApproving, isR
     <div className="bg-white rounded-2xl border border-surface-border shadow-card overflow-hidden">
       {/* Thumbnail */}
       <div className="h-36 md:h-44 relative flex items-center justify-center"
-        style={{ background: template.gradient || 'linear-gradient(135deg,#7C5CFC,#FF6B9D)' }}>
+        style={{ background: template.gradient || 'linear-gradient(135deg,#2563EB,#0EA5E9)' }}>
         <div className="text-center text-white px-4">
           {template.imageUrl ? (
             <img src={template.imageUrl} alt={template.nameEn} className="h-full w-full object-cover absolute inset-0" />
@@ -115,6 +225,11 @@ function ReviewCard({ template, onApprove, onReject, onPreview, isApproving, isR
         </div>
         {template.type === 'VIDEO' && (
           <div className="absolute top-2 right-2 badge-video">VIDEO</div>
+        )}
+        {template.isCoordinatorPick && (
+          <div className="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-800 px-2 py-0.5 rounded-md flex items-center gap-1 shadow">
+            <Pin size={10} className="fill-white" /> Coordinator Pick
+          </div>
         )}
       </div>
 
@@ -167,9 +282,17 @@ function ReviewCard({ template, onApprove, onReject, onPreview, isApproving, isR
               </button>
             </>
           ) : (
-            <div className="col-span-2 flex items-center justify-center text-[10px] font-800 text-muted uppercase tracking-wider bg-surface rounded-lg">
-              Action completed
-            </div>
+            <button
+              onClick={onToggleCoordinatorPick}
+              className={`col-span-2 flex items-center justify-center gap-1.5 text-xs py-2 rounded-xl font-700 transition-colors ${
+                template.isCoordinatorPick
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200'
+                  : 'btn-ghost border border-surface-border text-slate-700 hover:bg-amber-50'
+              }`}
+            >
+              <Pin size={12} className={template.isCoordinatorPick ? 'fill-amber-600' : ''} />
+              {template.isCoordinatorPick ? 'Pinned Pick' : 'Pin to Coordinator'}
+            </button>
           )}
         </div>
       </div>
@@ -181,14 +304,18 @@ export default function ReviewQueuePage() {
   const queryClient = useQueryClient();
   const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
   const [previewTarget, setPreviewTarget] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'coordinator'>('pending');
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['review-queue', activeTab],
-    queryFn: () => {
+    queryFn: async () => {
       if (activeTab === 'pending') return adminApi.getPendingTemplates({ page: 1, limit: 20 });
+      if (activeTab === 'coordinator') {
+        const res = await adminApi.getCoordinatorPicks();
+        return { data: res, total: res.length };
+      }
       return adminApi.getTemplates({ status: activeTab.toUpperCase(), page: 1, limit: 20 });
     },
     staleTime: 30 * 1000,
@@ -201,6 +328,15 @@ export default function ReviewQueuePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['review-queue'] });
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    },
+  });
+
+  const toggleCoordinatorMutation = useMutation({
+    mutationFn: ({ id, isCoordinatorPick }: { id: string; isCoordinatorPick: boolean }) =>
+      adminApi.setCoordinatorPick(id, isCoordinatorPick),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['review-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-coordinator-picks'] });
     },
   });
 
@@ -221,6 +357,7 @@ export default function ReviewQueuePage() {
   const tabs = [
     { key: 'pending', label: 'Pending', color: 'text-amber-600' },
     { key: 'approved', label: 'Approved', color: 'text-success' },
+    { key: 'coordinator', label: 'Coordinator Picks', color: 'text-amber-500' },
     { key: 'rejected', label: 'Rejected', color: 'text-danger' },
   ] as const;
 
@@ -281,6 +418,10 @@ export default function ReviewQueuePage() {
               onPreview={() => setPreviewTarget(template)}
               onApprove={() => approveMutation.mutate(template.id)}
               onReject={() => setRejectTarget({ id: template.id, name: template.nameEn ?? template.nameHi ?? 'Template' })}
+              onToggleCoordinatorPick={() => toggleCoordinatorMutation.mutate({
+                id: template.id,
+                isCoordinatorPick: !template.isCoordinatorPick,
+              })}
               isApproving={approvingId === template.id}
               isRejecting={rejectingId === template.id}
             />

@@ -46,6 +46,13 @@ export const CK = {
 
   // ── Admin stats (invalidate on data change) ───────────────────────
   adminStats: 'admin:stats',                               // TTL: 5 min (300s)
+
+  // ── Home feed (personalised, region-aware) ────────────────────────
+  homeFeed: (state: string, lang: string) =>
+    `home:feed:${state}:${lang}`,                          // TTL: 5 min (300s)
+
+  coordinatorPicks: (state: string) =>
+    `coord:picks:${state}`,                                // TTL: 10 min (600s)
 } as const;
 
 // TTL constants (seconds)
@@ -66,4 +73,6 @@ export const TTL = {
   userPlan:       900,    // 15 min
   userSaved:      300,    // 5 min
   adminStats:     300,    // 5 min
+  homeFeed:       300,    // 5 min
+  coordinatorPicks: 600,  // 10 min
 } as const;

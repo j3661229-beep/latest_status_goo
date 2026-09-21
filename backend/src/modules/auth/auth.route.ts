@@ -8,6 +8,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   // POST /auth/google  — mobile app login (any Google user)
   fastify.post('/google', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     schema: {
       body: {
         type: 'object',
@@ -24,6 +25,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   // POST /auth/google/creator  — Creator Studio Google login (must be invited CREATOR)
   fastify.post('/google/creator', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     schema: {
       body: {
         type: 'object',
@@ -40,6 +42,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   // POST /auth/admin/login  — Admin / Manager email+password login
   fastify.post('/admin/login', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
     schema: {
       body: {
         type: 'object',
@@ -59,6 +62,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   // POST /auth/refresh
   fastify.post('/refresh', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     preHandler: async (req, reply) => {
       const result = RefreshSchema.safeParse(req.body);
       if (!result.success) reply.status(400).send({ error: 'Invalid body' });
@@ -77,6 +81,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   // POST /auth/otp/send
   fastify.post('/otp/send', {
+    config: { rateLimit: { max: 5, timeWindow: '5 minutes' } },
     schema: {
       body: {
         type: 'object',
@@ -93,6 +98,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   // POST /auth/otp/verify
   fastify.post('/otp/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
     schema: {
       body: {
         type: 'object',
@@ -110,8 +116,44 @@ export async function authRoutes(fastify: FastifyInstance) {
     handler: handler.otpVerify.bind(handler),
   });
 
-  // POST /auth/dev-login (dev only)
-  fastify.post('/dev-login', {
-    handler: handler.devLogin.bind(handler),
+  // POST /auth/dev-login — NEVER available in production
+  // Route is not registered at all in production; handler also has a defence-in-depth guard.
+  if (process.env.NODE_ENV !== 'production') {
+    fastify.post('/dev-login', {
+      handler: handler.devLogin.bind(handler),
+    });
+  }
+
+  // POST /auth/firebase-phone — verify Firebase phone auth ID token
+  fastify.post('/firebase-phone', {
+    config: { rateLimit: { max: 20, timeWindow: '5 minutes' } },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['idToken'],
+        properties: { idToken: { type: 'string' } },
+      },
+    },
+    handler: handler.firebasePhoneLogin.bind(handler),
+  });
+
+  // POST /auth/complete-profile — saves name, photo, state, region after OTP onboarding
+  fastify.post('/complete-profile', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', minLength: 2, maxLength: 100 },
+          profilePhoto: { type: 'string' },
+          state: { type: 'string' },
+          region: { type: 'string' },
+          language: { type: 'string', enum: ['HINDI', 'MARATHI', 'ENGLISH', 'GUJARATI', 'PUNJABI', 'TAMIL', 'TELUGU'] },
+        },
+      },
+    },
+    preHandler: [fastify.authenticate],
+    handler: handler.completeProfile.bind(handler),
   });
 }

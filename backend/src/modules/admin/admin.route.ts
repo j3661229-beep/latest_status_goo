@@ -429,7 +429,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
     return reply.send({ data });
   });
 
-  fastify.post('/campaigns/send', { preHandler: [requireAdmin] }, async (req, reply) => {
+  fastify.post('/campaigns/send', { 
+    preHandler: [requireAdmin],
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     const adminId = (req.user as any).userId;
     const { title, body, imageUrl, deepLink, targetSegment, scheduledAt } = req.body as any;
 
@@ -649,5 +652,57 @@ export async function adminRoutes(fastify: FastifyInstance) {
       userId: newUser.id,
       email: newUser.email,
     });
+  });
+
+  // ── COORDINATOR PICKS ─────────────────────────────────────────────────────
+  // PATCH /admin/templates/:id/coordinator-pick
+  fastify.patch('/templates/:id/coordinator-pick', { preHandler: [requireAdmin] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { isCoordinatorPick, coordinatorNote, coordinatorState } = req.body as {
+      isCoordinatorPick: boolean;
+      coordinatorNote?: string;
+      coordinatorState?: string;
+    };
+
+    const template = await fastify.prisma.template.findUnique({ where: { id } });
+    if (!template) return reply.status(404).send({ error: 'Template not found' });
+    if (template.status !== 'APPROVED') {
+      return reply.status(400).send({ error: 'Only approved templates can be coordinator picks' });
+    }
+
+    const updated = await fastify.prisma.template.update({
+      where: { id },
+      data: {
+        isCoordinatorPick: Boolean(isCoordinatorPick),
+        coordinatorNote: coordinatorNote ?? null,
+        coordinatorState: coordinatorState ?? null,
+      },
+      select: {
+        id: true, nameHi: true, nameEn: true, isCoordinatorPick: true,
+        coordinatorNote: true, coordinatorState: true,
+      },
+    });
+
+    // Invalidate coordinator picks cache for all states
+    await cache.del('coord:picks:all');
+    if (coordinatorState) await cache.del(`coord:picks:${coordinatorState}`);
+
+    return reply.send({ success: true, template: updated });
+  });
+
+  // GET /admin/coordinator-picks — list all coordinator-picked templates
+  fastify.get('/coordinator-picks', { preHandler: [requireAdmin] }, async (_req, reply) => {
+    const picks = await fastify.prisma.template.findMany({
+      where: { isCoordinatorPick: true },
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        id: true, nameHi: true, nameEn: true, nameMr: true,
+        imageThumbUrl: true, gradient: true, isCoordinatorPick: true,
+        coordinatorNote: true, coordinatorState: true, status: true,
+        useCount: true, shareCount: true,
+        category: { select: { nameEn: true, emoji: true } },
+      },
+    });
+    return reply.send({ data: picks, total: picks.length });
   });
 }

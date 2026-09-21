@@ -73,6 +73,27 @@ class AppColors {
       offset: const Offset(0, 16),
     ),
   ];
+
+  // Coordinator / Festival special colors
+  static const Color coordinatorGold = Color(0xFFFFD700);
+  static const Color festivalOrange = Color(0xFFFF6B35);
+
+  /// Parse a gradient JSON string like "#FF7C5CFC,#FFFF6B9D" into a list of Colors.
+  /// Returns null if the string is null or cannot be parsed.
+  static List<Color>? parseGradient(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final parts = raw.split(',');
+      if (parts.length < 2) return null;
+      return parts.map((hex) {
+        final h = hex.trim().replaceAll('#', '');
+        final val = int.parse(h.padLeft(8, 'F'), radix: 16);
+        return Color(val);
+      }).toList();
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 class AppTheme {

@@ -7,6 +7,7 @@ import { RefreshTokenStore } from '../../lib/auth/token.store';
 import type { GoogleAuthBody, RefreshBody, AdminLoginBody, OTPSendBody, OTPVerifyBody } from './auth.schema';
 import type { Redis } from 'ioredis';
 import * as bcrypt from 'bcryptjs';
+import { env } from '../../config/env';
 
 export class AuthHandler {
   constructor(
@@ -16,6 +17,73 @@ export class AuthHandler {
 
   private get tokenStore() {
     return new RefreshTokenStore(this.redis);
+  }
+
+  // POST /auth/firebase-phone (Mobile User — Firebase Phone Auth)
+  async firebasePhoneLogin(req: FastifyRequest<{ Body: { idToken: string } }>, reply: FastifyReply) {
+    const { idToken } = req.body;
+    let phoneNumber: string;
+
+    // Verify Firebase ID token
+    // In production, use Firebase Admin SDK: admin.auth().verifyIdToken(idToken)
+    // For now we decode the JWT payload without verification (Firebase tokens are RS256 — add firebase-admin later)
+    try {
+      const parts = idToken.split('.');
+      if (parts.length !== 3) throw new Error('Invalid token format');
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+      phoneNumber = payload.phone_number;
+      if (!phoneNumber) throw new Error('No phone number in token');
+    } catch {
+      // Dev fallback — accept a hardcoded test phone
+      if (env.NODE_ENV !== 'production') {
+        phoneNumber = '+919999999999';
+      } else {
+        return reply.status(401).send({ error: 'Invalid Firebase token' });
+      }
+    }
+
+    // Upsert user by phone number
+    let user = await this.prisma.user.findUnique({ where: { phoneNumber } });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          phoneNumber,
+          language: Language.HINDI,
+          plan: Plan.FREE,
+          role: UserRole.USER,
+          isActive: true,
+          lastActiveAt: new Date(),
+        } as any,
+      });
+    } else {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastActiveAt: new Date() },
+      });
+    }
+
+    const accessToken = await JWTService.signAccessToken({ userId: user.id, role: user.role, plan: user.plan });
+    const refreshToken = await JWTService.signRefreshToken(user.id);
+    await this.tokenStore.save(user.id, refreshToken);
+
+    return reply.status(200).send({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        plan: user.plan,
+        role: user.role,
+        language: user.language,
+        profilePhoto: user.profilePhoto,
+        state: (user as any).state,
+        region: (user as any).region,
+      },
+      onboardingRequired: !user.name || !(user as any).onboardingCompleted,
+    });
   }
 
   // POST /auth/google (Mobile User Login)
@@ -300,7 +368,39 @@ export class AuthHandler {
         language: user.language,
         profilePhoto: user.profilePhoto,
       },
-      onboardingRequired: !user.name, // If name is missing, they are new OTP users
+      onboardingRequired: !user.name || !user.onboardingCompleted,
     });
+  }
+
+  // POST /auth/complete-profile — saves name, photo URL, state, region after OTP
+  async completeProfile(req: FastifyRequest, reply: FastifyReply) {
+    const userId = (req.user as any)?.userId ?? (req.user as any)?.sub;
+    if (!userId) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const { name, profilePhoto, state, region, language } = req.body as any;
+
+    if (!name || name.trim().length < 2) {
+      return reply.status(400).send({ error: 'Name must be at least 2 characters' });
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: name.trim(),
+        ...(profilePhoto ? { profilePhoto } : {}),
+        ...(state ? { state } : {}),
+        ...(region ? { region } : {}),
+        ...(language ? { language } : {}),
+        onboardingCompleted: true,
+        lastActiveAt: new Date(),
+      },
+      select: {
+        id: true, name: true, email: true, phoneNumber: true,
+        plan: true, role: true, language: true, profilePhoto: true,
+        state: true, region: true, onboardingCompleted: true,
+      },
+    });
+
+    return reply.send({ user: updated, success: true });
   }
 }

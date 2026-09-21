@@ -17,7 +17,7 @@ class AppConstants {
   // Razorpay
   static const String razorpayKeyId = String.fromEnvironment(
     'FLUTTER_RAZORPAY_KEY_ID',
-    defaultValue: 'rzp_test_placeholder',
+    defaultValue: 'rzp_test_TejiwvEA4ruRil',
   );
 
   // Hive box names
@@ -31,10 +31,13 @@ class AppConstants {
   static const String keyUser = 'user';
   static const String keyLanguage = 'language';
   static const String keyHasOnboarded = 'has_onboarded';
+  static const String keyOnboardingCompleted = 'onboarding_completed';
   static const String keyDisplayName = 'display_name';
   static const String keyCustomPhoto = 'custom_photo';
   static const String keyStreakCount = 'streak_count';
   static const String keyLastStreakDate = 'last_streak_date';
+  static const String keyState = 'user_state';
+  static const String keyRegion = 'user_region';
 
   // Plan limits (FREE)
   static const int freeImageDownloadsPerDay = 10;

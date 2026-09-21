@@ -9,7 +9,7 @@ import { Download, TrendingUp, Eye, Share2, Upload, CheckCircle, Clock } from 'l
 import { useQuery as useQ } from '@tanstack/react-query';
 import { creatorApi } from '@/lib/api';
 
-const PLATFORM_COLORS = ['#25D366', '#128C7E', '#E4405F', '#1877F2', '#7C5CFC'];
+const PLATFORM_COLORS = ['#25D366', '#128C7E', '#E4405F', '#1877F2', '#2563EB'];
 
 function StatTile({ label, value, icon: Icon, color = 'text-primary', bg = 'bg-primary/10' }: any) {
   return (
@@ -98,15 +98,15 @@ export default function CreatorAnalyticsPage() {
               <AreaChart data={viewsData}>
                 <defs>
                   <linearGradient id="cviewsGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#7C5CFC" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#7C5CFC" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#2563EB" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9A96B8' }} interval={6} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9A96B8' }} />
                 <Tooltip contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }}
                   formatter={(v: number) => [v.toLocaleString(), 'Views']} />
-                <Area type="monotone" dataKey="views" stroke="#7C5CFC" strokeWidth={2.5} fill="url(#cviewsGrad)" dot={false} />
+                <Area type="monotone" dataKey="views" stroke="#2563EB" strokeWidth={2.5} fill="url(#cviewsGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           )}

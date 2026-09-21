@@ -47,15 +47,17 @@ class TemplateModel {
 
   // Meta
   final List<String> tags;
-  final bool isFeatured;
-  final bool isTrending;
-  final bool isPremium;
-  final bool isNew;
-  final int useCount;
-  final int shareCount;
-  final int saveCount;
-  final int viewCount;
-  final String primaryLanguage;
+  final bool? isFeatured;
+  final bool? isTrending;
+  final bool? isPremium;
+  final bool? isNew;
+  final bool? isCoordinatorPick;
+  final String? coordinatorNote;
+  final int? useCount;
+  final int? shareCount;
+  final int? saveCount;
+  final int? viewCount;
+  final String? primaryLanguage;
 
   const TemplateModel({
     required this.id,
@@ -88,15 +90,17 @@ class TemplateModel {
     this.nameColor,
     this.nameFont,
     this.tags = const [],
-    this.isFeatured = false,
-    this.isTrending = false,
-    this.isPremium = false,
-    this.isNew = false,
-    this.useCount = 0,
-    this.shareCount = 0,
-    this.saveCount = 0,
-    this.viewCount = 0,
-    this.primaryLanguage = 'HINDI',
+    this.isFeatured,
+    this.isTrending,
+    this.isPremium,
+    this.isNew,
+    this.isCoordinatorPick,
+    this.coordinatorNote,
+    this.useCount,
+    this.shareCount,
+    this.saveCount,
+    this.viewCount,
+    this.primaryLanguage,
   });
 
   bool get isVideo => type == 'VIDEO';
@@ -126,26 +130,28 @@ class TemplateModel {
 class CategoryModel {
   final String id;
   final String slug;
-  final String nameHi;
-  final String nameMr;
-  final String nameEn;
-  final String emoji;
-  final String gradient;
+  final String? nameHi;
+  final String? nameMr;
+  final String? nameEn;
+  final String? emoji;
+  final String? gradient;
+  final int? templateCount;
 
   const CategoryModel({
     required this.id,
     required this.slug,
-    required this.nameHi,
-    required this.nameMr,
-    required this.nameEn,
-    required this.emoji,
-    required this.gradient,
+    this.nameHi,
+    this.nameMr,
+    this.nameEn,
+    this.emoji,
+    this.gradient,
+    this.templateCount,
   });
 
   String nameFor(String lang) => switch (lang) {
-    'MARATHI' => nameMr,
-    'ENGLISH' => nameEn,
-    _ => nameHi,
+    'MARATHI' => nameMr ?? nameHi ?? nameEn ?? slug,
+    'ENGLISH' => nameEn ?? nameHi ?? nameMr ?? slug,
+    _ => nameHi ?? nameMr ?? nameEn ?? slug,
   };
 
   factory CategoryModel.fromJson(Map<String, dynamic> json) => _$CategoryModelFromJson(json);

@@ -134,7 +134,7 @@ export default function CreatorDashboardPage() {
                   contentStyle={{ borderRadius: 12, border: 'none', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                   formatter={(v: number) => [v.toLocaleString(), 'Uses']}
                 />
-                <Bar dataKey="uses" fill="#7C5CFC" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="uses" fill="#2563EB" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -206,7 +206,7 @@ export default function CreatorDashboardPage() {
                 <div className="w-2 h-2 rounded-full bg-primary/30 shrink-0" />
                 <div
                   className="w-10 h-14 rounded-lg shrink-0 flex items-center justify-center"
-                  style={{ background: t.gradient || 'linear-gradient(135deg,#7C5CFC,#FF6B9D)' }}
+                  style={{ background: t.gradient || 'linear-gradient(135deg,#2563EB,#0EA5E9)' }}
                 >
                   <span className="text-white font-800 text-[8px] text-center px-1 leading-tight">
                     {(t.nameEn || t.nameHi || '').slice(0, 8)}

@@ -9,112 +9,26 @@ async function main() {
 
   // ── 1. CATEGORIES ─────────────────────────────────────────
   console.log('📂 Seeding categories...');
-  const categories = await Promise.all([
-    prisma.category.upsert({
-      where: { slug: 'devotional' },
+  const categoryDefs = [
+    { slug: 'devotional', nameEn: 'Devotional', nameHi: 'भक्ति', nameMr: 'भक्ती', emoji: '🙏', gradient: 'linear-gradient(135deg, #F7971E 0%, #FFD200 100%)', sortOrder: 1 },
+    { slug: 'motivational', nameEn: 'Motivational', nameHi: 'प्रेरणा', nameMr: 'प्रेरणा', emoji: '💪', gradient: 'linear-gradient(135deg, #7C5CFC 0%, #FF6B9D 100%)', sortOrder: 2 },
+    { slug: 'good-morning', nameEn: 'Good Morning', nameHi: 'सुप्रभात', nameMr: 'शुभ सकाळ', emoji: '🌅', gradient: 'linear-gradient(135deg, #2DD4BF 0%, #7C5CFC 100%)', sortOrder: 3 },
+    { slug: 'festival', nameEn: 'Festival', nameHi: 'त्योहार', nameMr: 'सण', emoji: '🎉', gradient: 'linear-gradient(135deg, #FF6B9D 0%, #FFB347 100%)', sortOrder: 4 },
+    { slug: 'birthday', nameEn: 'Birthday', nameHi: 'जन्मदिन', nameMr: 'वाढदिवस', emoji: '🎂', gradient: 'linear-gradient(135deg, #7C5CFC 0%, #FF6B9D 100%)', sortOrder: 5 },
+    { slug: 'nature', nameEn: 'Nature', nameHi: 'प्रकृति', nameMr: 'निसर्ग', emoji: '🌿', gradient: 'linear-gradient(135deg, #10B981 0%, #2DD4BF 100%)', sortOrder: 6 },
+    { slug: 'love', nameEn: 'Love & Relationship', nameHi: 'प्यार', nameMr: 'प्रेम', emoji: '❤️', gradient: 'linear-gradient(135deg, #FF6B9D 0%, #FF8E53 100%)', sortOrder: 7 },
+    { slug: 'good-night', nameEn: 'Good Night', nameHi: 'शुभ रात्रि', nameMr: 'शुभ रात्री', emoji: '🌙', gradient: 'linear-gradient(135deg, #1a1a2e 0%, #7C5CFC 100%)', sortOrder: 8 },
+  ];
+
+  const categories = [];
+  for (const c of categoryDefs) {
+    const cat = await prisma.category.upsert({
+      where: { slug: c.slug },
       update: {},
-      create: {
-        slug: 'devotional',
-        nameEn: 'Devotional',
-        nameHi: 'भक्ति',
-        nameMr: 'भक्ती',
-        emoji: '🙏',
-        gradient: 'linear-gradient(135deg, #F7971E 0%, #FFD200 100%)',
-        sortOrder: 1,
-      },
-    }),
-    prisma.category.upsert({
-      where: { slug: 'motivational' },
-      update: {},
-      create: {
-        slug: 'motivational',
-        nameEn: 'Motivational',
-        nameHi: 'प्रेरणा',
-        nameMr: 'प्रेरणा',
-        emoji: '💪',
-        gradient: 'linear-gradient(135deg, #7C5CFC 0%, #FF6B9D 100%)',
-        sortOrder: 2,
-      },
-    }),
-    prisma.category.upsert({
-      where: { slug: 'good-morning' },
-      update: {},
-      create: {
-        slug: 'good-morning',
-        nameEn: 'Good Morning',
-        nameHi: 'सुप्रभात',
-        nameMr: 'शुभ सकाळ',
-        emoji: '🌅',
-        gradient: 'linear-gradient(135deg, #2DD4BF 0%, #7C5CFC 100%)',
-        sortOrder: 3,
-      },
-    }),
-    prisma.category.upsert({
-      where: { slug: 'festival' },
-      update: {},
-      create: {
-        slug: 'festival',
-        nameEn: 'Festival',
-        nameHi: 'त्योहार',
-        nameMr: 'सण',
-        emoji: '🎉',
-        gradient: 'linear-gradient(135deg, #FF6B9D 0%, #FFB347 100%)',
-        sortOrder: 4,
-      },
-    }),
-    prisma.category.upsert({
-      where: { slug: 'birthday' },
-      update: {},
-      create: {
-        slug: 'birthday',
-        nameEn: 'Birthday',
-        nameHi: 'जन्मदिन',
-        nameMr: 'वाढदिवस',
-        emoji: '🎂',
-        gradient: 'linear-gradient(135deg, #7C5CFC 0%, #FF6B9D 100%)',
-        sortOrder: 5,
-      },
-    }),
-    prisma.category.upsert({
-      where: { slug: 'nature' },
-      update: {},
-      create: {
-        slug: 'nature',
-        nameEn: 'Nature',
-        nameHi: 'प्रकृति',
-        nameMr: 'निसर्ग',
-        emoji: '🌿',
-        gradient: 'linear-gradient(135deg, #10B981 0%, #2DD4BF 100%)',
-        sortOrder: 6,
-      },
-    }),
-    prisma.category.upsert({
-      where: { slug: 'love' },
-      update: {},
-      create: {
-        slug: 'love',
-        nameEn: 'Love & Relationship',
-        nameHi: 'प्यार',
-        nameMr: 'प्रेम',
-        emoji: '❤️',
-        gradient: 'linear-gradient(135deg, #FF6B9D 0%, #FF8E53 100%)',
-        sortOrder: 7,
-      },
-    }),
-    prisma.category.upsert({
-      where: { slug: 'good-night' },
-      update: {},
-      create: {
-        slug: 'good-night',
-        nameEn: 'Good Night',
-        nameHi: 'शुभ रात्रि',
-        nameMr: 'शुभ रात्री',
-        emoji: '🌙',
-        gradient: 'linear-gradient(135deg, #1a1a2e 0%, #7C5CFC 100%)',
-        sortOrder: 8,
-      },
-    }),
-  ]);
+      create: c,
+    });
+    categories.push(cat);
+  }
   console.log(`   ✅ ${categories.length} categories created\n`);
 
   // ── 2. ADMIN + CREATOR USERS ───────────────────────────────

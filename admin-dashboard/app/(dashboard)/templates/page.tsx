@@ -117,7 +117,7 @@ export default function TemplatesPage() {
                     <div className="flex items-center gap-3">
                       <div
                         className="w-8 h-11 rounded-lg shrink-0 flex items-center justify-center text-white text-sm"
-                        style={{ background: t.gradient || 'linear-gradient(135deg,#7C5CFC,#FF6B9D)' }}
+                        style={{ background: t.gradient || 'linear-gradient(135deg,#2563EB,#0EA5E9)' }}
                       >
                         {t.type === 'VIDEO' ? '🎬' : '🖼'}
                       </div>

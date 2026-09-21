@@ -23,56 +23,60 @@
 }
 
 @layer components {
-  /* Sidebar */
+  /* Sidebar Nav Items — White & Royal Blue */
   .sidebar-nav-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-white/60
-           hover:text-white hover:bg-sidebar-muted transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-slate-600
+           hover:text-blue-600 hover:bg-blue-50/70 transition-all duration-150 cursor-pointer;
   }
   .sidebar-nav-item.active {
-    @apply text-white bg-primary;
+    @apply text-blue-600 bg-blue-50 font-bold border border-blue-200/80 shadow-sm;
   }
 
-  /* Cards */
+  /* Cards — Crisp White with Subtle Slate Borders */
   .stat-card {
-    @apply bg-white rounded-2xl p-5 shadow-card border border-surface-border
-           hover:shadow-card-hover transition-shadow duration-200;
+    @apply bg-white rounded-2xl p-5 shadow-card border border-slate-200/80
+           hover:shadow-card-hover hover:border-blue-200 transition-all duration-200;
   }
 
-  /* Badge variants */
-  .badge-approved  { @apply bg-green-100 text-green-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-pending   { @apply bg-amber-100 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-rejected  { @apply bg-red-100 text-red-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-draft     { @apply bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-premium   { @apply bg-amber-100 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-video     { @apply bg-purple-100 text-purple-700 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-image     { @apply bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full; }
+  /* Badge variants — Refined Soft Tones */
+  .badge-approved  { @apply bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-pending   { @apply bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-rejected  { @apply bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-draft     { @apply bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-premium   { @apply bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-xs text-xs font-extrabold px-2.5 py-1 rounded-full; }
+  .badge-video     { @apply bg-sky-50 text-sky-700 border border-sky-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+  .badge-image     { @apply bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold px-2.5 py-1 rounded-full; }
 
-  /* Table */
+  /* Table — Clean Light SaaS */
   .data-table th {
-    @apply text-xs font-bold text-muted uppercase tracking-wide px-4 py-3 border-b border-surface-border;
+    @apply text-xs font-bold text-slate-500 uppercase tracking-wider px-4 py-3.5 bg-slate-50/80 border-b border-slate-200;
   }
   .data-table td {
-    @apply text-sm px-4 py-3 border-b border-surface-border;
+    @apply text-sm text-slate-700 px-4 py-3.5 border-b border-slate-100 font-medium;
   }
   .data-table tr:hover td {
-    @apply bg-surface;
+    @apply bg-blue-50/30 transition-colors;
   }
 
-  /* Buttons */
+  /* Buttons — Royal Blue Primary */
   .btn-primary {
-    @apply bg-primary text-white font-bold px-4 py-2.5 rounded-xl
-           hover:bg-primary-dark transition-colors duration-200 text-sm;
+    @apply bg-blue-600 text-white font-bold px-4 py-2.5 rounded-xl
+           hover:bg-blue-700 hover:shadow-primary-glow active:scale-[0.99] transition-all duration-150 text-sm shadow-sm;
   }
   .btn-ghost {
-    @apply text-muted-foreground font-semibold px-4 py-2 rounded-xl
-           hover:bg-surface-border transition-colors duration-200 text-sm;
+    @apply text-slate-600 hover:text-slate-900 font-semibold px-4 py-2 rounded-xl
+           hover:bg-slate-100 transition-colors duration-150 text-sm;
+  }
+  .btn-outline {
+    @apply border border-slate-300 text-slate-700 bg-white font-semibold px-4 py-2.5 rounded-xl
+           hover:border-blue-600 hover:text-blue-600 hover:bg-blue-50/30 transition-all duration-150 text-sm;
   }
   .btn-danger {
-    @apply bg-danger text-white font-bold px-4 py-2.5 rounded-xl
-           hover:bg-red-600 transition-colors duration-200 text-sm;
+    @apply bg-rose-600 text-white font-bold px-4 py-2.5 rounded-xl
+           hover:bg-rose-700 transition-colors duration-150 text-sm shadow-sm;
   }
   .btn-success {
-    @apply bg-success text-white font-bold px-4 py-2.5 rounded-xl
-           hover:bg-green-600 transition-colors duration-200 text-sm;
+    @apply bg-emerald-600 text-white font-bold px-4 py-2.5 rounded-xl
+           hover:bg-emerald-700 transition-colors duration-150 text-sm shadow-sm;
   }
 }

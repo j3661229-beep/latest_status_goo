@@ -10,29 +10,42 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Status Go brand palette
+        // Modern White & Royal Blue palette
         primary: {
-          DEFAULT: '#7C5CFC',
-          light: '#9B82FF',
-          dark: '#6344E8',
+          DEFAULT: '#2563EB', // Royal Blue 600
+          light: '#3B82F6',   // Blue 500
+          dark: '#1D4ED8',    // Blue 700
+          subtle: '#EFF6FF',  // Blue 50
+          border: '#BFDBFE',  // Blue 200
           foreground: '#ffffff',
         },
-        secondary: { DEFAULT: '#FF6B9D', foreground: '#ffffff' },
-        accent: { DEFAULT: '#2DD4BF', foreground: '#ffffff' },
-        amber: { DEFAULT: '#FFB347' },
+        secondary: { 
+          DEFAULT: '#0EA5E9', // Sky Blue 500
+          light: '#38BDF8',
+          dark: '#0284C7',
+          foreground: '#ffffff' 
+        },
+        accent: { DEFAULT: '#0284C7', foreground: '#ffffff' },
+        amber: { DEFAULT: '#F59E0B' },
         success: { DEFAULT: '#10B981' },
         danger: { DEFAULT: '#EF4444' },
-        warning: { DEFAULT: '#FFD60A' },
-        // Sidebar
+        warning: { DEFAULT: '#F59E0B' },
+        // Sidebar — Crisp White & Blue
         sidebar: {
-          DEFAULT: '#0F0B1E',
-          border: '#1E1837',
-          muted: '#2A2347',
-          active: '#7C5CFC',
+          DEFAULT: '#FFFFFF',
+          border: '#E2E8F0',
+          muted: '#F8FAFC',
+          active: '#EFF6FF',
+          text: '#475569',
         },
-        // Content area
-        surface: { DEFAULT: '#F8F7FF', card: '#FFFFFF', border: '#EDECF8' },
-        muted: { DEFAULT: '#9A96B8', foreground: '#4A4769' },
+        // Content area — Clean Slate
+        surface: { 
+          DEFAULT: '#F8FAFC', 
+          card: '#FFFFFF', 
+          border: '#E2E8F0',
+          muted: '#F1F5F9',
+        },
+        muted: { DEFAULT: '#64748B', foreground: '#334155' },
       },
       fontFamily: {
         sans: ['var(--font-nunito)', 'system-ui', 'sans-serif'],
@@ -43,15 +56,18 @@ module.exports = {
         '2xl': '20px',
       },
       boxShadow: {
-        card: '0 2px 16px rgba(124, 92, 252, 0.08)',
-        'card-hover': '0 8px 32px rgba(124, 92, 252, 0.16)',
+        card: '0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.05)',
+        'card-hover': '0 10px 25px -5px rgba(37, 99, 235, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.03)',
+        'primary-glow': '0 4px 14px 0 rgba(37, 99, 235, 0.25)',
       },
       backgroundImage: {
-        'gradient-brand': 'linear-gradient(135deg, #7C5CFC 0%, #FF6B9D 100%)',
-        'gradient-devotional': 'linear-gradient(135deg, #F7971E 0%, #FFD200 100%)',
-        'gradient-morning': 'linear-gradient(135deg, #2DD4BF 0%, #7C5CFC 100%)',
+        'gradient-brand': 'linear-gradient(135deg, #2563EB 0%, #0EA5E9 100%)',
+        'gradient-subtle': 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
+        'gradient-devotional': 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+        'gradient-morning': 'linear-gradient(135deg, #0284C7 0%, #2563EB 100%)',
       },
     },
   },
   plugins: [],
 };
+

@@ -15,7 +15,14 @@ export class SearchService {
     const normalizedQ = query.trim().toLowerCase();
     if (!normalizedQ || normalizedQ.length < 2) return { data: [], total: 0 };
 
-    const cacheKey = CK.search(normalizedQ, lang ?? 'all', type ?? 'all');
+    // Strictly validate type to prevent SQL injection via interpolation
+    const ALLOWED_TYPES = ['IMAGE', 'VIDEO'] as const;
+    type AllowedType = typeof ALLOWED_TYPES[number];
+    const safeType: AllowedType | undefined = ALLOWED_TYPES.includes(type as AllowedType)
+      ? (type as AllowedType)
+      : undefined;
+
+    const cacheKey = CK.search(normalizedQ, lang ?? 'all', safeType ?? 'all');
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
 
@@ -23,40 +30,112 @@ export class SearchService {
     const skip = (page - 1) * limit;
 
     // Full-text + trigram search (§LLD-03)
-    const results: any[] = await this.prisma.$queryRaw`
-      SELECT t.*, c.slug as "categorySlug", c."nameHi" as "categoryNameHi",
-        ts_rank(
-          to_tsvector('simple',
-            coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
-            coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
-            coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
-            array_to_string(t.tags, ' ')
-          ),
-          plainto_tsquery('simple', ${normalizedQ})
-        ) AS rank,
-        similarity(
-          coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' || coalesce(t."nameEn",''),
-          ${normalizedQ}
-        ) AS trgm_score
-      FROM "Template" t
-      JOIN "Category" c ON c.id = t."categoryId"
-      WHERE t.status = 'APPROVED'
-        AND (
-          to_tsvector('simple',
-            coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
-            coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
-            coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
-            array_to_string(t.tags, ' ')
-          ) @@ plainto_tsquery('simple', ${normalizedQ})
-          OR similarity(
+    // Use separate parameterized branches for type to avoid string interpolation into SQL
+    let results: any[];
+    if (safeType === 'IMAGE') {
+      results = await this.prisma.$queryRaw`
+        SELECT t.*, c.slug as "categorySlug", c."nameHi" as "categoryNameHi",
+          ts_rank(
+            to_tsvector('simple',
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
+              coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
+              coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
+              array_to_string(t.tags, ' ')
+            ),
+            plainto_tsquery('simple', ${normalizedQ})
+          ) AS rank,
+          similarity(
             coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' || coalesce(t."nameEn",''),
             ${normalizedQ}
-          ) > 0.15
-        )
-        ${type ? `AND t.type = '${type}'` : ''}
-      ORDER BY rank DESC, trgm_score DESC, t."useCount" DESC
-      LIMIT ${limit} OFFSET ${skip}
-    `;
+          ) AS trgm_score
+        FROM "Template" t
+        JOIN "Category" c ON c.id = t."categoryId"
+        WHERE t.status = 'APPROVED' AND t.type = 'IMAGE'
+          AND (
+            to_tsvector('simple',
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
+              coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
+              coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
+              array_to_string(t.tags, ' ')
+            ) @@ plainto_tsquery('simple', ${normalizedQ})
+            OR similarity(
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' || coalesce(t."nameEn",''),
+              ${normalizedQ}
+            ) > 0.15
+          )
+        ORDER BY rank DESC, trgm_score DESC, t."useCount" DESC
+        LIMIT ${limit} OFFSET ${skip}
+      `;
+    } else if (safeType === 'VIDEO') {
+      results = await this.prisma.$queryRaw`
+        SELECT t.*, c.slug as "categorySlug", c."nameHi" as "categoryNameHi",
+          ts_rank(
+            to_tsvector('simple',
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
+              coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
+              coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
+              array_to_string(t.tags, ' ')
+            ),
+            plainto_tsquery('simple', ${normalizedQ})
+          ) AS rank,
+          similarity(
+            coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' || coalesce(t."nameEn",''),
+            ${normalizedQ}
+          ) AS trgm_score
+        FROM "Template" t
+        JOIN "Category" c ON c.id = t."categoryId"
+        WHERE t.status = 'APPROVED' AND t.type = 'VIDEO'
+          AND (
+            to_tsvector('simple',
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
+              coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
+              coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
+              array_to_string(t.tags, ' ')
+            ) @@ plainto_tsquery('simple', ${normalizedQ})
+            OR similarity(
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' || coalesce(t."nameEn",''),
+              ${normalizedQ}
+            ) > 0.15
+          )
+        ORDER BY rank DESC, trgm_score DESC, t."useCount" DESC
+        LIMIT ${limit} OFFSET ${skip}
+      `;
+    } else {
+      // No type filter — search all
+      results = await this.prisma.$queryRaw`
+        SELECT t.*, c.slug as "categorySlug", c."nameHi" as "categoryNameHi",
+          ts_rank(
+            to_tsvector('simple',
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
+              coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
+              coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
+              array_to_string(t.tags, ' ')
+            ),
+            plainto_tsquery('simple', ${normalizedQ})
+          ) AS rank,
+          similarity(
+            coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' || coalesce(t."nameEn",''),
+            ${normalizedQ}
+          ) AS trgm_score
+        FROM "Template" t
+        JOIN "Category" c ON c.id = t."categoryId"
+        WHERE t.status = 'APPROVED'
+          AND (
+            to_tsvector('simple',
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' ||
+              coalesce(t."nameEn",'') || ' ' || coalesce(t."quoteHi",'') || ' ' ||
+              coalesce(t."quoteMr",'') || ' ' || coalesce(t."quoteEn",'') || ' ' ||
+              array_to_string(t.tags, ' ')
+            ) @@ plainto_tsquery('simple', ${normalizedQ})
+            OR similarity(
+              coalesce(t."nameHi",'') || ' ' || coalesce(t."nameMr",'') || ' ' || coalesce(t."nameEn",''),
+              ${normalizedQ}
+            ) > 0.15
+          )
+        ORDER BY rank DESC, trgm_score DESC, t."useCount" DESC
+        LIMIT ${limit} OFFSET ${skip}
+      `;
+    }
 
     const result = { data: results, total: results.length, query, lang };
     await this.cache.set(cacheKey, result, TTL.search);

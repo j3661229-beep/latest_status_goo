@@ -56,6 +56,10 @@ export const adminApi = {
     api.post(`/admin/templates/${id}/feature`, { isFeatured }).then(r => r.data),
   patchTemplate: (id: string, data: Record<string, any>) =>
     api.patch(`/admin/templates/${id}`, data).then(r => r.data),
+  // Coordinator Picks
+  getCoordinatorPicks: () => api.get('/admin/coordinator-picks').then(r => r.data),
+  setCoordinatorPick: (id: string, isCoordinatorPick: boolean, coordinatorNote?: string, coordinatorState?: string) =>
+    api.patch(`/admin/templates/${id}/coordinator-pick`, { isCoordinatorPick, coordinatorNote, coordinatorState }).then(r => r.data),
   archiveTemplate: (id: string) =>
     api.delete(`/admin/templates/${id}`).then(r => r.data),
 
