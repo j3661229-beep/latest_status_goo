@@ -38,6 +38,12 @@ export const authApi = {
     axios
       .post(`${BASE_URL}/auth/google/creator`, { idToken })
       .then((r) => r.data),
+
+  // Creator email & password login (for invited creators / demo)
+  creatorLogin: (email: string, password: string) =>
+    axios
+      .post(`${BASE_URL}/auth/creator/login`, { email, password })
+      .then((r) => r.data),
 };
 
 // ── Creator API functions ────────────────────────────────────────

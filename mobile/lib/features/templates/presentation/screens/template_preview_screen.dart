@@ -5,11 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:animate_do/animate_do.dart';
 
+import '../../../../core/api/api_client.dart';
 import '../../../../core/utils/color_utils.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/models/branding_frame.dart';
@@ -35,7 +36,7 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
   bool _isSaved = false;
   bool _isSharing = false;
 
-  // Draggable Positions (percentages 0.0 to 1.0)
+  // Positions (percentages 0.0 to 1.0)
   bool _positionsInitialized = false;
   double _nameTop = 0.77;
   double _nameLeft = 0.5;
@@ -102,10 +103,15 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
       // Record Engagement
       ref.read(templateRepositoryProvider).recordShare(widget.templateId, 'NATIVE');
 
-      await Share.shareXFiles([xfile], text: 'साझा करें (Share with Status Go! 📲)');
+      await Share.shareXFiles([xfile], text: 'Status Go ऐप से साझा किया गया 📲');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to share: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('शेयर करने में त्रुटि: $e', style: GoogleFonts.hind()),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSharing = false);
@@ -132,21 +138,33 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
       final pngBytes = await _captureImage();
       if (pngBytes == null) return;
 
-      final result = await ImageGallerySaverPlus.saveImage(pngBytes, quality: 100, name: "status_go_${DateTime.now().millisecondsSinceEpoch}");
+      final result = await ImageGallerySaverPlus.saveImage(
+        pngBytes,
+        quality: 100,
+        name: "status_go_${DateTime.now().millisecondsSinceEpoch}",
+      );
       
       if (mounted) {
         final success = result['isSuccess'] ?? false;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(success ? '✅ Saved to Gallery!' : '❌ Failed to save'),
+            content: Text(
+              success ? '✅ फोटो गैलरी में सेव हो गई!' : '❌ सेव नहीं हो सकी',
+              style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
             backgroundColor: success ? AppColors.success : AppColors.danger,
             behavior: SnackBarBehavior.floating,
-          )
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('त्रुटि: $e', style: GoogleFonts.hind()),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       }
     }
   }
@@ -173,24 +191,77 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF1E293B), // Soft Slate background for previewing canvas
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+          onPressed: () => context.pop(),
+        ),
+        title: Text(
+          'स्टेटस तैयार करें',
+          style: GoogleFonts.hind(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 19),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _isSaved ? Icons.bookmark : Icons.bookmark_border,
+              color: _isSaved ? AppColors.accent : Colors.white,
+              size: 26,
+            ),
+            tooltip: 'सेव करें',
+            onPressed: () async {
+              final newSaved = !_isSaved;
+              setState(() => _isSaved = newSaved);
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                if (newSaved) {
+                  await apiClient.post('/user/saved/${widget.templateId}');
+                } else {
+                  await apiClient.delete('/user/saved/${widget.templateId}');
+                }
+              } catch (_) {}
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    newSaved ? 'स्टेटस सेव हो गया' : 'स्टेटस सेव से हटा दिया गया',
+                    style: GoogleFonts.hind(),
+                  ),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: templateAsync.when(
         loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
         error: (err, _) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+              const Icon(Icons.error_outline, color: Colors.white70, size: 48),
               const SizedBox(height: 16),
-              const Text('Could not load template', style: TextStyle(color: Colors.white)),
+              Text(
+                'स्टेटस लोड नहीं हो सका',
+                style: GoogleFonts.hind(color: Colors.white, fontSize: 16),
+              ),
               const SizedBox(height: 16),
-              ElevatedButton(onPressed: () => context.pop(), child: const Text('Go Back')),
+              ElevatedButton(
+                onPressed: () => context.pop(),
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                child: Text('वापस जाएं (Back)', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+              ),
             ],
           ),
         ),
         data: (template) {
           if (template == null) {
-            return const Center(child: Text('Template not found', style: TextStyle(color: Colors.white)));
+            return Center(
+              child: Text('स्टेटस नहीं मिला', style: GoogleFonts.hind(color: Colors.white, fontSize: 16)),
+            );
           }
 
           if (!_positionsInitialized) {
@@ -210,313 +281,293 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
             });
           }
 
-          // Parse gradient
-          List<Color> gradientColors = [AppColors.primary, AppColors.secondary];
+          List<Color> gradientColors = [AppColors.primary, AppColors.primaryLight];
           if (template.gradient != null && template.gradient!.isNotEmpty) {
             gradientColors = ColorUtils.parseGradientString(template.gradient);
           } else if (template.category?.gradient != null) {
             gradientColors = ColorUtils.parseGradientString(template.category!.gradient);
           }
 
-          return Stack(
+          return Column(
             children: [
-              // ── Template Frame ───────────────────────────────────────────
-              Center(
-                child: ZoomIn(
-                  duration: const Duration(milliseconds: 600),
-                  child: RepaintBoundary(
-                    key: _repaintBoundaryKey,
-                    child: AspectRatio(
-                      aspectRatio: 9 / 16,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: gradientColors,
-                          ),
-                          image: template.imageUrl != null
-                              ? DecorationImage(image: NetworkImage(template.imageUrl!), fit: BoxFit.cover)
-                              : null,
-                        ),
-                        child: Stack(
-                          children: [
-                            if (template.imageUrl != null)
-                              Positioned.fill(
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [Colors.black54, Colors.transparent, Colors.black87],
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            if ((_customQuote ?? template.quoteHi) != null)
-                              Positioned(
-                                left: 24, right: 24,
-                                top: screenHeight * 0.35,
-                                child: Text(
-                                  _customQuote ?? template.quoteHi!,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1.4,
-                                    shadows: [Shadow(blurRadius: 10, color: Colors.black54)],
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-
-                            // Draggable Profile Photo Zone
-                            if (template.photoZoneEnabled)
-                              Positioned(
-                                top: screenHeight * _photoTop,
-                                left: (screenWidth * _photoLeft) - 35, // center 70px icon
-                                child: GestureDetector(
-                                  onPanUpdate: (details) {
-                                    setState(() {
-                                      _photoTop += details.delta.dy / screenHeight;
-                                      _photoLeft += details.delta.dx / screenWidth;
-                                    });
-                                  },
-                                  child: Container(
-                                    width: 70, height: 70,
-                                    decoration: BoxDecoration(
-                                      color: Colors.black26,
-                                      shape: template.photoZoneShape == 'rectangle' ? BoxShape.rectangle : BoxShape.circle,
-                                      borderRadius: template.photoZoneShape == 'rectangle' ? BorderRadius.circular(16) : null,
-                                      border: Border.all(color: Colors.white, width: 2.5),
-                                      boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10)],
-                                      image: ref.watch(currentUserProvider)?.profilePhoto != null
-                                          ? DecorationImage(
-                                              image: NetworkImage(ref.watch(currentUserProvider)!.profilePhoto!),
-                                              fit: BoxFit.cover,
-                                            )
-                                          : null,
-                                    ),
-                                    child: ref.watch(currentUserProvider)?.profilePhoto == null
-                                        ? const Center(child: Icon(Icons.person_rounded, size: 36, color: Colors.white70))
-                                        : null,
-                                  ),
-                                ),
-                              ),
-
-                            // Draggable Name Zone
-                            if (template.nameZoneEnabled)
-                              Positioned(
-                                top: screenHeight * _nameTop,
-                                left: (screenWidth * _nameLeft) - 100,
-                                child: GestureDetector(
-                                  onPanUpdate: (details) {
-                                    setState(() {
-                                      _nameTop += details.delta.dy / screenHeight;
-                                      _nameLeft += details.delta.dx / screenWidth;
-                                    });
-                                  },
-                                  onTap: _showEditNameSheet,
-                                  child: Container(
-                                    width: 200,
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: _displayName.isEmpty ? Colors.black.withOpacity(0.5) : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: _displayName.isEmpty ? Border.all(color: Colors.white38) : null,
-                                    ),
-                                    child: Text(
-                                      _displayName.isNotEmpty ? _displayName : 'अपना नाम लिखें ✏️',
-                                      style: TextStyle(
-                                        color: template.nameColor != null 
-                                            ? ColorUtils.fromHex(template.nameColor!) 
-                                            : Colors.white,
-                                        fontSize: (template.nameFontSize ?? 0.04) * screenHeight, // relative sizing like Crafto
-                                        fontWeight: FontWeight.w900,
-                                        shadows: const [Shadow(blurRadius: 4, color: Colors.black45)],
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            // Branding Frame Footer Overlay (Personal, Business, Political)
-                            if (_brandingFrame != null)
-                              Positioned(
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                child: BrandingFrameOverlay(data: _brandingFrame!),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // ── Top Bar ────────────────────────────────────────────────
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => context.pop(),
+              // ── Preview Canvas Area ───────────────────────────────────────
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    child: RepaintBoundary(
+                      key: _repaintBoundaryKey,
+                      child: AspectRatio(
+                        aspectRatio: 9 / 16,
                         child: Container(
-                          width: 44, height: 44,
                           decoration: BoxDecoration(
-                            color: Colors.black45,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              template.nameEn ?? 'Preview',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+                            borderRadius: BorderRadius.circular(12),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: gradientColors,
                             ),
-                            Text(
-                              template.category?.nameEn ?? '',
-                              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => setState(() => _isSaved = !_isSaved),
-                        child: Container(
-                          width: 44, height: 44,
-                          decoration: BoxDecoration(
-                            color: Colors.black45,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Icon(
-                            _isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                            color: _isSaved ? AppColors.warning : Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Bottom Action Bar ──────────────────────────────────────────
-              Positioned(
-                left: 0, right: 0, bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.9)],
-                    ),
-                  ),
-                  child: FadeInUp(
-                    duration: const Duration(milliseconds: 500),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Crafto Quick Tools Row
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _MiniToolButton(
-                                icon: Icons.crop_portrait_rounded,
-                                label: 'फ्रेम (Frame)',
-                                onTap: _showFramePickerSheet,
-                              ),
-                              Container(width: 1, height: 20, color: Colors.white24),
-                              _MiniToolButton(
-                                icon: Icons.format_quote_rounded,
-                                label: 'सुविचार (Quote)',
-                                onTap: _showQuotePickerSheet,
-                              ),
-                              Container(width: 1, height: 20, color: Colors.white24),
-                              _MiniToolButton(
-                                icon: Icons.edit_rounded,
-                                label: 'नाम (Name)',
-                                onTap: _showEditNameSheet,
+                            image: template.imageUrl != null
+                                ? DecorationImage(image: NetworkImage(template.imageUrl!), fit: BoxFit.cover)
+                                : null,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black45,
+                                blurRadius: 16,
+                                offset: Offset(0, 6),
                               ),
                             ],
                           ),
-                        ),
-
-                        // Action Buttons (Download & WhatsApp Status Share)
-                        Row(
-                          children: [
-                            // Download
-                            _ActionButton(
-                              icon: Icons.download_rounded,
-                              label: 'Download',
-                              color: Colors.white.withOpacity(0.15),
-                              textColor: Colors.white,
-                              onTap: _saveToGallery,
-                            ),
-                            const SizedBox(width: 12),
-                            // Share to WhatsApp (Primary)
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [Color(0xFF25D366), Color(0xFF128C7E)],
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF25D366).withValues(alpha: 0.4),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: ElevatedButton(
-                                  onPressed: _isSharing ? null : _shareImage,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.transparent,
-                                    shadowColor: Colors.transparent,
-                                    padding: const EdgeInsets.symmetric(vertical: 18),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                  ),
-                                  child: _isSharing
-                                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                                    : const Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 22),
-                                          SizedBox(width: 10),
-                                          Text('WhatsApp Status', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
-                                        ],
+                          clipBehavior: Clip.hardEdge,
+                          child: Stack(
+                            children: [
+                              if (template.imageUrl != null)
+                                Positioned.fill(
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [Colors.black54, Colors.transparent, Colors.black87],
                                       ),
+                                    ),
+                                  ),
                                 ),
+
+                              if ((_customQuote ?? template.quoteHi) != null)
+                                Positioned(
+                                  left: 20,
+                                  right: 20,
+                                  top: screenHeight * 0.28,
+                                  child: Text(
+                                    _customQuote ?? template.quoteHi!,
+                                    style: GoogleFonts.hind(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.35,
+                                      shadows: const [Shadow(blurRadius: 8, color: Colors.black87)],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+
+                              // Draggable Profile Photo Zone
+                              if (template.photoZoneEnabled)
+                                Positioned(
+                                  top: screenHeight * _photoTop,
+                                  left: (screenWidth * _photoLeft) - 35,
+                                  child: GestureDetector(
+                                    onPanUpdate: (details) {
+                                      setState(() {
+                                        _photoTop += details.delta.dy / screenHeight;
+                                        _photoLeft += details.delta.dx / screenWidth;
+                                      });
+                                    },
+                                    child: Container(
+                                      width: 70,
+                                      height: 70,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black26,
+                                        shape: template.photoZoneShape == 'rectangle'
+                                            ? BoxShape.rectangle
+                                            : BoxShape.circle,
+                                        borderRadius: template.photoZoneShape == 'rectangle'
+                                            ? BorderRadius.circular(14)
+                                            : null,
+                                        border: Border.all(color: Colors.white, width: 2.5),
+                                        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
+                                        image: ref.watch(currentUserProvider)?.profilePhoto != null
+                                            ? DecorationImage(
+                                                image: NetworkImage(ref.watch(currentUserProvider)!.profilePhoto!),
+                                                fit: BoxFit.cover,
+                                              )
+                                            : null,
+                                      ),
+                                      child: ref.watch(currentUserProvider)?.profilePhoto == null
+                                          ? const Center(child: Icon(Icons.person, size: 36, color: Colors.white70))
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+
+                              // Draggable Name Zone
+                              if (template.nameZoneEnabled)
+                                Positioned(
+                                  top: screenHeight * _nameTop,
+                                  left: (screenWidth * _nameLeft) - 100,
+                                  child: GestureDetector(
+                                    onPanUpdate: (details) {
+                                      setState(() {
+                                        _nameTop += details.delta.dy / screenHeight;
+                                        _nameLeft += details.delta.dx / screenWidth;
+                                      });
+                                    },
+                                    onTap: _showEditNameSheet,
+                                    child: Container(
+                                      width: 200,
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: _displayName.isEmpty ? Colors.black54 : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: _displayName.isEmpty ? Border.all(color: Colors.white54) : null,
+                                      ),
+                                      child: Text(
+                                        _displayName.isNotEmpty ? _displayName : 'अपना नाम जोड़ें ✏️',
+                                        style: GoogleFonts.hind(
+                                          color: template.nameColor != null
+                                              ? ColorUtils.fromHex(template.nameColor!)
+                                              : Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w700,
+                                          shadows: const [Shadow(blurRadius: 4, color: Colors.black)],
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                              // Branding Frame Footer Overlay
+                              if (_brandingFrame != null)
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  child: BrandingFrameOverlay(data: _brandingFrame!),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Bottom Controls Sheet (White, Clean, High Contrast) ───────
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x1F000000),
+                      blurRadius: 12,
+                      offset: Offset(0, -3),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Customize Tools Row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _CustomToolTile(
+                              icon: Icons.portrait,
+                              label: 'फ्रेम बदलें',
+                              subLabel: 'Frame',
+                              onTap: _showFramePickerSheet,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _CustomToolTile(
+                              icon: Icons.format_quote,
+                              label: 'सुविचार',
+                              subLabel: 'Quotes',
+                              onTap: _showQuotePickerSheet,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _CustomToolTile(
+                              icon: Icons.edit,
+                              label: 'नाम बदलें',
+                              subLabel: 'Edit Name',
+                              onTap: _showEditNameSheet,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Action Buttons (Gallery Download + WhatsApp Status Share)
+                      Row(
+                        children: [
+                          // Gallery Download Button
+                          Expanded(
+                            flex: 2,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.textPrimary,
+                                side: const BorderSide(color: AppColors.surfaceBorder, width: 1.5),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: _saveToGallery,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.download, color: AppColors.textPrimary, size: 22),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'गैलरी में सेव',
+                                    style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 15),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          ),
+                          const SizedBox(width: 12),
+
+                          // WhatsApp Share Button (Prominent Green)
+                          Expanded(
+                            flex: 3,
+                            child: ElevatedButton(
+                              onPressed: _isSharing ? null : _shareImage,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF25D366),
+                                foregroundColor: Colors.white,
+                                elevation: 1,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              child: _isSharing
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                    )
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.chat_bubble, color: Colors.white, size: 20),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'व्हाट्सएप स्टेटस',
+                                          style: GoogleFonts.hind(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -528,39 +579,57 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
   }
 }
 
-class _ActionButton extends StatelessWidget {
+class _CustomToolTile extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color color;
-  final Color textColor;
+  final String subLabel;
   final VoidCallback onTap;
 
-  const _ActionButton({
+  const _CustomToolTile({
     required this.icon,
     required this.label,
-    required this.color,
-    required this.textColor,
+    required this.subLabel,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: textColor, size: 24),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(color: textColor, fontWeight: FontWeight.w800, fontSize: 10)),
-          ],
+    return Material(
+      color: AppColors.primarySurface,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: AppColors.primary, size: 22),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: GoogleFonts.hind(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 1,
+              ),
+              Text(
+                subLabel,
+                style: GoogleFonts.hind(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -596,12 +665,17 @@ class _EditNameBottomSheetState extends State<_EditNameBottomSheet> {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        top: 24, left: 24, right: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        top: 20,
+        left: 20,
+        right: 20,
       ),
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -609,93 +683,47 @@ class _EditNameBottomSheetState extends State<_EditNameBottomSheet> {
         children: [
           Row(
             children: [
-              const Text('✏️', style: TextStyle(fontSize: 20)),
-              const SizedBox(width: 10),
-              const Text('Add Your Name', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.textPrimary)),
-              const Spacer(),
-              _SuggestionChip(label: 'Personal', onTap: () {}),
+              const Icon(Icons.edit, color: AppColors.primary, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'अपना नाम लिखें (Add Name)',
+                style: GoogleFonts.hind(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           TextField(
             controller: _controller,
             autofocus: true,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 17),
             decoration: InputDecoration(
-              hintText: 'Enter your name...',
+              hintText: 'उदा. राजेश शर्मा',
               filled: true,
               fillColor: AppColors.bg,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-              prefixIcon: const Icon(Icons.person_rounded, color: AppColors.primary),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.surfaceBorder),
+              ),
+              prefixIcon: const Icon(Icons.person, color: AppColors.primary),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
-            height: 56,
+            height: 50,
             child: ElevatedButton(
               onPressed: () => widget.onSave(_controller.text),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: const Text('Save Overlay', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
+              child: Text(
+                'सेव करें (Save)',
+                style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+              ),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SuggestionChip extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _SuggestionChip({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(12)),
-      child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
-    );
-  }
-}
-
-class _MiniToolButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _MiniToolButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: const Color(0xFFFDE047), size: 17),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

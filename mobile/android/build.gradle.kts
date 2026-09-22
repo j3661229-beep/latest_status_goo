@@ -19,6 +19,13 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(":app")
 }
+subprojects {
+    plugins.withId("com.android.library") {
+        if (project.name == "image_picker_android") {
+            project.dependencies.add("implementation", project(":flutter_plugin_android_lifecycle"))
+        }
+    }
+}
 
 
 tasks.register<Delete>("clean") {

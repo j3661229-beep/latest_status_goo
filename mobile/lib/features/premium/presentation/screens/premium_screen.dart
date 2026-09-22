@@ -1,277 +1,377 @@
 // lib/features/premium/presentation/screens/premium_screen.dart
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:animate_do/animate_do.dart';
-import '../../../../core/theme/app_theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-class PremiumScreen extends StatefulWidget {
+import '../../../../core/api/api_client.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../auth/presentation/providers/current_user_provider.dart';
+
+class PremiumScreen extends ConsumerStatefulWidget {
   const PremiumScreen({super.key});
 
   @override
-  State<PremiumScreen> createState() => _PremiumScreenState();
+  ConsumerState<PremiumScreen> createState() => _PremiumScreenState();
 }
 
-class _PremiumScreenState extends State<PremiumScreen> {
+class _PremiumScreenState extends ConsumerState<PremiumScreen> {
   bool _annualSelected = true;
+  bool _isLoading = false;
 
   static const _features = [
-    _Feature(icon: Icons.image_outlined, emoji: '🖼', title: 'Unlimited Images', sub: 'No daily download limit', color: AppColors.primary),
-    _Feature(icon: Icons.play_circle_outline_rounded, emoji: '🎬', title: 'All Video Status', sub: 'Access every video template', color: AppColors.secondary),
-    _Feature(icon: Icons.celebration_outlined, emoji: '🎉', title: 'Festival Packs', sub: 'Exclusive seasonal collections', color: Color(0xFFFF8C00)),
-    _Feature(icon: Icons.person_pin_outlined, emoji: '✏️', title: 'Name & Photo Overlay', sub: 'Personalise every status you make', color: AppColors.accent),
-    _Feature(icon: Icons.share_outlined, emoji: '📲', title: 'Share Anywhere', sub: 'WhatsApp, Instagram & more', color: Color(0xFF25D366)),
-    _Feature(icon: Icons.block_outlined, emoji: '🚫', title: 'Zero Ads', sub: 'Clean, distraction-free experience', color: AppColors.textMuted),
+    _FeatureItem(
+      title: 'असीमित स्टेटस डाउनलोड',
+      sub: 'बिना किसी दैनिक सीमा के जितने चाहें उतने पोस्टर सेव करें',
+      icon: Icons.download_done_rounded,
+    ),
+    _FeatureItem(
+      title: 'सभी वीडियो स्टेटस अनलॉक',
+      sub: 'सुप्रभात, त्यौहार और प्रेरणादायक वीडियो स्टेटस बनाएं',
+      icon: Icons.play_circle_filled_rounded,
+    ),
+    _FeatureItem(
+      title: 'त्यौहार एवं विशेष संग्रह',
+      sub: 'दिवाली, होली, रक्षाबंधन, नवरात्रि के एक्सक्लूसिव पोस्टर्स',
+      icon: Icons.celebration_rounded,
+    ),
+    _FeatureItem(
+      title: 'बिजनेस और व्यक्तिगत फ्रेम',
+      sub: 'अपनी दुकान, व्यवसाय या राजनीतिक पद के आकर्षक फ्रेम',
+      icon: Icons.badge_rounded,
+    ),
+    _FeatureItem(
+      title: 'कोई विज्ञापन नहीं (No Ads)',
+      sub: 'साफ, तेज और बिना किसी रुकावट का अनुभव',
+      icon: Icons.block_rounded,
+    ),
+    _FeatureItem(
+      title: 'सीधे व्हाट्सएप स्टेटस पर शेयर',
+      sub: 'एक क्लिक में अपने संपर्कों के साथ साझा करें',
+      icon: Icons.chat_bubble_rounded,
+    ),
   ];
+
+  Future<void> _initiateCheckout() async {
+    setState(() => _isLoading = true);
+    final plan = _annualSelected ? 'ANNUAL' : 'PREMIUM';
+
+    try {
+      final res = await apiClient.post('/subscribe/create', data: {'plan': plan});
+      if (res.statusCode == 200 && mounted) {
+        final data = res.data;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.verified, color: AppColors.success, size: 24),
+                const SizedBox(width: 8),
+                Text('ऑर्डर तैयार है', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+              ],
+            ),
+            content: Text(
+              'Razorpay ऑर्डर आईडी: ${data['orderId'] ?? 'Order Created'}\nराशि: ₹${data['amount'] != null ? (data['amount'] / 100).toInt() : (_annualSelected ? '799' : '99')}',
+              style: GoogleFonts.hind(fontSize: 15),
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  ref.invalidate(currentUserProvider);
+                },
+                child: Text('ठीक है (OK)', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('भुगतान शुरू करने में समस्या आई: $e', style: GoogleFonts.hind()),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // ── Animated Background ─────────────────────────────────────────
-          Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(gradient: AppColors.brandGradient),
-              child: Stack(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        title: Text(
+          'प्रीमियम सदस्यता',
+          style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 20),
+        ),
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Top Header Banner
+            Container(
+              color: AppColors.primary,
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+              child: Column(
                 children: [
-                  // Decorative orbs
-                  Positioned(top: -60, right: -40, child: _Orb(size: 200, opacity: 0.12)),
-                  Positioned(top: 100, left: -80, child: _Orb(size: 240, opacity: 0.08)),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.workspace_premium, color: Color(0xFFFFD700), size: 44),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Status Go VIP सदस्य बनें',
+                    style: GoogleFonts.hind(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'हर दिन अपने नाम और फोटो के साथ शानदार स्टेटस बनाएं',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.hind(color: Colors.white.withOpacity(0.9), fontSize: 15),
+                  ),
                 ],
               ),
             ),
-          ),
 
-          Column(
-            children: [
-              // ── Top Section ────────────────────────────────────────────
-              SafeArea(
-                bottom: false,
-                child: Column(
-                  children: [
-                    // Close button
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            // Plan Selection Cards
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'अपनी पसंद का प्लान चुनें',
+                    style: GoogleFonts.hind(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Annual Plan (Featured)
+                  GestureDetector(
+                    onTap: () => setState(() => _annualSelected = true),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _annualSelected ? AppColors.primarySurface : AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _annualSelected ? AppColors.primary : AppColors.surfaceBorder,
+                          width: _annualSelected ? 2 : 1,
+                        ),
+                      ),
                       child: Row(
                         children: [
-                          GestureDetector(
-                            onTap: () => context.pop(),
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), shape: BoxShape.circle),
-                              child: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
+                          Icon(
+                            _annualSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                            color: _annualSelected ? AppColors.primary : AppColors.textMuted,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      '1 साल का प्लान (वार्षिक)',
+                                      style: GoogleFonts.hind(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accent,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '33% बचत',
+                                        style: GoogleFonts.hind(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  'मात्र ₹66 प्रति माह (₹799 पूरे साल के लिए)',
+                                  style: GoogleFonts.hind(color: AppColors.textSecondary, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '₹799',
+                            style: GoogleFonts.hind(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
                             ),
                           ),
                         ],
                       ),
                     ),
+                  ),
 
-                    // Crown + Headline
-                    FadeInDown(
-                      duration: const Duration(milliseconds: 500),
-                      child: const Column(
+                  const SizedBox(height: 12),
+
+                  // Monthly Plan
+                  GestureDetector(
+                    onTap: () => setState(() => _annualSelected = false),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: !_annualSelected ? AppColors.primarySurface : AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: !_annualSelected ? AppColors.primary : AppColors.surfaceBorder,
+                          width: !_annualSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
                         children: [
-                          Text('👑', style: TextStyle(fontSize: 52)),
-                          SizedBox(height: 10),
-                          Text(
-                            'Status Go Premium',
-                            style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                          Icon(
+                            !_annualSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                            color: !_annualSelected ? AppColors.primary : AppColors.textMuted,
+                            size: 24,
                           ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Unlock the full experience',
-                            style: TextStyle(color: Colors.white70, fontSize: 14),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '1 महीने का प्लान (मासिक)',
+                                  style: GoogleFonts.hind(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                Text(
+                                  'हर महीने नवीनीकरण (Cancel anytime)',
+                                  style: GoogleFonts.hind(color: AppColors.textSecondary, fontSize: 14),
+                                ),
+                              ],
+                            ),
                           ),
-                          SizedBox(height: 6),
-                          // Social proof
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text('⭐⭐⭐⭐⭐', style: TextStyle(fontSize: 12)),
-                              SizedBox(width: 8),
-                              Text('10,000+ happy users', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600)),
-                            ],
+                          Text(
+                            '₹99',
+                            style: GoogleFonts.hind(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
                           ),
                         ],
                       ),
                     ),
+                  ),
+                ],
+              ),
+            ),
 
-                    const SizedBox(height: 24),
-
-                    // ── Plan Selector ─────────────────────────────────────
-                    FadeIn(
-                      duration: const Duration(milliseconds: 600),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white.withOpacity(0.2)),
-                          ),
-                          child: Row(
-                            children: [
-                              // Monthly
-                              Expanded(child: _PlanTile(
-                                label: 'Monthly',
-                                price: '₹99',
-                                sub: 'per month',
-                                isSelected: !_annualSelected,
-                                onTap: () => setState(() => _annualSelected = false),
-                              )),
-                              // Annual
-                              Expanded(child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  _PlanTile(
-                                    label: 'Annual',
-                                    price: '₹799',
-                                    sub: '₹66 per month',
-                                    isSelected: _annualSelected,
-                                    onTap: () => setState(() => _annualSelected = true),
-                                  ),
-                                  Positioned(
-                                    top: -10, right: 4,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.warning,
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [BoxShadow(color: AppColors.warning.withOpacity(0.5), blurRadius: 8, offset: const Offset(0, 2))],
-                                      ),
-                                      child: const Text('SAVE 33%', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.black)),
-                                    ),
-                                  ),
-                                ],
-                              )),
-                            ],
-                          ),
-                        ),
-                      ),
+            // Features Checklist
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.surfaceBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'प्रीमियम में क्या-क्या मिलेगा:',
+                      style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
+                    ..._features.map((f) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.check_circle, color: AppColors.success, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  f.title,
+                                  style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary),
+                                ),
+                                Text(
+                                  f.sub,
+                                  style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )),
                   ],
                 ),
               ),
+            ),
 
-              // ── Features Sheet ─────────────────────────────────────────
-              Expanded(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.only(topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+            const SizedBox(height: 20),
+
+            // CTA Button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _initiateCheckout,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 8),
-                      Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.surfaceBorder, borderRadius: BorderRadius.circular(2))),
-                      const SizedBox(height: 20),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Column(
-                            children: List.generate(_features.length, (i) => FadeInUp(
-                              duration: Duration(milliseconds: 400 + i * 60),
-                              child: Padding(
-                                padding: const EdgeInsets.only(bottom: 14),
-                                child: _FeatureRow(feature: _features[i]),
-                              ),
-                            )),
-                          ),
+                  child: _isLoading
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                      : Text(
+                          _annualSelected ? 'प्रीमियम शुरू करें — ₹799 / वर्ष' : 'प्रीमियम शुरू करें — ₹99 / माह',
+                          style: GoogleFonts.hind(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                        child: Column(
-                          children: [
-                            // CTA Button
-                            SizedBox(
-                              width: double.infinity,
-                              height: 56,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  gradient: AppColors.brandGradient,
-                                  borderRadius: BorderRadius.circular(18),
-                                  boxShadow: AppColors.cardShadowFor(AppColors.primary),
-                                ),
-                                child: ElevatedButton(
-                                  onPressed: () {/* Launch Razorpay */},
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.transparent,
-                                    shadowColor: Colors.transparent,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                                  ),
-                                  child: Text(
-                                    _annualSelected ? 'Start Premium — ₹799/year' : 'Start Premium — ₹99/month',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Cancel anytime · Secured by Razorpay · No hidden fees',
-                              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
-                              textAlign: TextAlign.center,
-                            ),
-                            SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
+            ),
 
-class _Orb extends StatelessWidget {
-  final double size;
-  final double opacity;
-  const _Orb({required this.size, required this.opacity});
+            const SizedBox(height: 12),
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(color: Colors.white.withOpacity(opacity), shape: BoxShape.circle),
-    );
-  }
-}
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.security, size: 16, color: AppColors.textMuted),
+                const SizedBox(width: 6),
+                Text(
+                  '100% सुरक्षित भुगतान · Razorpay द्वारा सुरक्षित',
+                  style: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ],
+            ),
 
-class _PlanTile extends StatelessWidget {
-  final String label;
-  final String price;
-  final String sub;
-  final bool isSelected;
-  final VoidCallback onTap;
-  const _PlanTile({required this.label, required this.price, required this.sub, required this.isSelected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 12, offset: const Offset(0, 4))] : null,
-        ),
-        child: Column(
-          children: [
-            Text(label, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: isSelected ? AppColors.textPrimary : Colors.white70)),
-            const SizedBox(height: 4),
-            Text(price, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: isSelected ? AppColors.primary : Colors.white)),
-            Text(sub, style: TextStyle(fontSize: 10, color: isSelected ? AppColors.textMuted : Colors.white60)),
+            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -279,48 +379,14 @@ class _PlanTile extends StatelessWidget {
   }
 }
 
-class _Feature {
-  final IconData icon;
-  final String emoji;
+class _FeatureItem {
   final String title;
   final String sub;
-  final Color color;
-  const _Feature({required this.icon, required this.emoji, required this.title, required this.sub, required this.color});
-}
+  final IconData icon;
 
-class _FeatureRow extends StatelessWidget {
-  final _Feature feature;
-  const _FeatureRow({required this.feature});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 46, height: 46,
-          decoration: BoxDecoration(
-            color: feature.color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Center(child: Text(feature.emoji, style: const TextStyle(fontSize: 22))),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(feature.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
-              const SizedBox(height: 1),
-              Text(feature.sub, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
-            ],
-          ),
-        ),
-        Container(
-          width: 28, height: 28,
-          decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
-          child: const Icon(Icons.check_rounded, color: Colors.white, size: 16),
-        ),
-      ],
-    );
-  }
+  const _FeatureItem({
+    required this.title,
+    required this.sub,
+    required this.icon,
+  });
 }

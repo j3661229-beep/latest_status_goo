@@ -124,11 +124,20 @@ export default function AdminLoginPage() {
             </button>
           </form>
 
-          {/* Pre-configured admin note */}
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center">
-            <p className="text-xs text-slate-500">
-              Dev default: <span className="font-semibold text-slate-700">superadmin@statusgo.app</span> / <span className="font-semibold text-slate-700">Admin@123456</span>
-            </p>
+          {/* Pre-configured admin quick-fill */}
+          <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col items-center gap-2">
+            <p className="text-xs text-slate-500 font-medium">Quick Fill Demo Admin Credentials:</p>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('admin@statusgo.com');
+                setPassword('Admin@12345');
+                setError('');
+              }}
+              className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3.5 py-1.5 rounded-full font-semibold transition-colors flex items-center gap-1.5"
+            >
+              <span>⚡</span> admin@statusgo.com / Admin@12345
+            </button>
           </div>
         </div>
       </div>

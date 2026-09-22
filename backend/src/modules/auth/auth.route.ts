@@ -40,6 +40,26 @@ export async function authRoutes(fastify: FastifyInstance) {
     handler: handler.creatorGoogleLogin.bind(handler),
   });
 
+  // POST /auth/creator/login — Creator email+password login
+  fastify.post('/creator/login', {
+    config: { rateLimit: { max: 15, timeWindow: '5 minutes' } },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['email', 'password'],
+        properties: {
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string', minLength: 6 },
+        },
+      },
+    },
+    preHandler: async (req, reply) => {
+      const result = AdminLoginSchema.safeParse(req.body);
+      if (!result.success) reply.status(400).send({ error: 'Invalid body', details: result.error.flatten() });
+    },
+    handler: handler.creatorLogin.bind(handler),
+  });
+
   // POST /auth/admin/login  — Admin / Manager email+password login
   fastify.post('/admin/login', {
     config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },

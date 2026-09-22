@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -24,18 +26,33 @@ void main() async {
     statusBarIconBrightness: Brightness.dark,
   ));
 
+  // Initialize Firebase (required for Phone OTP Auth)
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint('Firebase initialized successfully');
+  } catch (e) {
+    debugPrint('Firebase init error: $e');
+  }
+
   // Initialize Hive (local storage)
   await Hive.initFlutter();
   await Hive.openBox(AppConstants.hiveBoxUser);
   await Hive.openBox(AppConstants.hiveBoxSettings);
   await Hive.openBox(AppConstants.hiveBoxSaved);
 
-  // Initialize OneSignal
-  OneSignal.initialize(const String.fromEnvironment(
+  // Initialize OneSignal (only if configured)
+  const oneSignalAppId = String.fromEnvironment(
     'FLUTTER_ONESIGNAL_APP_ID',
     defaultValue: '',
-  ));
-  OneSignal.Notifications.requestPermission(true);
+  );
+  if (oneSignalAppId.isNotEmpty) {
+    try {
+      OneSignal.initialize(oneSignalAppId);
+      OneSignal.Notifications.requestPermission(true);
+    } catch (_) {}
+  }
 
   runApp(
     const ProviderScope(

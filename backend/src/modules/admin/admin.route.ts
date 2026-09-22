@@ -469,10 +469,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const daysAgo = new Date(Date.now() - parseInt(days) * 24 * 60 * 60 * 1000);
 
     const results: any[] = await fastify.prisma.$queryRaw`
-      SELECT DATE("lastActiveAt") as date, COUNT(*) as count
+      SELECT DATE_TRUNC('day', "lastActiveAt") as date, COUNT(*)::int as count
       FROM "User"
       WHERE "lastActiveAt" >= ${daysAgo} AND "isActive" = true
-      GROUP BY DATE("lastActiveAt")
+      GROUP BY DATE_TRUNC('day', "lastActiveAt")
       ORDER BY date ASC
     `;
 
@@ -482,15 +482,16 @@ export async function adminRoutes(fastify: FastifyInstance) {
   fastify.get('/analytics/searches', { preHandler: [requireAdmin] }, async (req, reply) => {
     const { limit = '20' } = req.query as any;
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const limitInt = parseInt(limit);
 
     const results: any[] = await fastify.prisma.$queryRaw`
-      SELECT metadata->>'query' as term, COUNT(*) as count
+      SELECT (metadata::jsonb ->> 'query') as term, COUNT(*)::int as count
       FROM "AnalyticsEvent"
       WHERE event = 'search' AND "createdAt" > ${sevenDaysAgo}
-        AND metadata->>'query' IS NOT NULL
-      GROUP BY metadata->>'query'
+        AND (metadata::jsonb ->> 'query') IS NOT NULL
+      GROUP BY (metadata::jsonb ->> 'query')
       ORDER BY count DESC
-      LIMIT ${parseInt(limit)}
+      LIMIT ${limitInt}
     `;
 
     return reply.send({ data: results });

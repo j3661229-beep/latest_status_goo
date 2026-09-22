@@ -1,5 +1,5 @@
 // lib/features/auth/presentation/screens/login_screen.dart
-import 'dart:ui';
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,43 +7,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
-import 'package:animate_do/animate_do.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../data/auth_repository.dart';
 
-// ─── State ───────────────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 
-enum _LoginStep { phoneEntry, otpVerify }
+enum _Step { phone, otp }
 
-class _LoginState {
-  final _LoginStep step;
+class _State {
+  final _Step step;
   final bool loading;
   final String? error;
   final String phone;
   final String? verificationId;
+  final bool isBackendFallback;
+  final int resendCountdown;
 
-  const _LoginState({
-    this.step = _LoginStep.phoneEntry,
+  const _State({
+    this.step = _Step.phone,
     this.loading = false,
     this.error,
     this.phone = '',
     this.verificationId,
+    this.isBackendFallback = false,
+    this.resendCountdown = 0,
   });
 
-  _LoginState copyWith({
-    _LoginStep? step,
+  _State copyWith({
+    _Step? step,
     bool? loading,
     String? error,
+    bool clearError = false,
     String? phone,
     String? verificationId,
+    bool? isBackendFallback,
+    int? resendCountdown,
   }) =>
-      _LoginState(
+      _State(
         step: step ?? this.step,
         loading: loading ?? this.loading,
-        error: error,
+        error: clearError ? null : (error ?? this.error),
         phone: phone ?? this.phone,
         verificationId: verificationId ?? this.verificationId,
+        isBackendFallback: isBackendFallback ?? this.isBackendFallback,
+        resendCountdown: resendCountdown ?? this.resendCountdown,
       );
 }
 
@@ -56,345 +64,315 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen>
-    with TickerProviderStateMixin {
-  final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
+class _LoginScreenState extends ConsumerState<LoginScreen> {
+  final _phoneCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
   final _phoneFocus = FocusNode();
   final _otpFocus = FocusNode();
-
-  late final AnimationController _bgController;
-  var _state = const _LoginState();
-
-  @override
-  void initState() {
-    super.initState();
-    _bgController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat(reverse: true);
-  }
+  var _state = const _State();
+  Timer? _countdownTimer;
 
   @override
   void dispose() {
-    _phoneController.dispose();
-    _otpController.dispose();
+    _countdownTimer?.cancel();
+    _phoneCtrl.dispose();
+    _otpCtrl.dispose();
     _phoneFocus.dispose();
     _otpFocus.dispose();
-    _bgController.dispose();
     super.dispose();
   }
 
-  // ── Phone Submit ──────────────────────────────────────────────────────────
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    setState(() => _state = _state.copyWith(resendCountdown: 30));
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_state.resendCountdown <= 1) {
+        timer.cancel();
+        setState(() => _state = _state.copyWith(resendCountdown: 0));
+      } else {
+        setState(() => _state = _state.copyWith(resendCountdown: _state.resendCountdown - 1));
+      }
+    });
+  }
+
+  // ── Send OTP via Firebase with Backend Fallback ───────────────────────────
 
   Future<void> _sendOtp() async {
-    final raw = _phoneController.text.trim().replaceAll(' ', '');
-    if (raw.isEmpty) {
-      setState(() => _state = _state.copyWith(error: 'Please enter your phone number'));
+    final raw = _phoneCtrl.text.trim().replaceAll(' ', '');
+    if (raw.length < 10) {
+      setState(() => _state = _state.copyWith(error: 'कृपया 10 अंकों का मोबाइल नंबर डालें'));
       return;
     }
     final phone = raw.startsWith('+') ? raw : '+91$raw';
+    setState(() => _state = _state.copyWith(loading: true, clearError: true));
 
-    setState(() => _state = _state.copyWith(loading: true, error: null));
-
-    await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: phone,
-      timeout: const Duration(seconds: 60),
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        // Auto-verified (SMS Retriever on Android)
-        await _signInWithCredential(credential);
-      },
-      verificationFailed: (FirebaseAuthException e) {
-        setState(() => _state = _state.copyWith(
-          loading: false,
-          error: e.message ?? 'Verification failed. Please try again.',
-        ));
-      },
-      codeSent: (String verificationId, int? resendToken) {
-        setState(() => _state = _state.copyWith(
-          step: _LoginStep.otpVerify,
-          loading: false,
-          phone: phone,
-          verificationId: verificationId,
-        ));
-        Future.delayed(const Duration(milliseconds: 300), () {
-          _otpFocus.requestFocus();
-        });
-      },
-      codeAutoRetrievalTimeout: (String verificationId) {
-        // Keep the verification ID updated
-        setState(() => _state = _state.copyWith(verificationId: verificationId));
-      },
-    );
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phone,
+        timeout: const Duration(seconds: 60),
+        verificationCompleted: (PhoneAuthCredential cred) async {
+          await _signInWithFirebase(cred);
+        },
+        verificationFailed: (FirebaseAuthException e) async {
+          debugPrint('Firebase phone verification failed (${e.code}: ${e.message}). Falling back to backend OTP...');
+          await _sendBackendOtp(phone, fallbackReason: e.message);
+        },
+        codeSent: (String vid, int? resendToken) {
+          if (!mounted) return;
+          setState(() => _state = _state.copyWith(
+                step: _Step.otp,
+                loading: false,
+                phone: phone,
+                verificationId: vid,
+                isBackendFallback: false,
+              ));
+          _startCountdown();
+          Future.delayed(const Duration(milliseconds: 300), _otpFocus.requestFocus);
+        },
+        codeAutoRetrievalTimeout: (String vid) {
+          if (mounted) setState(() => _state = _state.copyWith(verificationId: vid));
+        },
+      );
+    } catch (e) {
+      debugPrint('Direct Firebase verify error: $e. Using backend OTP...');
+      await _sendBackendOtp(phone, fallbackReason: null);
+    }
   }
 
-  // ── OTP Submit ────────────────────────────────────────────────────────────
+  Future<void> _sendBackendOtp(String phone, {String? fallbackReason}) async {
+    try {
+      await ref.read(authRepositoryProvider).sendOtp(phone);
+      if (!mounted) return;
+      setState(() => _state = _state.copyWith(
+            step: _Step.otp,
+            loading: false,
+            phone: phone,
+            verificationId: 'BACKEND_OTP',
+            isBackendFallback: true,
+          ));
+      _startCountdown();
+      Future.delayed(const Duration(milliseconds: 300), _otpFocus.requestFocus);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _state = _state.copyWith(
+            loading: false,
+            error: 'OTP भेजने में समस्या हुई। कृपया पुनः प्रयास करें।',
+          ));
+    }
+  }
+
+  // ── Verify OTP ────────────────────────────────────────────────────────────
 
   Future<void> _verifyOtp(String otp) async {
     if (otp.length < 6) return;
-    if (_state.verificationId == null) return;
+    setState(() => _state = _state.copyWith(loading: true, clearError: true));
 
-    setState(() => _state = _state.copyWith(loading: true, error: null));
+    if (_state.isBackendFallback || _state.verificationId == 'BACKEND_OTP') {
+      await _signInWithBackendOtp(otp);
+      return;
+    }
 
-    final credential = PhoneAuthProvider.credential(
-      verificationId: _state.verificationId!,
-      smsCode: otp,
-    );
-    await _signInWithCredential(credential);
+    // Try Firebase credential first
+    try {
+      final cred = PhoneAuthProvider.credential(
+        verificationId: _state.verificationId ?? '',
+        smsCode: otp,
+      );
+      await _signInWithFirebase(cred);
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Firebase verify failed: ${e.message}. Trying backend fallback...');
+      // If Firebase verification fails, also attempt backend verify
+      await _signInWithBackendOtp(otp);
+    } catch (e) {
+      await _signInWithBackendOtp(otp);
+    }
   }
 
-  Future<void> _signInWithCredential(PhoneAuthCredential credential) async {
+  Future<void> _signInWithFirebase(PhoneAuthCredential cred) async {
     try {
-      final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-      final idToken = await userCredential.user?.getIdToken();
-      if (idToken == null) throw Exception('Could not get ID token');
+      final uc = await FirebaseAuth.instance.signInWithCredential(cred);
+      final idToken = await uc.user?.getIdToken();
+      if (idToken == null) throw Exception('Token not found');
 
       final result = await ref
           .read(authRepositoryProvider)
           .signInWithFirebaseToken(idToken);
 
       if (!mounted) return;
-
       if (result['onboardingRequired'] == true) {
         context.go('/profile-setup');
       } else {
         context.go('/home');
       }
-    } on FirebaseAuthException catch (e) {
-      setState(() => _state = _state.copyWith(
-        loading: false,
-        error: e.message ?? 'Invalid OTP. Please try again.',
-      ));
     } catch (e) {
+      if (!mounted) return;
       setState(() => _state = _state.copyWith(
-        loading: false,
-        error: 'Something went wrong. Please try again.',
-      ));
+            loading: false,
+            error: 'OTP गलत है या एक्सपायर हो गया है। दोबारा कोशिश करें।',
+          ));
+    }
+  }
+
+  Future<void> _signInWithBackendOtp(String otp) async {
+    try {
+      final result = await ref
+          .read(authRepositoryProvider)
+          .verifyOtp(_state.phone, otp);
+
+      if (!mounted) return;
+      if (result['onboardingRequired'] == true) {
+        context.go('/profile-setup');
+      } else {
+        context.go('/home');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _state = _state.copyWith(
+            loading: false,
+            error: 'OTP अमान्य है। कृपया सही 6 अंकों का OTP दर्ज करें।',
+          ));
     }
   }
 
   // ── Google Sign-In ────────────────────────────────────────────────────────
 
   Future<void> _signInWithGoogle() async {
-    setState(() => _state = _state.copyWith(loading: true, error: null));
+    setState(() => _state = _state.copyWith(loading: true, clearError: true));
     try {
-      final result = await ref.read(authRepositoryProvider).signInWithGoogle();
+      final user = await ref.read(authRepositoryProvider).signInWithGoogle();
       if (!mounted) return;
-      if (result == null) {
+      if (user != null) {
+        context.go('/home');
+      } else {
         setState(() => _state = _state.copyWith(loading: false));
-        return;
       }
-      context.go('/home');
-    } catch (e) {
+    } catch (_) {
+      if (!mounted) return;
       setState(() => _state = _state.copyWith(
-        loading: false,
-        error: 'Google sign-in failed. Please try again.',
-      ));
+            loading: false,
+            error: 'Google Sign-In में समस्या हुई।',
+          ));
     }
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── UI ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A1A),
-      body: Stack(
-        children: [
-          // ── Animated gradient background ────────────────────────────────
-          AnimatedBuilder(
-            animation: _bgController,
-            builder: (_, __) => Positioned.fill(
-              child: CustomPaint(
-                painter: _GradientBgPainter(_bgController.value),
+      backgroundColor: AppColors.surface,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 40),
+              _buildHeader(),
+              const SizedBox(height: 36),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: _state.step == _Step.phone
+                    ? _buildPhoneStep()
+                    : _buildOtpStep(),
               ),
-            ),
+            ],
           ),
-
-          // ── Frosted glass content ─────────────────────────────────────
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: size.height - 120),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 60),
-
-                    // Logo + tagline
-                    FadeInDown(
-                      duration: const Duration(milliseconds: 700),
-                      child: _buildLogoSection(),
-                    ),
-
-                    const SizedBox(height: 48),
-
-                    // Card
-                    FadeInUp(
-                      duration: const Duration(milliseconds: 800),
-                      delay: const Duration(milliseconds: 200),
-                      child: _buildCard(),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // Google sign in
-                    if (_state.step == _LoginStep.phoneEntry)
-                      FadeInUp(
-                        duration: const Duration(milliseconds: 700),
-                        delay: const Duration(milliseconds: 400),
-                        child: _buildGoogleButton(),
-                      ),
-
-                    const SizedBox(height: 40),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildLogoSection() {
+  Widget _buildHeader() {
     return Column(
       children: [
         Container(
           width: 80,
           height: 80,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: AppColors.brandGradient,
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withOpacity(0.5),
-                blurRadius: 30,
-                spreadRadius: 5,
-              ),
-            ],
+            color: AppColors.primarySurface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.primary.withOpacity(0.15)),
           ),
-          child: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 36),
+          child: const Icon(
+            Icons.auto_awesome_rounded,
+            color: AppColors.primary,
+            size: 42,
+          ),
         ),
         const SizedBox(height: 16),
         Text(
           'Status Go',
-          style: GoogleFonts.outfit(
-            fontSize: 32,
-            fontWeight: FontWeight.w900,
-            color: Colors.white,
-            letterSpacing: -0.5,
-          ),
+          textAlign: TextAlign.center,
+          style: GoogleFonts.hind(fontSize: 28, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
         ),
         const SizedBox(height: 4),
         Text(
-          'स्टेटस गो — Daily Status for Every Occasion',
+          'अपने मोबाइल नंबर से सुरक्षित लॉगिन करें',
           textAlign: TextAlign.center,
-          style: GoogleFonts.outfit(
-            fontSize: 13,
-            color: Colors.white.withOpacity(0.5),
-            letterSpacing: 0.3,
-          ),
+          style: GoogleFonts.hind(fontSize: 16, color: AppColors.textSecondary),
         ),
       ],
-    );
-  }
-
-  Widget _buildCard() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(32),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.07),
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: Colors.white.withOpacity(0.12), width: 1.5),
-          ),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0.05, 0),
-                  end: Offset.zero,
-                ).animate(anim),
-                child: child,
-              ),
-            ),
-            child: _state.step == _LoginStep.phoneEntry
-                ? _buildPhoneStep()
-                : _buildOtpStep(),
-          ),
-        ),
-      ),
     );
   }
 
   Widget _buildPhoneStep() {
     return Column(
       key: const ValueKey('phone'),
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Welcome Back 👋',
-          style: GoogleFonts.outfit(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
+          'मोबाइल नंबर (Mobile Number)',
+          style: GoogleFonts.hind(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          'Enter your phone number to continue',
-          style: GoogleFonts.outfit(
-            fontSize: 13,
-            color: Colors.white.withOpacity(0.5),
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // Phone input
-        _FieldLabel('PHONE NUMBER'),
         const SizedBox(height: 8),
+
         Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.06),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.12)),
+            border: Border.all(color: AppColors.surfaceBorder, width: 1.5),
+            borderRadius: BorderRadius.circular(10),
+            color: AppColors.surface,
           ),
           child: Row(
             children: [
-              // Country code badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
                 decoration: BoxDecoration(
-                  border: Border(right: BorderSide(color: Colors.white.withOpacity(0.12))),
+                  color: AppColors.bg,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(9),
+                    bottomLeft: Radius.circular(9),
+                  ),
+                  border: const Border(
+                    right: BorderSide(color: AppColors.surfaceBorder, width: 1.5),
+                  ),
                 ),
                 child: Text(
-                  '🇮🇳  +91',
-                  style: GoogleFonts.outfit(
-                    color: Colors.white.withOpacity(0.8),
+                  '🇮🇳 +91',
+                  style: GoogleFonts.hind(
+                    fontSize: 17,
                     fontWeight: FontWeight.w700,
-                    fontSize: 15,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ),
               Expanded(
                 child: TextField(
-                  controller: _phoneController,
+                  controller: _phoneCtrl,
                   focusNode: _phoneFocus,
                   keyboardType: TextInputType.phone,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
+                  style: GoogleFonts.hind(
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    fontSize: 16,
+                    color: AppColors.textPrimary,
                   ),
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
@@ -403,9 +381,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   onSubmitted: (_) => _sendOtp(),
                   decoration: InputDecoration(
                     hintText: '98765 43210',
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.2)),
+                    hintStyle: GoogleFonts.hind(fontSize: 16, color: AppColors.textHint),
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
                   ),
                 ),
               ),
@@ -415,318 +395,260 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
         if (_state.error != null) ...[
           const SizedBox(height: 12),
-          _ErrorText(_state.error!),
+          _ErrorBox(_state.error!),
         ],
 
         const SizedBox(height: 24),
 
-        _PremiumButton(
-          text: 'Send OTP',
-          loading: _state.loading,
-          onPressed: _sendOtp,
-          icon: Icons.send_rounded,
+        SizedBox(
+          height: 52,
+          child: ElevatedButton.icon(
+            onPressed: _state.loading ? null : _sendOtp,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: _state.loading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                  )
+                : const Icon(Icons.send_rounded, size: 20),
+            label: Text(
+              _state.loading ? 'भेज रहे हैं...' : 'OTP भेजें (Send OTP)',
+              style: GoogleFonts.hind(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white),
+            ),
+          ),
         ),
+
+        const SizedBox(height: 32),
+        _OrDivider(),
+        const SizedBox(height: 20),
+
+        OutlinedButton(
+          onPressed: _state.loading ? null : _signInWithGoogle,
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: AppColors.surfaceBorder, width: 1.5),
+            backgroundColor: AppColors.surface,
+            minimumSize: const Size(double.infinity, 50),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.network(
+                'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                width: 22,
+                height: 22,
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.g_mobiledata_rounded, size: 24),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Google से लॉगिन करें',
+                style: GoogleFonts.hind(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 40),
       ],
     );
   }
 
   Widget _buildOtpStep() {
-    final defaultPinTheme = PinTheme(
+    final defaultPin = PinTheme(
       width: 52,
-      height: 56,
-      textStyle: GoogleFonts.outfit(
-        fontSize: 22,
-        fontWeight: FontWeight.w800,
-        color: Colors.white,
+      height: 60,
+      textStyle: GoogleFonts.hind(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textPrimary,
       ),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.surfaceBorder, width: 2),
       ),
     );
 
     return Column(
       key: const ValueKey('otp'),
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            GestureDetector(
-              onTap: () => setState(() => _state = _state.copyWith(
-                    step: _LoginStep.phoneEntry,
-                    error: null,
-                  )),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
-                  shape: BoxShape.circle,
+        GestureDetector(
+          onTap: () {
+            _countdownTimer?.cancel();
+            setState(() => _state = _state.copyWith(
+                  step: _Step.phone,
+                  clearError: true,
+                ));
+          },
+          child: Row(
+            children: [
+              const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                'मोबाइल नंबर बदलें (Change)',
+                style: GoogleFonts.hind(
+                  fontSize: 15,
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
                 ),
-                child: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white, size: 16),
               ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Verify OTP 🔐',
-                  style: GoogleFonts.outfit(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  'Sent to ${_state.phone}',
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    color: Colors.white.withOpacity(0.45),
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
+        const SizedBox(height: 20),
 
+        Text(
+          'OTP दर्ज करें (Enter OTP)',
+          style: GoogleFonts.hind(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+        ),
+        const SizedBox(height: 4),
+        RichText(
+          text: TextSpan(
+            style: GoogleFonts.hind(fontSize: 15, color: AppColors.textMuted),
+            children: [
+              const TextSpan(text: 'OTP भेजा गया: '),
+              TextSpan(
+                text: _state.phone,
+                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 28),
 
         Center(
           child: Pinput(
-            controller: _otpController,
+            controller: _otpCtrl,
             focusNode: _otpFocus,
             length: 6,
-            defaultPinTheme: defaultPinTheme,
-            focusedPinTheme: defaultPinTheme.copyWith(
-              decoration: defaultPinTheme.decoration!.copyWith(
-                border: Border.all(color: AppColors.primary, width: 2),
-                boxShadow: [
-                  BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 8),
-                ],
+            defaultPinTheme: defaultPin,
+            focusedPinTheme: defaultPin.copyWith(
+              decoration: defaultPin.decoration!.copyWith(
+                border: Border.all(color: AppColors.primary, width: 2.5),
               ),
             ),
-            submittedPinTheme: defaultPinTheme.copyWith(
-              decoration: defaultPinTheme.decoration!.copyWith(
-                color: AppColors.primary.withOpacity(0.2),
-                border: Border.all(color: AppColors.primary.withOpacity(0.5)),
+            submittedPinTheme: defaultPin.copyWith(
+              decoration: defaultPin.decoration!.copyWith(
+                color: AppColors.primarySurface,
+                border: Border.all(color: AppColors.primary, width: 2),
               ),
             ),
             onCompleted: _verifyOtp,
             hapticFeedbackType: HapticFeedbackType.lightImpact,
             keyboardType: TextInputType.number,
-            closeKeyboardWhenCompleted: true,
           ),
         ),
 
         if (_state.error != null) ...[
           const SizedBox(height: 16),
-          _ErrorText(_state.error!),
+          _ErrorBox(_state.error!),
         ],
 
         const SizedBox(height: 28),
 
-        _PremiumButton(
-          text: 'Verify OTP',
-          loading: _state.loading,
-          onPressed: () => _verifyOtp(_otpController.text),
-          icon: Icons.verified_rounded,
-        ),
-
-        const SizedBox(height: 16),
-
-        Center(
-          child: TextButton(
-            onPressed: _state.loading ? null : _sendOtp,
-            child: Text(
-              'Resend OTP',
-              style: GoogleFonts.outfit(
-                color: AppColors.accent.withOpacity(0.8),
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
+        SizedBox(
+          height: 52,
+          child: ElevatedButton.icon(
+            onPressed: _state.loading ? null : () => _verifyOtp(_otpCtrl.text),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: _state.loading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                  )
+                : const Icon(Icons.verified_user_rounded, size: 20),
+            label: Text(
+              _state.loading ? 'सत्यापित कर रहे हैं...' : 'OTP सत्यापित करें (Verify)',
+              style: GoogleFonts.hind(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white),
             ),
           ),
         ),
+
+        const SizedBox(height: 18),
+
+        Center(
+          child: _state.resendCountdown > 0
+              ? Text(
+                  'दोबारा OTP भेजें (${_state.resendCountdown} सेकंड)',
+                  style: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 15, fontWeight: FontWeight.w500),
+                )
+              : TextButton(
+                  onPressed: _state.loading ? null : _sendOtp,
+                  child: Text(
+                    'OTP दोबारा भेजें (Resend OTP)',
+                    style: GoogleFonts.hind(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.primary),
+                  ),
+                ),
+        ),
+        const SizedBox(height: 40),
       ],
     );
   }
-
-  Widget _buildGoogleButton() {
-    return GestureDetector(
-      onTap: _state.loading ? null : _signInWithGoogle,
-      child: Container(
-        height: 54,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withOpacity(0.15)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.network(
-              'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-              width: 22,
-              height: 22,
-              errorBuilder: (_, __, ___) =>
-                  const Icon(Icons.g_mobiledata, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'Continue with Google',
-              style: GoogleFonts.outfit(
-                color: Colors.white.withOpacity(0.85),
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
-// ─── Custom Painter ───────────────────────────────────────────────────────────
+// ─── Helper Widgets ───────────────────────────────────────────────────────────
 
-class _GradientBgPainter extends CustomPainter {
-  final double progress;
-  _GradientBgPainter(this.progress);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint1 = Paint()
-      ..color = AppColors.primary.withOpacity(0.18)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 80);
-
-    final paint2 = Paint()
-      ..color = AppColors.secondary.withOpacity(0.15)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 100);
-
-    canvas.drawCircle(
-      Offset(size.width * 0.2, size.height * 0.2 + size.height * 0.1 * progress),
-      180,
-      paint1,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.85, size.height * 0.65 - size.height * 0.08 * progress),
-      220,
-      paint2,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_GradientBgPainter old) => old.progress != progress;
-}
-
-// ─── Shared Widgets ───────────────────────────────────────────────────────────
-
-class _FieldLabel extends StatelessWidget {
-  final String text;
-  const _FieldLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) => Text(
-        text,
-        style: GoogleFonts.outfit(
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          color: Colors.white.withOpacity(0.35),
-          letterSpacing: 1.5,
-        ),
-      );
-}
-
-class _ErrorText extends StatelessWidget {
-  final String text;
-  const _ErrorText(this.text);
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFF4D4D).withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFFF4D4D).withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline_rounded, color: Color(0xFFFF4D4D), size: 16),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                text,
-                style: GoogleFonts.outfit(
-                  color: const Color(0xFFFF4D4D),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-}
-
-class _PremiumButton extends StatelessWidget {
-  final String text;
-  final bool loading;
-  final VoidCallback? onPressed;
-  final IconData? icon;
-
-  const _PremiumButton({
-    required this.text,
-    required this.loading,
-    required this.onPressed,
-    this.icon,
-  });
+class _ErrorBox extends StatelessWidget {
+  final String message;
+  const _ErrorBox(this.message);
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        gradient: loading ? null : AppColors.brandGradient,
-        color: loading ? Colors.white.withOpacity(0.1) : null,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: loading
-            ? []
-            : [BoxShadow(color: AppColors.primary.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))],
+        color: const Color(0xFFFEE2E2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFCA5A5)),
       ),
-      child: ElevatedButton(
-        onPressed: loading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-        child: loading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 18),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    text,
-                    style: GoogleFonts.outfit(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.hind(
+                fontSize: 15,
+                color: AppColors.danger,
+                fontWeight: FontWeight.w600,
               ),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _OrDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(child: Divider(color: AppColors.surfaceBorder, thickness: 1)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            'या',
+            style: GoogleFonts.hind(fontSize: 15, color: AppColors.textMuted, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const Expanded(child: Divider(color: AppColors.surfaceBorder, thickness: 1)),
+      ],
     );
   }
 }

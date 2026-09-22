@@ -1,19 +1,21 @@
 // lib/features/home/presentation/screens/home_screen.dart
-import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:animate_do/animate_do.dart';
-import 'package:shimmer/shimmer.dart';
-
 import '../../../../core/theme/app_theme.dart';
-import '../../data/home_repository.dart';
-import '../providers/home_data_provider.dart';
 import '../../../templates/domain/models/template_model.dart';
-import '../widgets/daily_suvichar_banner.dart';
-import '../widgets/festival_calendar_ribbon.dart';
+import '../../data/home_repository.dart';
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
+
+final homeFeedProvider = FutureProvider.autoDispose<HomeFeedData>((ref) async {
+  final repo = ref.read(homeRepositoryProvider);
+  return repo.getHomeFeed();
+});
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -23,785 +25,414 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  final _scrollController = ScrollController();
-  String _selectedCategory = 'All';
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
+  String _selectedCategory = 'all';
 
   @override
   Widget build(BuildContext context) {
-    final homeDataAsync = ref.watch(homeDataProvider);
+    final feed = ref.watch(homeFeedProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A1A),
-      body: homeDataAsync.when(
-        loading: _buildSkeleton,
-        error: (err, _) => _buildError(err),
-        data: (data) => RefreshIndicator(
-          onRefresh: () => ref.read(homeDataProvider.notifier).refresh(),
-          color: AppColors.primary,
-          backgroundColor: const Color(0xFF1A1A2E),
-          child: CustomScrollView(
-            controller: _scrollController,
-            slivers: [
-              // ── Floating Header ────────────────────────────────────────
-              _buildSliverHeader(data),
-
-              // ── Daily Time-Aware Suvichar Banner ───────────────────────
-              SliverToBoxAdapter(
-                child: DailySuvicharBanner(
-                  onCustomizePoster: () {
-                    final targetTemplate = data.coordinatorPicks.isNotEmpty
-                        ? data.coordinatorPicks.first
-                        : (data.featured.isNotEmpty ? data.featured.first : null);
-                    if (targetTemplate != null) {
-                      context.push('/template/${targetTemplate.id}', extra: targetTemplate);
-                    }
-                  },
-                ),
-              ),
-
-              // ── Upcoming Festival Calendar Ribbon ──────────────────────
-              SliverToBoxAdapter(
-                child: FestivalCalendarRibbon(
-                  onFestivalSelected: (item) {
-                    context.go('/search?q=${Uri.encodeComponent(item.nameHi)}');
-                  },
-                ),
-              ),
-
-              // ── Coordinator Picks (if any) ─────────────────────────────
-              if (data.coordinatorPicks.isNotEmpty)
-                _buildCoordinatorPicks(data.coordinatorPicks),
-
-              // ── Festival Banner ────────────────────────────────────────
-              if (data.festivalToday != null)
-                _buildFestivalBanner(data.festivalToday!),
-
-              // ── Category Pills ─────────────────────────────────────────
-              if (data.categories.isNotEmpty)
-                _buildCategoryPills(data.categories),
-
-              // ── Featured Section ───────────────────────────────────────
-              if (data.featured.isNotEmpty)
-                _buildSectionHeader('✨ Featured'),
-              if (data.featured.isNotEmpty)
-                _buildMasonryGrid(data.featured),
-
-              // ── Trending Section ───────────────────────────────────────
-              if (data.trending.isNotEmpty)
-                _buildSectionHeader('🔥 Trending Now'),
-              if (data.trending.isNotEmpty)
-                _buildHorizontalReel(data.trending),
-
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
-            ],
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        title: const Text('Status Go'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            tooltip: 'खोजें',
+            onPressed: () => context.push('/search'),
           ),
-        ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: feed.when(
+        loading: () => _buildSkeleton(),
+        error: (e, _) => _buildError(() => ref.invalidate(homeFeedProvider)),
+        data: (data) => _buildBody(data),
       ),
     );
   }
 
-  // ── Header ──────────────────────────────────────────────────────────────────
+  Widget _buildBody(HomeFeedData data) {
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: () async => ref.invalidate(homeFeedProvider),
+      child: CustomScrollView(
+        slivers: [
+          // Festival banner
+          if (data.festivalToday != null)
+            SliverToBoxAdapter(
+              child: _FestivalBanner(festival: data.festivalToday!),
+            ),
 
-  SliverToBoxAdapter _buildSliverHeader(HomeFeedData data) {
-    return SliverToBoxAdapter(
-      child: Container(
-        padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 16,
-          left: 20,
-          right: 20,
-          bottom: 20,
-        ),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFF0A0A1A),
-              const Color(0xFF0A0A1A).withOpacity(0.0),
-            ],
-          ),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Good ${_getTimeGreeting()} 👋',
-                    style: GoogleFonts.outfit(
-                      fontSize: 13,
-                      color: Colors.white.withOpacity(0.5),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    'Status Go',
-                    style: GoogleFonts.outfit(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ],
+          // Category chips
+          if (data.categories.isNotEmpty)
+            SliverToBoxAdapter(
+              child: _CategoryBar(
+                categories: data.categories,
+                selected: _selectedCategory,
+                onSelect: (slug) => setState(() => _selectedCategory = slug),
               ),
             ),
 
-            // Search button
-            _GlassIconButton(
-              icon: Icons.search_rounded,
-              onTap: () => context.go('/search'),
+          // Featured section
+          if (data.featured.isNotEmpty) ...[
+            _SectionHeader(title: 'आज के विशेष स्टेटस', onSeeAll: () {}),
+            SliverToBoxAdapter(
+              child: _HorizontalList(templates: data.featured),
             ),
-            const SizedBox(width: 10),
-            // Notification button
-            const _GlassIconButton(icon: Icons.notifications_none_rounded),
           ],
-        ),
-      ),
-    );
-  }
 
-  // ── Coordinator Picks ────────────────────────────────────────────────────────
-
-  SliverToBoxAdapter _buildCoordinatorPicks(List<TemplateModel> picks) {
-    return SliverToBoxAdapter(
-      child: FadeInLeft(
-        duration: const Duration(milliseconds: 600),
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [
-                          const Color(0xFFFFD700).withOpacity(0.8),
-                          const Color(0xFFFF8C00).withOpacity(0.8),
-                        ]),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.star_rounded, color: Colors.white, size: 14),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Coordinator Picks',
-                            style: GoogleFonts.outfit(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: picks.length,
-                  itemBuilder: (context, i) {
-                    return _CoordinatorPickCard(template: picks[i]);
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Festival Banner ───────────────────────────────────────────────────────────
-
-  SliverToBoxAdapter _buildFestivalBanner(Map<String, dynamic> festival) {
-    return SliverToBoxAdapter(
-      child: FadeInUp(
-        duration: const Duration(milliseconds: 500),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          child: GestureDetector(
-            onTap: () {},
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFFFF6B35).withOpacity(0.8),
-                    const Color(0xFFE83E8C).withOpacity(0.8),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFF6B35).withOpacity(0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Text('🎉', style: TextStyle(fontSize: 36)),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          festival['nameHi']?.toString() ?? festival['nameEn']?.toString() ?? 'Festival Today',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16,
-                          ),
-                        ),
-                        Text(
-                          'Tap for status templates',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white.withOpacity(0.8),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'View All',
-                      style: GoogleFonts.outfit(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
+          // Trending
+          if (data.trending.isNotEmpty) ...[
+            _SectionHeader(title: 'लोकप्रिय स्टेटस', onSeeAll: () {}),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: _TemplateGrid(
+                templates: _filterByCategory(data.trending),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
+          ],
 
-  // ── Category Pills ────────────────────────────────────────────────────────────
-
-  SliverToBoxAdapter _buildCategoryPills(List<CategoryModel> categories) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: SizedBox(
-          height: 44,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: categories.length + 1,
-            itemBuilder: (context, i) {
-              if (i == 0) {
-                return _CategoryPill(
-                  label: 'All',
-                  isSelected: _selectedCategory == 'All',
-                  onTap: () => setState(() => _selectedCategory = 'All'),
-                );
-              }
-              final cat = categories[i - 1];
-              final label = cat.nameHi ?? cat.nameEn ?? cat.slug;
-              return _CategoryPill(
-                label: '${cat.emoji ?? ''} $label',
-                isSelected: _selectedCategory == cat.slug,
-                onTap: () => setState(() => _selectedCategory = cat.slug),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Section header ────────────────────────────────────────────────────────────
-
-  SliverToBoxAdapter _buildSectionHeader(String title) {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-        child: Text(
-          title,
-          style: GoogleFonts.outfit(
-            color: Colors.white,
-            fontWeight: FontWeight.w900,
-            fontSize: 20,
-            letterSpacing: -0.3,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Masonry Grid ──────────────────────────────────────────────────────────────
-
-  SliverPadding _buildMasonryGrid(List<TemplateModel> templates) {
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      sliver: SliverGrid(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            return _TemplateCard(template: templates[index]);
-          },
-          childCount: templates.length,
-        ),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.75,
-        ),
-      ),
-    );
-  }
-
-  // ── Horizontal reel ───────────────────────────────────────────────────────────
-
-  SliverToBoxAdapter _buildHorizontalReel(List<TemplateModel> templates) {
-    return SliverToBoxAdapter(
-      child: SizedBox(
-        height: 220,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          itemCount: templates.length,
-          itemBuilder: (context, i) => _TrendingCard(template: templates[i]),
-        ),
-      ),
-    );
-  }
-
-  // ── Skeleton ──────────────────────────────────────────────────────────────────
-
-  Widget _buildSkeleton() {
-    return Shimmer.fromColors(
-      baseColor: const Color(0xFF1A1A2E),
-      highlightColor: const Color(0xFF2A2A3E),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 80),
-              _ShimmerBox(width: 120, height: 20, radius: 8),
-              const SizedBox(height: 8),
-              _ShimmerBox(width: 200, height: 32, radius: 10),
-              const SizedBox(height: 24),
-              _ShimmerBox(width: double.infinity, height: 200, radius: 20),
-              const SizedBox(height: 24),
-              Row(children: [
-                for (var i = 0; i < 4; i++) ...[
-                  _ShimmerBox(width: 80, height: 36, radius: 18),
-                  const SizedBox(width: 8),
-                ],
-              ]),
-              const SizedBox(height: 24),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 0.75,
-                ),
-                itemCount: 6,
-                itemBuilder: (_, __) => _ShimmerBox(width: double.infinity, height: double.infinity, radius: 16),
+          // Coordinator picks
+          if (data.coordinatorPicks.isNotEmpty) ...[
+            _SectionHeader(title: '⭐ चुने हुए स्टेटस', onSeeAll: () {}),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: _TemplateGrid(
+                templates: data.coordinatorPicks,
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildError(Object err) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.cloud_off_rounded, color: Colors.white38, size: 64),
-          const SizedBox(height: 16),
-          Text('Could not load content', style: GoogleFonts.outfit(color: Colors.white54, fontSize: 16)),
-          const SizedBox(height: 12),
-          ElevatedButton(
-            onPressed: () => ref.read(homeDataProvider.notifier).refresh(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: Text('Retry', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
-          ),
+          ],
+
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
     );
   }
 
-  String _getTimeGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Morning';
-    if (hour < 17) return 'Afternoon';
-    return 'Evening';
+  List<TemplateModel> _filterByCategory(List<TemplateModel> templates) {
+    if (_selectedCategory == 'all') return templates;
+    return templates
+        .where((t) => t.category?.slug == _selectedCategory)
+        .toList();
+  }
+
+  Widget _buildSkeleton() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: List.generate(
+        4,
+        (_) => Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          height: 180,
+          decoration: BoxDecoration(
+            color: AppColors.shimmer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildError(VoidCallback retry) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.wifi_off_rounded, size: 64, color: AppColors.textMuted),
+          const SizedBox(height: 16),
+          Text(
+            'कनेक्शन में समस्या है',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'इंटरनेट जाँचें और दोबारा कोशिश करें',
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: retry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('दोबारा कोशिश करें'),
+            style: ElevatedButton.styleFrom(minimumSize: const Size(200, 48)),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-// ─── Sub-widgets ──────────────────────────────────────────────────────────────
+// ─── Festival Banner ──────────────────────────────────────────────────────────
 
-class _GlassIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  const _GlassIconButton({required this.icon, this.onTap});
+class _FestivalBanner extends StatelessWidget {
+  final Map<String, dynamic> festival;
+  const _FestivalBanner({required this.festival});
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              width: 44,
-              height: 44,
+  Widget build(BuildContext context) {
+    final name = festival['nameHi'] ?? festival['nameEn'] ?? 'Festival';
+    final emoji = festival['emoji'] ?? '🎉';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+      ),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 36)),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'आज का त्यौहार',
+                  style: GoogleFonts.hind(
+                      fontSize: 13,
+                      color: AppColors.accent,
+                      fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  name,
+                  style: GoogleFonts.hind(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {},
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              minimumSize: const Size(80, 38),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              textStyle: GoogleFonts.hind(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            child: const Text('देखें'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Category Bar ─────────────────────────────────────────────────────────────
+
+class _CategoryBar extends StatelessWidget {
+  final List<CategoryModel> categories;
+  final String selected;
+  final ValueChanged<String> onSelect;
+  const _CategoryBar(
+      {required this.categories,
+      required this.selected,
+      required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final all = [
+      const CategoryModel(id: 'all', slug: 'all', nameHi: 'सभी', emoji: '🏠')
+    ] + categories;
+
+    return SizedBox(
+      height: 56,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        scrollDirection: Axis.horizontal,
+        itemCount: all.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (ctx, i) {
+          final cat = all[i];
+          final isSelected = cat.slug == selected;
+          return GestureDetector(
+            onTap: () => onSelect(cat.slug),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withOpacity(0.12)),
+                color: isSelected ? AppColors.primary : AppColors.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.surfaceBorder),
               ),
-              child: Icon(icon, color: Colors.white, size: 20),
+              child: Text(
+                '${cat.emoji ?? ''} ${cat.nameHi ?? cat.nameEn ?? cat.slug}',
+                style: GoogleFonts.hind(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
             ),
-          ),
-        ),
-      );
-}
-
-class _CategoryPill extends StatelessWidget {
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-  const _CategoryPill({required this.label, required this.isSelected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: isSelected ? AppColors.brandGradient : null,
-          color: isSelected ? null : Colors.white.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: isSelected ? Colors.transparent : Colors.white.withOpacity(0.12),
-          ),
-          boxShadow: isSelected
-              ? [BoxShadow(color: AppColors.primary.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 4))]
-              : [],
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.outfit(
-            color: isSelected ? Colors.white : Colors.white.withOpacity(0.6),
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            fontSize: 13,
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-class _CoordinatorPickCard extends StatelessWidget {
-  final TemplateModel template;
-  const _CoordinatorPickCard({required this.template});
+// ─── Section Header ───────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/template/${template.id}'),
-      child: Container(
-        width: 150,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (template.imageUrl != null)
-                CachedNetworkImage(
-                  imageUrl: template.imageThumbUrl ?? template.imageUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: AppColors.parseGradient(template.gradient) ??
-                            [AppColors.primary, AppColors.secondary],
-                      ),
-                    ),
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: AppColors.parseGradient(template.gradient) ??
-                            [AppColors.primary, AppColors.secondary],
-                      ),
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: AppColors.parseGradient(template.gradient) ??
-                          [AppColors.primary, AppColors.secondary],
-                    ),
-                  ),
-                ),
-
-              // Coordinator badge
-              Positioned(
-                top: 10, right: 10,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700),
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: const Color(0xFFFFD700).withOpacity(0.5), blurRadius: 8)],
-                  ),
-                  child: const Icon(Icons.star_rounded, color: Colors.white, size: 12),
-                ),
-              ),
-
-              // Bottom gradient
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
-                    ),
-                  ),
-                ),
-              ),
-
-              Positioned(
-                bottom: 10, left: 10, right: 10,
-                child: Text(
-                  template.nameHi ?? template.nameEn ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
+class _SectionHeader extends SliverToBoxAdapter {
+  _SectionHeader({required String title, required VoidCallback onSeeAll})
+      : super(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.hind(
+                    fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    fontSize: 12,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-              ),
-            ],
+                TextButton(
+                  onPressed: onSeeAll,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('सभी देखें'),
+                ),
+              ],
+            ),
           ),
+        );
+}
+
+// ─── Horizontal Template List ─────────────────────────────────────────────────
+
+class _HorizontalList extends StatelessWidget {
+  final List<TemplateModel> templates;
+  const _HorizontalList({required this.templates});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 220,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        scrollDirection: Axis.horizontal,
+        itemCount: templates.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (ctx, i) => _TemplateCard(
+          template: templates[i],
+          width: 160,
         ),
       ),
     );
   }
 }
+
+// ─── Template Grid ────────────────────────────────────────────────────────────
+
+class _TemplateGrid extends StatelessWidget {
+  final List<TemplateModel> templates;
+  const _TemplateGrid({required this.templates});
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.72,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (ctx, i) => _TemplateCard(template: templates[i]),
+        childCount: templates.length,
+      ),
+    );
+  }
+}
+
+// ─── Template Card ────────────────────────────────────────────────────────────
 
 class _TemplateCard extends StatelessWidget {
   final TemplateModel template;
-  const _TemplateCard({required this.template});
+  final double? width;
+  const _TemplateCard({required this.template, this.width});
 
   @override
   Widget build(BuildContext context) {
+    final imgUrl = template.imageThumbUrl ?? template.imageUrl;
+    final name = template.nameHi ?? template.nameEn ?? '';
+
     return GestureDetector(
       onTap: () => context.push('/template/${template.id}'),
       child: Container(
+        width: width,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.surfaceBorder),
+          boxShadow: AppColors.cardShadow,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (template.imageUrl != null)
-                CachedNetworkImage(
-                  imageUrl: template.imageThumbUrl ?? template.imageUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => _GradientPlaceholder(gradient: template.gradient),
-                  errorWidget: (_, __, ___) => _GradientPlaceholder(gradient: template.gradient),
-                )
-              else
-                _GradientPlaceholder(gradient: template.gradient),
-
-              // Premium badge
-              if (template.isPremium == true)
-                Positioned(
-                  top: 10, left: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.brandGradient,
-                      borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Image
+            Expanded(
+              child: imgUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: imgUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: AppColors.shimmer),
+                      errorWidget: (_, __, ___) => _GradientPlaceholder(template),
+                    )
+                  : _GradientPlaceholder(template),
+            ),
+            // Name + badges
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (name.isNotEmpty)
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.hind(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary),
                     ),
-                    child: Text('PRO', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 10)),
-                  ),
-                ),
-
-              // Bottom gradient + title
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: const [0.5, 1.0],
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.75)],
-                    ),
-                  ),
-                ),
-              ),
-
-              Positioned(
-                bottom: 10, left: 10, right: 10,
-                child: Text(
-                  template.nameHi ?? template.nameEn ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    shadows: [const Shadow(blurRadius: 4, color: Colors.black54)],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TrendingCard extends StatelessWidget {
-  final TemplateModel template;
-  const _TrendingCard({required this.template});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/template/${template.id}'),
-      child: Container(
-        width: 140,
-        margin: const EdgeInsets.only(right: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (template.imageUrl != null)
-                CachedNetworkImage(
-                  imageUrl: template.imageThumbUrl ?? template.imageUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => _GradientPlaceholder(gradient: template.gradient),
-                  errorWidget: (_, __, ___) => _GradientPlaceholder(gradient: template.gradient),
-                )
-              else
-                _GradientPlaceholder(gradient: template.gradient),
-
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: const [0.55, 1.0],
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
-                    ),
-                  ),
-                ),
-              ),
-
-              Positioned(
-                top: 10, left: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.local_fire_department_rounded, color: Color(0xFFFF6B35), size: 12),
-                      const SizedBox(width: 3),
-                      Text(
-                        '${template.useCount ?? 0}',
-                        style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 10),
+                  if (template.isPremium == true) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                    ],
-                  ),
-                ),
+                      child: Text(
+                        '⭐ Premium',
+                        style: GoogleFonts.hind(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.warning),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-
-              Positioned(
-                bottom: 10, left: 10, right: 10,
-                child: Text(
-                  template.nameHi ?? template.nameEn ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -809,34 +440,30 @@ class _TrendingCard extends StatelessWidget {
 }
 
 class _GradientPlaceholder extends StatelessWidget {
-  final String? gradient;
-  const _GradientPlaceholder({this.gradient});
+  final TemplateModel template;
+  const _GradientPlaceholder(this.template);
 
   @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: AppColors.parseGradient(gradient) ?? [AppColors.primary, AppColors.secondary],
-          ),
+  Widget build(BuildContext context) {
+    final colors = AppColors.parseGradient(template.gradient);
+    return Container(
+      decoration: BoxDecoration(
+        gradient: colors != null
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: colors,
+              )
+            : const LinearGradient(
+                colors: [AppColors.primarySurface, AppColors.primaryLight],
+              ),
+      ),
+      child: Center(
+        child: Text(
+          template.nameHi?.substring(0, 1) ?? '🙏',
+          style: const TextStyle(fontSize: 36),
         ),
-      );
-}
-
-class _ShimmerBox extends StatelessWidget {
-  final double width;
-  final double height;
-  final double radius;
-  const _ShimmerBox({required this.width, required this.height, required this.radius});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(radius),
-        ),
-      );
+      ),
+    );
+  }
 }

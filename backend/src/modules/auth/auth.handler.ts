@@ -183,6 +183,46 @@ export class AuthHandler {
     });
   }
 
+  // POST /auth/creator/login (Creator email/password login)
+  async creatorLogin(req: FastifyRequest<{ Body: AdminLoginBody }>, reply: FastifyReply) {
+    const { email, password } = req.body;
+
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (!user || !user.isActive || !user.password) {
+      return reply.status(401).send({ error: 'Invalid email or password' });
+    }
+
+    if (user.role !== UserRole.CREATOR && user.role !== UserRole.SUPER_ADMIN) {
+      return reply.status(403).send({ error: 'Access denied: You must be an approved Creator to use this studio.' });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) {
+      return reply.status(401).send({ error: 'Invalid email or password' });
+    }
+
+    const accessToken = await JWTService.signAccessToken({
+      userId: user.id,
+      role: user.role,
+      plan: user.plan,
+    });
+    const refreshToken = await JWTService.signRefreshToken(user.id);
+    await this.tokenStore.save(user.id, refreshToken);
+
+    return reply.status(200).send({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        profilePhoto: user.profilePhoto,
+      },
+    });
+  }
+
   // POST /auth/admin/login
   async adminLogin(req: FastifyRequest<{ Body: AdminLoginBody }>, reply: FastifyReply) {
     const { email, password } = req.body;

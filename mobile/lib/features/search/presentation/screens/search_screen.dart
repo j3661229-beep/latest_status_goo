@@ -1,12 +1,14 @@
 // lib/features/search/presentation/screens/search_screen.dart
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/utils/color_utils.dart';
 import '../providers/search_provider.dart';
+import '../../../templates/domain/models/template_model.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -37,7 +39,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
+    _debounce = Timer(const Duration(milliseconds: 350), () {
       if (mounted) setState(() => _query = query.trim());
     });
   }
@@ -45,67 +47,42 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── Search Bar ───────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => context.pop(),
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14)),
-                      child: const Icon(Icons.arrow_back_rounded, size: 20, color: AppColors.textPrimary),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.bg,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.surfaceBorder),
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        focusNode: _focusNode,
-                        onChanged: _onSearchChanged,
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary),
-                        decoration: InputDecoration(
-                          hintText: 'Search templates, festivals...',
-                          hintStyle: const TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w500),
-                          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMuted, size: 20),
-                          suffixIcon: _query.isNotEmpty
-                              ? GestureDetector(
-                                  onTap: () {
-                                    _searchController.clear();
-                                    setState(() => _query = '');
-                                  },
-                                  child: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 18),
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                          isDense: true,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Container(
+          height: 46,
+          margin: const EdgeInsets.only(right: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: TextField(
+            controller: _searchController,
+            focusNode: _focusNode,
+            onChanged: _onSearchChanged,
+            style: GoogleFonts.hind(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              hintText: 'स्टेटस खोजें (उदा. सुप्रभात, महाकाल)...',
+              hintStyle: GoogleFonts.hind(fontSize: 15, color: AppColors.textHint),
+              prefixIcon: const Icon(Icons.search, color: AppColors.primary, size: 22),
+              suffixIcon: _query.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, color: AppColors.textMuted, size: 20),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              isDense: true,
             ),
-
-            // ── Content ──────────────────────────────────────────────────
-            Expanded(
-              child: _query.length < 2 ? _buildIdleState() : _buildSearchResults(),
-            ),
-          ],
+          ),
         ),
       ),
+      body: _query.length < 2 ? _buildIdleState() : _buildSearchResults(),
     );
   }
 
@@ -113,67 +90,119 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final trendingAsync = ref.watch(trendingTermsProvider);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'TRENDING SEARCHES',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textMuted, letterSpacing: 1),
+          Row(
+            children: [
+              const Icon(Icons.trending_up, color: AppColors.primary, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'लोकप्रिय खोज (Trending Searches)',
+                style: GoogleFonts.hind(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
+
           trendingAsync.when(
             loading: () => Wrap(
-              spacing: 8,
+              spacing: 10,
               runSpacing: 10,
-              children: List.generate(8, (_) => Container(
-                width: 80, height: 36,
-                decoration: BoxDecoration(color: AppColors.shimmer, borderRadius: BorderRadius.circular(20)),
+              children: List.generate(6, (_) => Container(
+                width: 90, height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.shimmer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
               )),
             ),
             error: (_, __) => const SizedBox(),
             data: (terms) {
               if (terms.isEmpty) return const SizedBox();
               return Wrap(
-                spacing: 8,
+                spacing: 10,
                 runSpacing: 10,
-                children: terms.asMap().entries.map((entry) {
-                  final i = entry.key;
-                  final t = entry.value;
-                  final pillarColors = [
-                    [AppColors.primary, AppColors.primaryLight],
-                    [AppColors.secondary, const Color(0xFFFF9EC5)],
-                    [AppColors.accent, const Color(0xFF5EECD8)],
-                    [const Color(0xFFF7971E), const Color(0xFFFFD200)],
-                  ];
-                  final colors = pillarColors[i % pillarColors.length];
-                  return GestureDetector(
-                    onTap: () {
-                      _searchController.text = t;
-                      setState(() => _query = t);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [BoxShadow(color: colors.first.withOpacity(0.25), blurRadius: 8, offset: const Offset(0, 4))],
+                children: terms.map((t) {
+                  return Material(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      onTap: () {
+                        _searchController.text = t;
+                        setState(() => _query = t);
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.surfaceBorder),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.search, size: 16, color: AppColors.primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              t,
+                              style: GoogleFonts.hind(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Text(t, style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 13)),
                     ),
                   );
                 }).toList(),
               );
             },
           ),
-          const SizedBox(height: 40),
+
+          const SizedBox(height: 48),
+
           Center(
             child: Column(
               children: [
-                Text('🔍', style: TextStyle(fontSize: 48, color: AppColors.textMuted.withOpacity(0.5))),
-                const SizedBox(height: 12),
-                const Text('Search for devotional,\nfestival & motivational status', textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.5)),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
+                    color: AppColors.primarySurface,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.travel_explore_rounded,
+                    size: 48,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'धार्मिक, प्रेरणादायक एवं त्यौहार के स्टेटस खोजें',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.hind(
+                    color: AppColors.textSecondary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'अपनी पसंद का स्टेटस तुरंत ढूंढें और साझा करें',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.hind(
+                    color: AppColors.textMuted,
+                    fontSize: 14,
+                  ),
+                ),
               ],
             ),
           ),
@@ -189,93 +218,211 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       loading: () => GridView.builder(
         padding: const EdgeInsets.all(16),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2, crossAxisSpacing: 14, mainAxisSpacing: 14, childAspectRatio: 0.72,
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 0.72,
         ),
         itemCount: 4,
         itemBuilder: (_, __) => Container(
-          decoration: BoxDecoration(color: AppColors.shimmer, borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(
+            color: AppColors.shimmer,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.surfaceBorder),
+          ),
         ),
       ),
-      error: (e, _) => Center(child: Text('Error: $e', style: const TextStyle(color: AppColors.textMuted))),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: AppColors.danger, size: 40),
+              const SizedBox(height: 12),
+              Text(
+                'खोज में समस्या आई',
+                style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+              ),
+            ],
+          ),
+        ),
+      ),
       data: (templates) {
         if (templates.isEmpty) {
           return Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('😕', style: TextStyle(fontSize: 48)),
-              const SizedBox(height: 14),
-              Text('No results for "$_query"', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.textPrimary)),
-              const SizedBox(height: 6),
-              const Text('Try a different keyword', style: TextStyle(color: AppColors.textMuted)),
-            ]),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.search_off_rounded, size: 56, color: AppColors.textHint),
+                  const SizedBox(height: 16),
+                  Text(
+                    '"$_query" के लिए कोई स्टेटस नहीं मिला',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.hind(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'कृपया किसी अन्य कीवर्ड से खोजें',
+                    style: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            Container(
+              color: AppColors.surface,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Text(
-                '${templates.length} results for "$_query"',
-                style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textMuted, fontSize: 13),
+                '"$_query" के लिए ${templates.length} स्टेटस मिले',
+                style: GoogleFonts.hind(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                  fontSize: 15,
+                ),
               ),
             ),
+            const Divider(height: 1, color: AppColors.surfaceBorder),
             Expanded(
               child: GridView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                padding: const EdgeInsets.all(16),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2, crossAxisSpacing: 14, mainAxisSpacing: 14, childAspectRatio: 0.72,
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.72,
                 ),
                 itemCount: templates.length,
                 itemBuilder: (context, index) {
                   final t = templates[index];
-                  final colors = ColorUtils.parseGradientString(t.gradient ?? t.category?.gradient);
-                  return GestureDetector(
-                    onTap: () => context.push('/template/${t.id}'),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: t.imageThumbUrl == null
-                            ? LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight)
-                            : null,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: AppColors.cardShadow,
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: Stack(
-                        children: [
-                          if (t.imageThumbUrl != null)
-                            Positioned.fill(child: Image.network(t.imageThumbUrl!, fit: BoxFit.cover)),
-                          if (t.imageThumbUrl == null)
-                            Center(child: Text(t.category?.emoji ?? '✨', style: const TextStyle(fontSize: 40))),
-                          Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                                  colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 10, left: 10, right: 10,
-                            child: Text(
-                              t.nameHi ?? t.nameEn ?? 'Status',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12,
-                                  shadows: [Shadow(color: Colors.black, blurRadius: 4)]),
-                              maxLines: 2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
+                  return _SearchTemplateCard(template: t);
                 },
               ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+class _SearchTemplateCard extends StatelessWidget {
+  final TemplateModel template;
+  const _SearchTemplateCard({required this.template});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      elevation: 1,
+      child: InkWell(
+        onTap: () => context.push('/template/${template.id}'),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.surfaceBorder),
+          ),
+          clipBehavior: Clip.hardEdge,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (template.imageThumbUrl != null && template.imageThumbUrl!.isNotEmpty)
+                CachedNetworkImage(
+                  imageUrl: template.imageThumbUrl!,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(color: AppColors.shimmer),
+                  errorWidget: (_, __, ___) => Container(
+                    color: AppColors.primarySurface,
+                    child: Center(
+                      child: Text(template.category?.emoji ?? '✨', style: const TextStyle(fontSize: 36)),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  color: AppColors.primarySurface,
+                  child: Center(
+                    child: Text(template.category?.emoji ?? '✨', style: const TextStyle(fontSize: 36)),
+                  ),
+                ),
+
+              // Gradient Overlay
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 70,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black87],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Video Badge
+              if (template.type == 'VIDEO')
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.75),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.play_arrow, color: Colors.white, size: 14),
+                        const SizedBox(width: 2),
+                        Text(
+                          'VIDEO',
+                          style: GoogleFonts.hind(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Title
+              Positioned(
+                bottom: 8,
+                left: 10,
+                right: 10,
+                child: Text(
+                  template.nameHi ?? template.nameEn ?? 'स्टेटस पोस्टर',
+                  style: GoogleFonts.hind(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    height: 1.2,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
