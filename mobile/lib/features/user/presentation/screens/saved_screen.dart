@@ -1,25 +1,15 @@
 // lib/features/user/presentation/screens/saved_screen.dart
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../../../core/api/api_client.dart';
+import '../../../../core/api/api_error.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../templates/domain/models/template_model.dart';
+import '../../../../core/theme/app_ui_components.dart';
+import '../../data/saved_templates.dart';
 
-final savedTemplatesProvider = FutureProvider.autoDispose<List<TemplateModel>>((ref) async {
-  try {
-    final res = await apiClient.get('/user/saved');
-    if (res.statusCode == 200 && res.data['data'] != null) {
-      return (res.data['data'] as List).map((e) => TemplateModel.fromJson(e)).toList();
-    }
-    return [];
-  } catch (e) {
-    return [];
-  }
-});
+export '../../data/saved_templates.dart' show savedTemplatesProvider, savedIdsProvider;
 
 class SavedScreen extends ConsumerWidget {
   const SavedScreen({super.key});
@@ -31,13 +21,25 @@ class SavedScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         title: Text(
-          'सहेजे गए स्टेटस (Saved)',
-          style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 20),
+          'सहेजे गए स्टेटस',
+          style: GoogleFonts.hind(
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: AppColors.surfaceBorder, height: 1),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, size: 24),
+            icon: const Icon(Icons.refresh_rounded, size: 22, color: AppColors.textSecondary),
             tooltip: 'रिफ्रेश करें',
             onPressed: () => ref.refresh(savedTemplatesProvider),
           ),
@@ -50,17 +52,18 @@ class SavedScreen extends ConsumerWidget {
         child: savedAsync.when(
           loading: () => GridView.builder(
             padding: const EdgeInsets.all(16),
+            physics: const AlwaysScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 0.72,
+              mainAxisSpacing: 14,
+              childAspectRatio: 0.68,
             ),
             itemCount: 4,
             itemBuilder: (_, __) => Container(
               decoration: BoxDecoration(
-                color: AppColors.shimmer,
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(AppRadius.lg),
                 border: Border.all(color: AppColors.surfaceBorder),
               ),
             ),
@@ -71,15 +74,21 @@ class SavedScreen extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline, color: AppColors.danger, size: 48),
+                  const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 44),
                   const SizedBox(height: 12),
                   Text(
                     'स्टेटस लोड करने में समस्या आई',
                     style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   ElevatedButton(
                     onPressed: () => ref.refresh(savedTemplatesProvider),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+                    ),
                     child: Text('पुनः प्रयास करें', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
                   ),
                 ],
@@ -99,45 +108,50 @@ class SavedScreen extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(24),
+                            width: 72,
+                            height: 72,
                             decoration: const BoxDecoration(
                               color: AppColors.primarySurface,
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(
                               Icons.bookmark_border_rounded,
-                              size: 56,
+                              size: 36,
                               color: AppColors.primary,
                             ),
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 18),
                           Text(
-                            'कोई स्टेटस सेव नहीं किया गया',
+                            'कोई स्टेटस सहेजा नहीं है',
                             style: GoogleFonts.hind(
                               fontWeight: FontWeight.w700,
-                              fontSize: 20,
+                              fontSize: 18,
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text(
                             'अपनी पसंद के किसी भी स्टेटस को बाद में इस्तेमाल करने के लिए सेव बटन दबाएं।',
                             textAlign: TextAlign.center,
                             style: GoogleFonts.hind(
-                              fontSize: 15,
-                              color: AppColors.textMuted,
+                              fontSize: 14,
+                              color: AppColors.textSecondary,
                               height: 1.4,
                             ),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 20),
                           ElevatedButton.icon(
-                            icon: const Icon(Icons.explore, size: 20),
+                            icon: const Icon(Icons.explore_rounded, size: 18),
                             label: Text(
-                              'स्टेटस देखें (Explore)',
-                              style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 16),
+                              'स्टेटस खोजें (Explore)',
+                              style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 15),
                             ),
                             style: ElevatedButton.styleFrom(
-                              minimumSize: const Size(200, 48),
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
                             ),
                             onPressed: () => context.go('/discover'),
                           ),
@@ -151,131 +165,49 @@ class SavedScreen extends ConsumerWidget {
 
             return GridView.builder(
               padding: const EdgeInsets.all(16),
+              physics: const AlwaysScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.72,
+                mainAxisSpacing: 14,
+                childAspectRatio: 0.68,
               ),
               itemCount: templates.length,
               itemBuilder: (context, index) {
                 final t = templates[index];
-                return _SavedTemplateCard(
+                return AppTemplateCard(
                   template: t,
-                  onRemove: () async {
-                    try {
-                      await apiClient.delete('/user/saved/${t.id}');
-                      ref.invalidate(savedTemplatesProvider);
-                    } catch (_) {}
-                  },
+                  actionOverlay: Material(
+                    color: Colors.black.withOpacity(0.55),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          await ref.read(savedIdsProvider.notifier).toggle(t.id);
+                        } catch (e) {
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                apiErrorMessage(e, fallback: 'हटाया नहीं जा सका। कृपया दोबारा कोशिश करें।'),
+                                style: GoogleFonts.hind(),
+                              ),
+                              backgroundColor: AppColors.danger,
+                            ),
+                          );
+                        }
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(5),
+                        child: Icon(Icons.close_rounded, color: Colors.white, size: 16),
+                      ),
+                    ),
+                  ),
                 );
               },
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-class _SavedTemplateCard extends StatelessWidget {
-  final TemplateModel template;
-  final VoidCallback onRemove;
-
-  const _SavedTemplateCard({required this.template, required this.onRemove});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(12),
-      elevation: 1,
-      child: InkWell(
-        onTap: () => context.push('/template/${template.id}'),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.surfaceBorder),
-          ),
-          clipBehavior: Clip.hardEdge,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (template.imageThumbUrl != null && template.imageThumbUrl!.isNotEmpty)
-                CachedNetworkImage(
-                  imageUrl: template.imageThumbUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(color: AppColors.shimmer),
-                  errorWidget: (_, __, ___) => Container(
-                    color: AppColors.primarySurface,
-                    child: Center(
-                      child: Text(template.category?.emoji ?? '✨', style: const TextStyle(fontSize: 36)),
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  color: AppColors.primarySurface,
-                  child: Center(
-                    child: Text(template.category?.emoji ?? '✨', style: const TextStyle(fontSize: 36)),
-                  ),
-                ),
-
-              // Bottom gradient
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 70,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Colors.black87],
-                    ),
-                  ),
-                ),
-              ),
-
-              // Delete / Remove Bookmark Button
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Material(
-                  color: Colors.black.withOpacity(0.6),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: onRemove,
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.bookmark_remove, color: Colors.white, size: 18),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Title
-              Positioned(
-                bottom: 8,
-                left: 10,
-                right: 10,
-                child: Text(
-                  template.nameHi ?? template.nameEn ?? 'स्टेटस पोस्टर',
-                  style: GoogleFonts.hind(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    height: 1.2,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

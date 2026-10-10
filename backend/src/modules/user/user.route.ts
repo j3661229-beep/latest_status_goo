@@ -1,9 +1,43 @@
 // src/modules/user/user.route.ts
 import { FastifyInstance } from 'fastify';
-import { PrismaClient } from '@prisma/client';
-import type { Redis } from 'ioredis';
+import { Prisma, Language } from '@prisma/client';
+import { z } from 'zod';
 import { CacheService } from '../../lib/cache/cache.service';
 import { CK, TTL } from '../../lib/cache/keys';
+import { invalidateUserCaches, safeUserSelect } from '../../lib/auth/auth-state';
+import { httpsUrl, parsePagination, sendValidationError } from '../../lib/http/validation';
+
+/** Optional, nullable text field with a max length ('' clears the value). */
+const text = (max: number) =>
+  z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(max).nullable().optional());
+
+/** Optional, nullable https image URL ('' clears the value). */
+const imageUrl = z.preprocess((v) => (v === '' ? null : v), httpsUrl.nullable().optional());
+
+const UpdateMeSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  displayName: text(100),
+  language: z.preprocess(
+    (v) => (typeof v === 'string' ? v.toUpperCase() : v),
+    z.nativeEnum(Language).optional(),
+  ),
+  timezone: z.string().max(64).optional(),
+  profilePhoto: imageUrl,
+  state: text(100),
+  region: text(100),
+  businessName: text(150),
+  businessPhone: text(20),
+  businessAddress: text(255),
+  businessDesignation: text(100),
+  businessLogo: imageUrl,
+  frameType: text(30),
+});
+
+const PlayerIdSchema = z.object({
+  playerId: z.string().min(1).max(200),
+  deviceModel: z.string().max(100).optional(),
+  appVersion: z.string().max(30).optional(),
+});
 
 export async function userRoutes(fastify: FastifyInstance) {
   const cache = new CacheService(fastify.redis);
@@ -69,11 +103,13 @@ export async function userRoutes(fastify: FastifyInstance) {
   // PUT /user/me
   fastify.put('/me', { preHandler: [fastify.authenticate] }, async (req, reply) => {
     const { userId } = req.user as any;
+    const parsed = UpdateMeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid profile data');
     const {
       name, displayName, language, timezone, profilePhoto,
       state, region,
       businessName, businessPhone, businessAddress, businessDesignation, businessLogo, frameType,
-    } = req.body as any;
+    } = parsed.data;
 
     const user = await fastify.prisma.user.update({
       where: { id: userId },
@@ -93,20 +129,94 @@ export async function userRoutes(fastify: FastifyInstance) {
         ...(frameType !== undefined && { frameType }),
         updatedAt: new Date(),
       },
+      select: safeUserSelect, // never return the password hash
     });
 
-    await cache.del(CK.userProfile(userId));
+    await invalidateUserCaches(fastify.redis, userId);
     return reply.send({ user });
   });
 
   // PUT /user/player-id
   fastify.put('/player-id', { preHandler: [fastify.authenticate] }, async (req, reply) => {
     const { userId } = req.user as any;
-    const { playerId } = req.body as { playerId: string };
+    const parsed = PlayerIdSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error);
+    const { playerId, deviceModel, appVersion } = parsed.data;
 
     await fastify.prisma.user.update({
       where: { id: userId },
-      data: { oneSignalPlayerId: playerId },
+      data: {
+        oneSignalPlayerId: playerId,
+        ...(deviceModel && { deviceModel }),
+        ...(appVersion && { appVersion }),
+      },
+    });
+
+    return reply.send({ success: true });
+  });
+
+  // GET /user/notifications
+  fastify.get('/notifications', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+    const { userId } = req.user as any;
+    const { page: p, limit: l } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 });
+
+    const [notifications, total, unreadCount] = await Promise.all([
+      fastify.prisma.notificationLog.findMany({
+        where: { userId },
+        orderBy: { sentAt: 'desc' },
+        skip: (p - 1) * l,
+        take: l,
+      }),
+      fastify.prisma.notificationLog.count({ where: { userId } }),
+      fastify.prisma.notificationLog.count({ where: { userId, isRead: false } }),
+    ]);
+
+    return reply.send({
+      data: notifications,
+      total,
+      unreadCount,
+      page: p,
+      limit: l,
+      hasMore: (p - 1) * l + notifications.length < total,
+    });
+  });
+
+  // PUT /user/notifications/:id/read
+  fastify.put('/notifications/:id/read', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+    const { userId } = req.user as any;
+    const { id } = req.params as { id: string };
+
+    await fastify.prisma.notificationLog.updateMany({
+      where: { id, userId },
+      data: { isRead: true, readAt: new Date() },
+    });
+
+    const unreadCount = await fastify.prisma.notificationLog.count({
+      where: { userId, isRead: false },
+    });
+
+    return reply.send({ success: true, unreadCount });
+  });
+
+  // PUT /user/notifications/read-all
+  fastify.put('/notifications/read-all', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+    const { userId } = req.user as any;
+
+    await fastify.prisma.notificationLog.updateMany({
+      where: { userId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+
+    return reply.send({ success: true, unreadCount: 0 });
+  });
+
+  // DELETE /user/notifications/:id
+  fastify.delete('/notifications/:id', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+    const { userId } = req.user as any;
+    const { id } = req.params as { id: string };
+
+    await fastify.prisma.notificationLog.deleteMany({
+      where: { id, userId },
     });
 
     return reply.send({ success: true });
@@ -115,11 +225,9 @@ export async function userRoutes(fastify: FastifyInstance) {
   // GET /user/saved
   fastify.get('/saved', { preHandler: [fastify.authenticate] }, async (req, reply) => {
     const { userId } = req.user as any;
-    const { page = '1', limit = '20' } = req.query as any;
-    const p = parseInt(page);
-    const l = Math.min(parseInt(limit), 50);
+    const { page: p, limit: l } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 });
 
-    const cacheKey = CK.userSaved(userId, p);
+    const cacheKey = CK.userSaved(userId, p, l);
     const cached = await cache.get(cacheKey);
     if (cached) return reply.send(cached);
 
@@ -148,18 +256,24 @@ export async function userRoutes(fastify: FastifyInstance) {
     const { userId } = req.user as any;
     const { templateId } = req.params as { templateId: string };
 
-    await fastify.prisma.savedStatus.upsert({
-      where: { userId_templateId: { userId, templateId } },
-      update: {},
-      create: { userId, templateId },
-    });
+    try {
+      await fastify.prisma.savedStatus.create({ data: { userId, templateId } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        // Already saved → idempotent success without bumping saveCount again
+        if (err.code === 'P2002') return reply.send({ saved: true });
+        // Unknown template id
+        if (err.code === 'P2003') return reply.status(404).send({ error: 'Template not found' });
+      }
+      throw err;
+    }
 
     fastify.prisma.template.update({
       where: { id: templateId },
       data: { saveCount: { increment: 1 } },
     }).catch(() => {});
 
-    await cache.invalidatePattern(CK.userSaved(userId, 0).replace(':p0', ':p*'));
+    await cache.invalidatePattern(CK.userSavedPattern(userId)).catch(() => 0);
     return reply.send({ saved: true });
   });
 
@@ -168,15 +282,18 @@ export async function userRoutes(fastify: FastifyInstance) {
     const { userId } = req.user as any;
     const { templateId } = req.params as { templateId: string };
 
-    await fastify.prisma.savedStatus.deleteMany({ where: { userId, templateId } });
+    const { count } = await fastify.prisma.savedStatus.deleteMany({ where: { userId, templateId } });
 
-    // Use GREATEST(0, saveCount-1) to prevent saveCount going negative
-    // This is safe even if called multiple times (idempotent floor at 0)
-    fastify.prisma.$executeRaw`
-      UPDATE "Template"
-      SET "saveCount" = GREATEST(0, "saveCount" - 1)
-      WHERE id = ${templateId}
-    `.catch((err: Error) => fastify.log.warn({ err, templateId }, 'saveCount decrement failed'));
+    // Only decrement when something was actually removed; GREATEST keeps it >= 0
+    if (count > 0) {
+      fastify.prisma.$executeRaw`
+        UPDATE "Template"
+        SET "saveCount" = GREATEST(0, "saveCount" - 1)
+        WHERE id = ${templateId}
+      `.catch((err: Error) => fastify.log.warn({ err, templateId }, 'saveCount decrement failed'));
+    }
+
+    await cache.invalidatePattern(CK.userSavedPattern(userId)).catch(() => 0);
 
     return reply.send({ saved: false });
   });
@@ -184,9 +301,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // GET /user/history
   fastify.get('/history', { preHandler: [fastify.authenticate] }, async (req, reply) => {
     const { userId } = req.user as any;
-    const { page = '1', limit = '20' } = req.query as any;
-    const p = parseInt(page);
-    const l = Math.min(parseInt(limit), 50);
+    const { page: p, limit: l } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 });
 
     const [data, total] = await Promise.all([
       fastify.prisma.shareHistory.findMany({

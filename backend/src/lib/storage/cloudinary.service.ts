@@ -1,11 +1,23 @@
 import { v2 as cloudinary } from 'cloudinary';
 
-// Configure with the URL from .env
-if (process.env.CLOUDINARY_URL) {
-  cloudinary.config({
-    cloudinary_url: process.env.CLOUDINARY_URL
-  });
+// Configure Cloudinary properly from CLOUDINARY_URL or individual env vars
+function initCloudinary() {
+  const url = process.env.CLOUDINARY_URL || '';
+  const match = url.match(/cloudinary:\/\/([^:]+):([^@]+)@(.*)/);
+  const cloudName = match ? match[3] : (process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME);
+  const apiKey = match ? match[1] : (process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY || process.env.CLOUDINARY_API_KEY);
+  const apiSecret = match ? match[2] : process.env.CLOUDINARY_API_SECRET;
+
+  if (cloudName && apiKey && apiSecret) {
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true,
+    });
+  }
 }
+initCloudinary();
 
 export class CloudinaryService {
   /**

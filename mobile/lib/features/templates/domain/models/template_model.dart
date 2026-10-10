@@ -50,6 +50,10 @@ class TemplateModel {
   final bool? isFeatured;
   final bool? isTrending;
   final bool? isPremium;
+
+  /// Server sets this for premium templates the current user can't use.
+  /// The thumbnail is still present; imageUrl/videoUrl may be omitted.
+  final bool isLocked;
   final bool? isNew;
   final bool? isCoordinatorPick;
   final String? coordinatorNote;
@@ -93,6 +97,7 @@ class TemplateModel {
     this.isFeatured,
     this.isTrending,
     this.isPremium,
+    this.isLocked = false,
     this.isNew,
     this.isCoordinatorPick,
     this.coordinatorNote,
@@ -105,6 +110,14 @@ class TemplateModel {
 
   bool get isVideo => type == 'VIDEO';
   bool get isImage => type == 'IMAGE';
+
+  /// Best image for full-size rendering (falls back to the thumbnail).
+  String? get displayImageUrl {
+    if (imageUrl != null && imageUrl!.isNotEmpty) return imageUrl;
+    if (imageThumbUrl != null && imageThumbUrl!.isNotEmpty) return imageThumbUrl;
+    if (videoThumbUrl != null && videoThumbUrl!.isNotEmpty) return videoThumbUrl;
+    return null;
+  }
 
   String nameFor(String lang) {
     return switch (lang) {

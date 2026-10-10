@@ -19,12 +19,16 @@ export const LogoutSchema = z.object({
 });
 
 export const OTPSendSchema = z.object({
-  phoneNumber: z.string().min(10, 'Invalid phone number'),
+  phoneNumber: z.string().min(10, 'Invalid phone number').max(20, 'Invalid phone number'),
 });
 
 export const OTPVerifySchema = z.object({
-  phoneNumber: z.string().min(10, 'Invalid phone number'),
-  otp: z.string().length(6, 'OTP must be 6 digits'),
+  phoneNumber: z.string().min(10, 'Invalid phone number').max(20, 'Invalid phone number'),
+  otp: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits'),
+});
+
+export const DevLoginSchema = z.object({
+  email: z.string().email('Invalid email address'),
 });
 
 export type AdminLoginBody = z.infer<typeof AdminLoginSchema>;
@@ -32,3 +36,4 @@ export type GoogleAuthBody = z.infer<typeof GoogleAuthSchema>;
 export type RefreshBody = z.infer<typeof RefreshSchema>;
 export type OTPSendBody = z.infer<typeof OTPSendSchema>;
 export type OTPVerifyBody = z.infer<typeof OTPVerifySchema>;
+export type DevLoginBody = z.infer<typeof DevLoginSchema>;

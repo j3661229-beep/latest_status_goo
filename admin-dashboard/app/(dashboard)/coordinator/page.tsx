@@ -2,8 +2,11 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pin, Search, Trash2, Edit3, CheckCircle, Plus, Sparkles, RefreshCw, X, Eye } from 'lucide-react';
+import { Pin, Search, Trash2, Edit3, Plus, RefreshCw, X } from 'lucide-react';
 import { adminApi } from '@/lib/api';
+import { toast } from '@/lib/toast';
+import { useDebounce } from '@/lib/hooks';
+import { QueryError } from '@/components/QueryError';
 
 const INDIAN_STATES = [
   'All India (National)',
@@ -31,16 +34,27 @@ export default function CoordinatorPicksPage() {
   const [searchApproved, setSearchApproved] = useState('');
 
   // 1. Fetch coordinator picks
-  const { data: picks = [], isLoading, refetch, isRefetching } = useQuery({
+  const debouncedSearch = useDebounce(searchApproved.trim(), 300);
+
+  const { data: picksResponse, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ['admin-coordinator-picks'],
     queryFn: () => adminApi.getCoordinatorPicks(),
     staleTime: 30 * 1000,
   });
 
+  // getCoordinatorPicks() normalizes the response to { data, total }
+  const picks: any[] = picksResponse?.data ?? [];
+
   // 2. Fetch approved templates for pinning
-  const { data: approvedTemplatesData } = useQuery({
-    queryKey: ['approved-templates-for-pin', searchApproved],
-    queryFn: () => adminApi.getTemplates({ status: 'APPROVED', search: searchApproved, limit: 15 }),
+  const {
+    data: approvedTemplatesData,
+    isLoading: approvedLoading,
+    isError: approvedIsError,
+    error: approvedError,
+    refetch: refetchApproved,
+  } = useQuery({
+    queryKey: ['approved-templates-for-pin', debouncedSearch],
+    queryFn: () => adminApi.getTemplates({ status: 'APPROVED', search: debouncedSearch || undefined, limit: 15 }),
     enabled: showAddModal,
   });
 
@@ -52,8 +66,11 @@ export default function CoordinatorPicksPage() {
       coordinatorNote?: string;
       coordinatorState?: string;
     }) => adminApi.setCoordinatorPick(id, isCoordinatorPick, coordinatorNote, coordinatorState),
-    onSuccess: () => {
+    onError: (err) => toast.apiError(err, 'Failed to update coordinator pick'),
+    onSuccess: (_d, vars) => {
+      toast.success(vars.isCoordinatorPick ? 'Coordinator pick saved' : 'Removed from coordinator picks');
       queryClient.invalidateQueries({ queryKey: ['admin-coordinator-picks'] });
+      queryClient.invalidateQueries({ queryKey: ['review-queue'] });
       setEditingTemplate(null);
       setShowAddModal(false);
     },
@@ -70,45 +87,45 @@ export default function CoordinatorPicksPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
-              <Pin size={20} />
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 border border-amber-200/60">
+              <Pin size={18} />
             </div>
-            <h1 className="text-xl md:text-2xl font-900 text-slate-800">Coordinator Picks</h1>
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">Coordinator Picks</h1>
           </div>
-          <p className="text-muted text-sm mt-1">
+          <p className="text-slate-500 text-xs mt-1">
             Pinned templates that feature at the top of the mobile app home screen for specific states or all users.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             onClick={() => refetch()}
             disabled={isLoading || isRefetching}
-            className="btn-ghost flex items-center gap-2 text-sm disabled:opacity-50"
+            className="btn-secondary text-xs flex items-center gap-1.5 disabled:opacity-50"
           >
-            <RefreshCw size={14} className={isRefetching ? 'animate-spin' : ''} />
+            <RefreshCw size={13} className={isRefetching ? 'animate-spin' : ''} />
             Refresh
           </button>
           <button
             onClick={() => setShowAddModal(true)}
-            className="btn-primary flex items-center gap-2 text-sm bg-gradient-brand shadow-primary/20"
+            className="btn-primary text-xs flex items-center gap-1.5"
           >
-            <Plus size={16} /> Pin New Template
+            <Plus size={15} /> Pin New Template
           </button>
         </div>
       </div>
 
       {/* State Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         {['All', ...INDIAN_STATES].map((state) => (
           <button
             key={state}
             onClick={() => setSelectedState(state)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-700 whitespace-nowrap transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
               selectedState === state
-                ? 'bg-primary text-white shadow-sm shadow-blue-500/25'
-                : 'bg-white text-slate-600 hover:bg-blue-50/50 hover:text-primary border border-slate-200'
+                ? 'bg-primary text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-slate-200'
             }`}
           >
             {state}
@@ -118,14 +135,16 @@ export default function CoordinatorPicksPage() {
 
       {/* Grid of Coordinator Picks */}
       {isLoading ? (
-        <div className="py-20 text-center text-muted">Loading coordinator picks...</div>
+        <div className="py-20 text-center text-slate-400 text-xs">Loading coordinator picks...</div>
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
       ) : filteredPicks.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-surface-border p-12 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-3">
-            <Pin size={24} />
+        <div className="bg-white rounded-xl border border-slate-200/80 p-12 text-center shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 border border-amber-200/60 flex items-center justify-center mx-auto mb-3">
+            <Pin size={20} />
           </div>
-          <h3 className="font-800 text-slate-800 text-base mb-1">No Coordinator Picks in this category</h3>
-          <p className="text-muted text-sm max-w-md mx-auto mb-4">
+          <h3 className="font-bold text-slate-800 text-sm mb-1">No Coordinator Picks in this category</h3>
+          <p className="text-slate-500 text-xs max-w-md mx-auto mb-4">
             Pin high-quality templates to elevate them directly into the mobile home feed's top carousel.
           </p>
           <button
@@ -140,7 +159,7 @@ export default function CoordinatorPicksPage() {
           {filteredPicks.map((template: any) => (
             <div
               key={template.id}
-              className="bg-white rounded-2xl border border-surface-border shadow-card overflow-hidden flex flex-col group hover:shadow-lg transition-all"
+              className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col hover:border-slate-300 transition-all group"
             >
               {/* Image / Thumbnail Container */}
               <div
@@ -151,29 +170,29 @@ export default function CoordinatorPicksPage() {
                   <img
                     src={template.imageUrl || template.imageThumbUrl}
                     alt={template.nameEn || template.nameHi}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
                   />
                 ) : (
-                  <div className="p-4 text-center text-white font-800 text-base drop-shadow">
+                  <div className="p-4 text-center text-white font-bold text-sm drop-shadow">
                     {template.nameHi || template.nameEn}
                   </div>
                 )}
 
                 {/* State Tag */}
-                <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[11px] font-700 px-2.5 py-1 rounded-lg border border-white/20">
+                <div className="absolute top-2.5 left-2.5 bg-black/60 backdrop-blur-md text-white text-[10px] font-semibold px-2 py-0.5 rounded-md border border-white/20">
                   📍 {template.coordinatorState || 'All India'}
                 </div>
 
                 {/* Status Pin Badge */}
-                <div className="absolute top-3 right-3 bg-amber-500 text-white p-1.5 rounded-lg shadow-md">
-                  <Pin size={14} className="fill-white" />
+                <div className="absolute top-2.5 right-2.5 bg-amber-500 text-white p-1 rounded-md shadow-xs">
+                  <Pin size={12} className="fill-white" />
                 </div>
 
                 {/* Hover overlay with note */}
                 {template.coordinatorNote && (
                   <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent text-white text-xs">
-                    <span className="font-800 text-amber-300">Coordinator Note:</span>
-                    <p className="line-clamp-2 mt-0.5 text-white/90">{template.coordinatorNote}</p>
+                    <span className="font-semibold text-amber-300 text-[11px]">Coordinator Note:</span>
+                    <p className="line-clamp-2 mt-0.5 text-white/90 text-[11px] leading-snug">{template.coordinatorNote}</p>
                   </div>
                 )}
               </div>
@@ -181,25 +200,25 @@ export default function CoordinatorPicksPage() {
               {/* Card Body */}
               <div className="p-3.5 flex-1 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-800 text-slate-800 text-sm truncate">
+                  <h4 className="font-bold text-slate-900 text-xs truncate">
                     {template.nameHi || template.nameEn}
                   </h4>
-                  <p className="text-xs text-muted truncate mt-0.5">
+                  <p className="text-[11px] text-slate-500 truncate mt-0.5">
                     {template.nameEn} · {template.category?.nameEn || 'Template'}
                   </p>
                 </div>
 
                 {/* Actions */}
-                <div className="mt-4 pt-3 border-t border-surface-border flex items-center justify-between gap-2">
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
                   <button
                     onClick={() => {
                       setEditingTemplate(template);
                       setEditNote(template.coordinatorNote || '');
                       setEditState(template.coordinatorState || '');
                     }}
-                    className="btn-ghost text-xs py-1.5 px-2.5 flex items-center gap-1.5 flex-1 justify-center"
+                    className="btn-secondary text-xs py-1 px-2.5 flex items-center gap-1.5 flex-1 justify-center"
                   >
-                    <Edit3 size={13} /> Edit Note
+                    <Edit3 size={12} /> Edit Note
                   </button>
                   <button
                     onClick={() => {
@@ -207,10 +226,10 @@ export default function CoordinatorPicksPage() {
                         setPickMutation.mutate({ id: template.id, isCoordinatorPick: false });
                       }
                     }}
-                    className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                    className="text-rose-500 hover:bg-rose-50 p-1.5 rounded-md transition-colors"
                     title="Unpin"
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
               </div>
@@ -221,24 +240,24 @@ export default function CoordinatorPicksPage() {
 
       {/* Modal: Edit Coordinator Pick Note / State */}
       {editingTemplate && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-900 text-slate-800 text-lg">Edit Coordinator Pick</h3>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-xl space-y-4 border border-slate-200">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-sm">Edit Coordinator Pick</h3>
               <button
                 onClick={() => setEditingTemplate(null)}
-                className="text-muted hover:text-slate-800"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             <div>
-              <label className="block text-xs font-700 text-slate-600 mb-1">Target Region / State</label>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Target Region / State</label>
               <select
                 value={editState}
                 onChange={(e) => setEditState(e.target.value)}
-                className="w-full border border-surface-border rounded-xl px-3 py-2 text-sm bg-surface focus:outline-none focus:border-primary"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
               >
                 <option value="">All India (National - shown to everyone)</option>
                 {INDIAN_STATES.filter((s) => s !== 'All India (National)').map((st) => (
@@ -250,7 +269,7 @@ export default function CoordinatorPicksPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-700 text-slate-600 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Coordinator Note / Badge Text (optional)
               </label>
               <textarea
@@ -258,12 +277,12 @@ export default function CoordinatorPicksPage() {
                 onChange={(e) => setEditNote(e.target.value)}
                 placeholder="e.g. Recommended for Ganesh Chaturthi celebrations!"
                 rows={3}
-                className="w-full border border-surface-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setEditingTemplate(null)} className="btn-ghost text-sm">
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={() => setEditingTemplate(null)} className="btn-secondary text-xs px-3.5 py-1.5">
                 Cancel
               </button>
               <button
@@ -276,7 +295,7 @@ export default function CoordinatorPicksPage() {
                   });
                 }}
                 disabled={setPickMutation.isPending}
-                className="btn-primary text-sm flex items-center gap-1.5"
+                className="btn-primary text-xs px-3.5 py-1.5 flex items-center gap-1.5"
               >
                 Save Changes
               </button>
@@ -287,50 +306,61 @@ export default function CoordinatorPicksPage() {
 
       {/* Modal: Pin an Approved Template */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full p-5 shadow-xl space-y-4 max-h-[85vh] flex flex-col border border-slate-200">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div>
-                <h3 className="font-900 text-slate-800 text-lg">Pin Template as Coordinator Pick</h3>
-                <p className="text-muted text-xs">Search approved templates to feature in the app feed</p>
+                <h3 className="font-bold text-slate-900 text-sm">Pin Template as Coordinator Pick</h3>
+                <p className="text-slate-500 text-xs">Search approved templates to feature in the app feed</p>
               </div>
-              <button onClick={() => setShowAddModal(false)} className="text-muted hover:text-slate-800">
-                <X size={20} />
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-md">
+                <X size={18} />
               </button>
             </div>
 
             {/* Search Input */}
             <div className="relative">
-              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={searchApproved}
                 onChange={(e) => setSearchApproved(e.target.value)}
                 placeholder="Search approved templates by name or tag..."
-                className="w-full pl-10 pr-4 py-2.5 text-sm border border-surface-border rounded-xl focus:outline-none focus:border-primary"
+                className="w-full pl-9 pr-3.5 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-slate-800"
               />
             </div>
 
             {/* Template List */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {approvedLoading && (
+                <div className="py-8 text-center text-slate-400 text-xs">Loading approved templates...</div>
+              )}
+              {approvedIsError && (
+                <QueryError error={approvedError} onRetry={() => refetchApproved()} title="Failed to load templates" />
+              )}
+              {!approvedLoading && !approvedIsError && (approvedTemplatesData?.data ?? []).length === 0 && (
+                <div className="py-8 text-center text-slate-400 text-xs">
+                  {debouncedSearch ? `No approved templates match "${debouncedSearch}"` : 'No approved templates found'}
+                </div>
+              )}
               {(approvedTemplatesData?.data ?? []).map((tpl: any) => (
                 <div
                   key={tpl.id}
-                  className="flex items-center justify-between p-3 rounded-xl border border-surface-border hover:border-primary/50 transition-all bg-surface/50"
+                  className="flex items-center justify-between p-2.5 rounded-lg border border-slate-200/80 hover:border-slate-300 transition-colors bg-slate-50/50 hover:bg-slate-50"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className="w-12 h-16 rounded-lg overflow-hidden bg-slate-800 shrink-0"
+                      className="w-10 h-14 rounded-md overflow-hidden bg-slate-800 shrink-0"
                       style={{ background: tpl.gradient }}
                     >
-                      {tpl.imageUrl && (
-                        <img src={tpl.imageUrl} alt="" className="w-full h-full object-cover" />
+                      {(tpl.imageUrl || tpl.imageThumbUrl) && (
+                        <img src={tpl.imageUrl || tpl.imageThumbUrl} alt="" className="w-full h-full object-cover" />
                       )}
                     </div>
                     <div className="min-w-0">
-                      <div className="font-800 text-sm text-slate-800 truncate">
+                      <div className="font-semibold text-xs text-slate-900 truncate">
                         {tpl.nameHi || tpl.nameEn}
                       </div>
-                      <div className="text-xs text-muted truncate">
+                      <div className="text-[11px] text-slate-500 truncate">
                         {tpl.nameEn} · {tpl.category?.nameEn || 'General'}
                       </div>
                     </div>
@@ -342,9 +372,9 @@ export default function CoordinatorPicksPage() {
                       setEditNote('Pinned by Coordinator');
                       setEditState('');
                     }}
-                    className="btn-primary text-xs py-1.5 px-3 shrink-0 flex items-center gap-1 bg-amber-500 hover:bg-amber-600 border-none"
+                    className="btn-primary text-xs py-1 px-2.5 shrink-0 flex items-center gap-1 bg-amber-500 hover:bg-amber-600 border-none"
                   >
-                    <Pin size={12} /> Pin This
+                    <Pin size={11} /> Pin This
                   </button>
                 </div>
               ))}

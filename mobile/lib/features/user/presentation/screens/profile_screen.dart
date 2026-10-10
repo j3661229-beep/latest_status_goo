@@ -1,397 +1,653 @@
-// lib/features/user/presentation/screens/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive/hive.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/api/api_error.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/profile_photo.dart';
 import '../../../auth/data/auth_repository.dart';
 import '../../../auth/presentation/providers/current_user_provider.dart';
 import '../../../auth/domain/models/user_model.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Refresh plan / stats from GET /user/me whenever the profile opens.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshUser(silent: true));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshUser(silent: true);
+  }
+
+  Future<void> _refreshUser({bool silent = false}) async {
+    try {
+      await ref.read(authRepositoryProvider).refreshCurrentUser();
+    } catch (e) {
+      if (!silent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(apiErrorMessage(e), style: GoogleFonts.hind()),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _buildProfile(context, ref);
+  }
+
+  Widget _buildProfile(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
+    final photo = currentUserPhotoProvider(serverPhoto: user?.profilePhoto);
     final displayName = user?.displayName ?? user?.name ?? 'उपयोगकर्ता';
-    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
+    final initial = displayName.trim().isNotEmpty ? displayName.trim()[0].toUpperCase() : 'U';
     final isPremium = user?.isPremium ?? false;
     final language = _langLabel(user?.language ?? 'HINDI');
+
+    final settingsBox = Hive.box(AppConstants.hiveBoxSettings);
+    final userState = user?.state ?? settingsBox.get(AppConstants.keyState) as String?;
+    final userRegion = user?.region ?? settingsBox.get(AppConstants.keyRegion) as String?;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         title: Text(
-          'मेरी प्रोफाइल (Profile)',
-          style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 20),
+          'मेरी प्रोफ़ाइल',
+          style: GoogleFonts.hind(
+            fontWeight: FontWeight.w700,
+            fontSize: 20,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: AppColors.surfaceBorder, height: 1),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, size: 24),
-            tooltip: 'लॉगआउट (Sign Out)',
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: Text('लॉगआउट करें?', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
-                  content: Text('क्या आप सचमुच ऐप से बाहर निकलना चाहते हैं?', style: GoogleFonts.hind(fontSize: 15)),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: Text('रद्द करें', style: GoogleFonts.hind(color: AppColors.textMuted)),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, minimumSize: const Size(90, 40)),
-                      child: Text('लॉगआउट', style: GoogleFonts.hind(fontWeight: FontWeight.w700, color: Colors.white)),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                await ref.read(authRepositoryProvider).signOut();
-                if (context.mounted) context.go('/login');
-              }
-            },
+            icon: const Icon(Icons.logout_rounded, size: 22, color: AppColors.textSecondary),
+            tooltip: 'लॉगआउट',
+            onPressed: () => _confirmSignOut(context, ref),
           ),
           const SizedBox(width: 8),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // ── Profile Header (Solid Royal Blue banner) ─────────────────
-            Container(
-              color: AppColors.primary,
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-              child: Column(
-                children: [
-                  // Avatar
-                  Container(
-                    width: 84,
-                    height: 84,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      color: Colors.white.withOpacity(0.2),
-                      image: user?.profilePhoto != null
-                          ? DecorationImage(
-                              image: NetworkImage(user!.profilePhoto!),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: user?.profilePhoto == null
-                        ? Center(
-                            child: Text(
-                              initial,
-                              style: GoogleFonts.hind(fontSize: 36, fontWeight: FontWeight.w700, color: Colors.white),
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    displayName,
-                    style: GoogleFonts.hind(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-                  ),
-                  if (user?.phoneNumber != null || user?.email != null)
-                    Text(
-                      user?.phoneNumber ?? user?.email ?? '',
-                      style: GoogleFonts.hind(color: Colors.white.withOpacity(0.85), fontSize: 14),
-                    ),
-                  const SizedBox(height: 12),
-                  // Badges
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isPremium ? AppColors.accent : Colors.white.withOpacity(0.25),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          isPremium ? '⭐ प्रीमियम सदस्य' : 'फ्री प्लान (Free)',
-                          style: GoogleFonts.hind(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.25),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          '🌐 $language',
-                          style: GoogleFonts.hind(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Stats Row ────────────────────────────────────────────────
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.surfaceBorder),
-                boxShadow: AppColors.cardShadow,
-              ),
-              child: Row(
-                children: [
-                  _StatTile(
-                    emoji: '🔥',
-                    value: user?.streakCount.toString() ?? '0',
-                    label: 'दिन स्ट्रीक',
-                  ),
-                  Container(width: 1, height: 40, color: AppColors.surfaceBorder),
-                  _StatTile(
-                    emoji: '📤',
-                    value: user?.totalShares.toString() ?? '0',
-                    label: 'कुल शेयर',
-                  ),
-                  Container(width: 1, height: 40, color: AppColors.surfaceBorder),
-                  _StatTile(
-                    emoji: '🔖',
-                    value: user?.totalSaves.toString() ?? '0',
-                    label: 'सेव किए गए',
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Premium Upgrade Card (if not premium) ───────────────────
-            if (!isPremium)
+      body: RefreshIndicator(
+        color: AppColors.primary,
+        onRefresh: () => _refreshUser(),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              // ── 1. Profile Header Card ──────────────────────────────
               Container(
-                margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.primarySurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  border: Border.all(color: AppColors.surfaceBorder),
+                  boxShadow: AppShadows.card,
                 ),
                 child: Row(
                   children: [
+                    // Avatar (remote URL or local file)
                     Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: const BoxDecoration(
-                        color: AppColors.accent,
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
+                        color: AppColors.primarySurface,
+                        border: Border.all(color: AppColors.surfaceBorder, width: 2),
+                        image: photo != null
+                            ? DecorationImage(
+                                image: photo,
+                                fit: BoxFit.cover,
+                                onError: (_, __) {},
+                              )
+                            : null,
                       ),
-                      child: const Icon(Icons.workspace_premium, color: Colors.white, size: 24),
+                      child: photo == null
+                          ? Center(
+                              child: Text(
+                                initial,
+                                style: GoogleFonts.hind(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            )
+                          : null,
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 16),
+
+                    // Name & Contact Details
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'प्रीमियम में अपग्रेड करें ⭐',
-                            style: GoogleFonts.hind(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 16),
+                            displayName,
+                            style: GoogleFonts.hind(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                              height: 1.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          Text(
-                            'सभी स्टेटस और कस्टम फ्रेम अनलॉक करें',
-                            style: GoogleFonts.hind(color: AppColors.textSecondary, fontSize: 13),
+                          if (user?.phoneNumber != null || user?.email != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              user?.phoneNumber ?? user?.email ?? '',
+                              style: GoogleFonts.hind(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          // Badges
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isPremium ? const Color(0xFFFEF3C7) : AppColors.bg,
+                                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                                    border: Border.all(
+                                      color: isPremium ? const Color(0xFFF59E0B) : AppColors.surfaceBorder,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    isPremium ? '⭐ प्रीमियम' : 'फ्री प्लान',
+                                    style: GoogleFonts.hind(
+                                      color: isPremium ? const Color(0xFFB45309) : AppColors.textSecondary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.bg,
+                                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                                    border: Border.all(color: AppColors.surfaceBorder),
+                                  ),
+                                  child: Text(
+                                    language,
+                                    style: GoogleFonts.hind(
+                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                if (userState != null && userState.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.bg,
+                                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                                      border: Border.all(color: AppColors.surfaceBorder),
+                                    ),
+                                    child: Text(
+                                      userRegion != null && userRegion.isNotEmpty
+                                          ? '📍 $userState ($userRegion)'
+                                          : '📍 $userState',
+                                      style: GoogleFonts.hind(
+                                        color: AppColors.textSecondary,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => context.push('/premium'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        minimumSize: const Size(80, 40),
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: Text('देखें', style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 14)),
                     ),
                   ],
                 ),
               ),
 
-            // ── Business Branding Section ────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'बिजनेस ब्रांडिंग और फ्रेम (Business Framing)',
-                    style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              // ── 2. Premium Upgrade Callout (if free user) ───────────
+              if (!isPremium)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.surfaceBorder),
-                    ),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.storefront, color: AppColors.primary, size: 24),
-                          title: Text('दुकान / बिजनेस की जानकारी', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                          subtitle: Text(
-                            user?.businessName?.isNotEmpty == true
-                                ? user!.businessName!
-                                : 'नाम, नंबर, पता और पद जोड़ें',
-                            style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
-                          ),
-                          trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
-                          onTap: () => _showBusinessBrandingDialog(context, ref, user),
-                        ),
-                        const Divider(height: 1, color: AppColors.divider),
-                        ListTile(
-                          leading: const Icon(Icons.crop_portrait, color: AppColors.primary, size: 24),
-                          title: Text('फ्रेम स्टाइल', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                          subtitle: Text(
-                            _getFrameTypeName(user?.frameType),
-                            style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
-                          ),
-                          trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
-                          onTap: () => _showBusinessBrandingDialog(context, ref, user),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Settings List ───────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'अन्य विकल्प (Options)',
-                    style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.surfaceBorder),
-                    ),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.bookmark_outline, color: AppColors.primary, size: 24),
-                          title: Text('सेव किए गए स्टेटस', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                          trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
-                          onTap: () => context.push('/saved'),
-                        ),
-                        const Divider(height: 1, color: AppColors.divider),
-                        ListTile(
-                          leading: const Icon(Icons.language, color: AppColors.primary, size: 24),
-                          title: Text('भाषा (Language)', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                          trailing: Text(language, style: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 14)),
-                          onTap: () {},
-                        ),
-                        const Divider(height: 1, color: AppColors.divider),
-                        ListTile(
-                          leading: const Icon(Icons.help_outline, color: AppColors.primary, size: 24),
-                          title: Text('मदद और संपर्क (Help & FAQ)', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                          trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
-                          onTap: () {},
-                        ),
-                        const Divider(height: 1, color: AppColors.divider),
-                        ListTile(
-                          leading: const Icon(Icons.share, color: AppColors.primary, size: 24),
-                          title: Text('दोस्तों को ऐप शेयर करें', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                          trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
-                          onTap: () {},
-                        ),
-                        const Divider(height: 1, color: AppColors.divider),
-                        ListTile(
-                          leading: const Icon(Icons.info_outline, color: AppColors.primary, size: 24),
-                          title: Text('ऐप वर्शन (Version)', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                          trailing: Text('1.0.0', style: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 14)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 30),
-
-            // Sign Out Button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    side: const BorderSide(color: AppColors.danger, width: 1.5),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: () async {
-                    await ref.read(authRepositoryProvider).signOut();
-                    if (context.mounted) context.go('/login');
-                  },
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.logout, color: AppColors.danger, size: 22),
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF59E0B),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.workspace_premium_rounded, color: Colors.white, size: 22),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'प्रीमियम में अपग्रेड करें',
+                              style: GoogleFonts.hind(
+                                color: const Color(0xFF92400E),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text(
+                              'सभी स्टेटस और कस्टम फ्रेम अनलॉक करें',
+                              style: GoogleFonts.hind(
+                                color: const Color(0xFFB45309),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(width: 8),
-                      Text(
-                        'लॉगआउट करें (Sign Out)',
-                        style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 16),
+                      ElevatedButton(
+                        onPressed: () => context.push('/premium'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD97706),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          minimumSize: const Size(60, 36),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+                        ),
+                        child: Text(
+                          'देखें',
+                          style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ),
 
-            const SizedBox(height: 100),
-          ],
+              // ── 3. Quick Stats (Useful & Minimal) ───────────────────
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.surfaceBorder),
+                ),
+                child: Row(
+                  children: [
+                    _StatTile(
+                      emoji: '🔥',
+                      value: user?.streakCount.toString() ?? '0',
+                      label: 'दिन स्ट्रीक',
+                    ),
+                    Container(width: 1, height: 32, color: AppColors.surfaceBorder),
+                    _StatTile(
+                      emoji: '📤',
+                      value: user?.totalShares.toString() ?? '0',
+                      label: 'कुल शेयर',
+                    ),
+                    Container(width: 1, height: 32, color: AppColors.surfaceBorder),
+                    _StatTile(
+                      emoji: '🔖',
+                      value: user?.totalSaves.toString() ?? '0',
+                      label: 'सहेजे गए',
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── 4. Content & Business Settings ──────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'कंटेंट व ब्रांडिंग',
+                    style: GoogleFonts.hind(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.surfaceBorder),
+                ),
+                child: Column(
+                  children: [
+                    _MenuItemTile(
+                      icon: Icons.bookmark_outline_rounded,
+                      title: 'सहेजे गए स्टेटस (Saved)',
+                      subtitle: 'आपके सुरक्षित किए गए पसंदीदा पोस्टर्स',
+                      onTap: () => context.push('/saved'),
+                    ),
+                    const Divider(height: 1, color: AppColors.surfaceBorder, indent: 52),
+                    _MenuItemTile(
+                      icon: Icons.storefront_outlined,
+                      title: 'बिजनेस ब्रांडिंग और फ्रेम',
+                      subtitle:
+                          user?.businessName?.isNotEmpty == true ? user!.businessName! : 'नाम, नंबर, पता और पद जोड़ें',
+                      onTap: () => _showBusinessBrandingDialog(context, ref, user),
+                    ),
+                    const Divider(height: 1, color: AppColors.surfaceBorder, indent: 52),
+                    _MenuItemTile(
+                      icon: Icons.crop_portrait_rounded,
+                      title: 'फ्रेम स्टाइल',
+                      subtitle: _getFrameTypeName(user?.frameType),
+                      onTap: () => _showBusinessBrandingDialog(context, ref, user),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── 5. General App Settings ─────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'सेटिंग्स और सहायता',
+                    style: GoogleFonts.hind(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.surfaceBorder),
+                ),
+                child: Column(
+                  children: [
+                    _MenuItemTile(
+                      icon: Icons.edit_location_alt_outlined,
+                      title: 'प्रोफ़ाइल, राज्य व क्षेत्र (Profile & Region)',
+                      subtitle: userState != null
+                          ? '$userState ${userRegion != null ? '($userRegion)' : ''}'
+                          : 'राज्य व क्षेत्र सेट करें',
+                      onTap: () => context.push('/profile-setup'),
+                    ),
+                    const Divider(height: 1, color: AppColors.surfaceBorder, indent: 52),
+                    _MenuItemTile(
+                      icon: Icons.translate_rounded,
+                      title: 'भाषा (Language)',
+                      trailingText: language,
+                      subtitle: 'पसंदीदा भाषा बदलें',
+                      onTap: () => context.push('/profile-setup'),
+                    ),
+                    const Divider(height: 1, color: AppColors.surfaceBorder, indent: 52),
+                    _MenuItemTile(
+                      icon: Icons.notifications_none_rounded,
+                      title: 'सूचनाएं (Notifications)',
+                      onTap: () => context.push('/notifications'),
+                    ),
+                    const Divider(height: 1, color: AppColors.surfaceBorder, indent: 52),
+                    _MenuItemTile(
+                      icon: Icons.help_outline_rounded,
+                      title: 'मदद और संपर्क (Help & FAQ)',
+                      onTap: () => _showHelpSheet(context),
+                    ),
+                    const Divider(height: 1, color: AppColors.surfaceBorder, indent: 52),
+                    _MenuItemTile(
+                      icon: Icons.share_outlined,
+                      title: 'दोस्तों को ऐप शेयर करें',
+                      onTap: _shareApp,
+                    ),
+                    const Divider(height: 1, color: AppColors.surfaceBorder, indent: 52),
+                    _MenuItemTile(
+                      icon: Icons.info_outline_rounded,
+                      title: 'ऐप वर्शन (Version)',
+                      trailingText: AppConstants.appVersion,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // ── 6. Sign Out Button ──────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.logout_rounded, size: 18, color: AppColors.danger),
+                    label: Text(
+                      'लॉगआउट करें',
+                      style: GoogleFonts.hind(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFFECACA), width: 1),
+                      backgroundColor: const Color(0xFFFEF2F2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                      ),
+                    ),
+                    onPressed: () => _confirmSignOut(context, ref),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 48),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  Future<void> _shareApp() async {
+    await Share.share(
+      'रोज़ अपने नाम और फोटो के साथ शानदार स्टेटस बनाएं — ${AppConstants.appName} ऐप डाउनलोड करें 📲\n${AppConstants.playStoreUrl}',
+      subject: AppConstants.appName,
+    );
+  }
+
+  void _showHelpSheet(BuildContext context) {
+    const faqs = [
+      (
+        'स्टेटस पर अपना नाम/फोटो कैसे लगाएं?',
+        'होम पर "Change Your Photo" दबाएं या किसी स्टेटस को खोलकर "फ़ोटो व फ़्रेम" और "नाम बदलें" चुनें।'
+      ),
+      ('स्टेटस व्हाट्सएप पर कैसे लगाएं?', 'स्टेटस खोलें और "व्हाट्सएप पर स्टेटस लगाएं" बटन दबाएं, फिर WhatsApp चुनें।'),
+      ('डाउनलोड की गई फोटो कहाँ मिलेगी?', 'फोन की गैलरी (Photos / Gallery) में।'),
+      ('प्रीमियम कैसे लें?', 'प्रोफ़ाइल में "प्रीमियम में अपग्रेड करें" पर जाएं और प्लान चुनें।'),
+    ];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'मदद और संपर्क (Help & FAQ)',
+                style: GoogleFonts.hind(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 12),
+              for (final faq in faqs) ...[
+                Text(
+                  faq.$1,
+                  style: GoogleFonts.hind(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  faq.$2,
+                  style: GoogleFonts.hind(fontSize: 14, color: AppColors.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+              ],
+              const Divider(color: AppColors.surfaceBorder),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.email_outlined, color: AppColors.primary),
+                title: Text('हमें ईमेल करें', style: GoogleFonts.hind(fontWeight: FontWeight.w600)),
+                subtitle: Text(AppConstants.supportEmail, style: GoogleFonts.hind(color: AppColors.textMuted)),
+                onTap: () async {
+                  final uri = Uri(
+                    scheme: 'mailto',
+                    path: AppConstants.supportEmail,
+                    query:
+                        'subject=${Uri.encodeComponent('${AppConstants.appName} सहायता (v${AppConstants.appVersion})')}',
+                  );
+                  final messenger = ScaffoldMessenger.of(context);
+                  final ok = await launchUrl(uri).catchError((Object _) => false);
+                  if (!ok) {
+                    messenger.showSnackBar(
+                      SnackBar(
+                          content: Text('ईमेल ऐप नहीं मिला: ${AppConstants.supportEmail}', style: GoogleFonts.hind())),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
+        title: Text(
+          'लॉगआउट करें?',
+          style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 18),
+        ),
+        content: Text(
+          'क्या आप सचमुच ऐप से बाहर निकलना चाहते हैं?',
+          style: GoogleFonts.hind(fontSize: 14, color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'रद्द करें',
+              style: GoogleFonts.hind(color: AppColors.textMuted, fontWeight: FontWeight.w600),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
+            ),
+            child: Text(
+              'लॉगआउट',
+              style: GoogleFonts.hind(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await ref.read(authRepositoryProvider).signOut();
+      if (context.mounted) context.go('/login');
+    }
+  }
+
   String _langLabel(String code) {
     switch (code) {
-      case 'HINDI': return 'हिन्दी';
-      case 'MARATHI': return 'मराठी';
-      case 'ENGLISH': return 'English';
-      default: return code;
+      case 'HINDI':
+        return 'हिन्दी';
+      case 'MARATHI':
+        return 'मराठी';
+      case 'ENGLISH':
+        return 'English';
+      default:
+        return code;
     }
   }
 
   String _getFrameTypeName(String? type) {
     switch (type) {
-      case 'businessClassic': return 'क्लासिक बिजनेस';
-      case 'businessModern': return 'मॉडर्न बिजनेस';
-      case 'political': return 'नेता / राजनेता';
-      case 'minimal': return 'सादा / मिनिमल';
-      default: return 'व्यक्तिगत फ्रेम (Personal)';
+      case 'businessClassic':
+        return 'क्लासिक बिजनेस';
+      case 'businessModern':
+        return 'मॉडर्न बिजनेस';
+      case 'political':
+        return 'नेता / राजनेता';
+      case 'minimal':
+        return 'सादा / मिनिमल';
+      default:
+        return 'व्यक्तिगत फ्रेम (Personal)';
     }
   }
 
@@ -417,17 +673,94 @@ class _StatTile extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 22)),
+          Text(emoji, style: const TextStyle(fontSize: 20)),
           const SizedBox(height: 2),
           Text(
             value,
-            style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.primary),
+            style: GoogleFonts.hind(
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+              color: AppColors.textPrimary,
+              height: 1.1,
+            ),
           ),
           Text(
             label,
-            style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
+            style: GoogleFonts.hind(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MenuItemTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final String? trailingText;
+  final VoidCallback? onTap;
+
+  const _MenuItemTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.trailingText,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: AppColors.primary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.hind(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      style: GoogleFonts.hind(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            if (trailingText != null)
+              Text(
+                trailingText!,
+                style: GoogleFonts.hind(
+                  color: AppColors.textMuted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            if (onTap != null)
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.chevron_right_rounded, size: 20, color: AppColors.textMuted),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -472,20 +805,22 @@ class _BusinessBrandingSheetState extends State<_BusinessBrandingSheet> {
 
   Future<void> _save() async {
     setState(() => _isSaving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     try {
+      // Persists the server copy (PUT /user/me → { user }); currentUserProvider
+      // rebuilds automatically from the session store.
       await widget.ref.read(authRepositoryProvider).updateBusinessBranding(
-        businessName: _nameController.text.trim(),
-        businessPhone: _phoneController.text.trim(),
-        businessDesignation: _desigController.text.trim(),
-        businessAddress: _addressController.text.trim(),
-        frameType: _selectedFrameType,
-      );
-
-      widget.ref.invalidate(currentUserProvider);
+            businessName: _nameController.text.trim(),
+            businessPhone: _phoneController.text.trim(),
+            businessDesignation: _desigController.text.trim(),
+            businessAddress: _addressController.text.trim(),
+            frameType: _selectedFrameType,
+          );
 
       if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        navigator.pop();
+        messenger.showSnackBar(
           SnackBar(
             content: Text(
               'बिजनेस जानकारी सुरक्षित हो गई!',
@@ -500,7 +835,7 @@ class _BusinessBrandingSheetState extends State<_BusinessBrandingSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('सेव करने में समस्या आई: $e', style: GoogleFonts.hind()),
+            content: Text('सेव करने में समस्या आई: ${apiErrorMessage(e)}', style: GoogleFonts.hind()),
             backgroundColor: AppColors.danger,
           ),
         );
@@ -514,13 +849,13 @@ class _BusinessBrandingSheetState extends State<_BusinessBrandingSheet> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
-        top: 20,
+        top: 14,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       child: SingleChildScrollView(
@@ -530,20 +865,19 @@ class _BusinessBrandingSheetState extends State<_BusinessBrandingSheet> {
           children: [
             Center(
               child: Container(
-                width: 44,
+                width: 38,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+                  color: AppColors.surfaceBorder,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
               ),
             ),
             const SizedBox(height: 16),
-
             Text(
               'बिजनेस ब्रांडिंग और फ्रेम',
               style: GoogleFonts.hind(
-                fontSize: 19,
+                fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
               ),
@@ -553,48 +887,55 @@ class _BusinessBrandingSheetState extends State<_BusinessBrandingSheet> {
               style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
             ),
             const SizedBox(height: 18),
-
             Text(
               'फ्रेम स्टाइल चुनें',
-              style: GoogleFonts.hind(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              style: GoogleFonts.hind(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _buildFrameChip('personal', 'व्यक्तिगत (Personal)'),
-                _buildFrameChip('businessClassic', 'क्लासिक बिजनेस'),
-                _buildFrameChip('businessModern', 'मॉडर्न बिजनेस'),
-                _buildFrameChip('political', 'नेता / राजनेता'),
-                _buildFrameChip('minimal', 'मिनिमल'),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildFrameChip('personal', 'व्यक्तिगत (Personal)'),
+                  const SizedBox(width: 8),
+                  _buildFrameChip('businessClassic', 'क्लासिक बिजनेस'),
+                  const SizedBox(width: 8),
+                  _buildFrameChip('businessModern', 'मॉडर्न बिजनेस'),
+                  const SizedBox(width: 8),
+                  _buildFrameChip('political', 'नेता / राजनेता'),
+                  const SizedBox(width: 8),
+                  _buildFrameChip('minimal', 'मिनिमल'),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
-
-            _buildInputField('दुकान / बिजनेस का नाम', _nameController, 'उदा. शर्मा इलेक्ट्रॉनिक्स', Icons.storefront),
+            _buildInputField(
+                'दुकान / बिजनेस का नाम', _nameController, 'उदा. शर्मा इलेक्ट्रॉनिक्स', Icons.storefront_outlined),
             const SizedBox(height: 12),
-            _buildInputField('फोन / WhatsApp नंबर', _phoneController, '+91 98765 43210', Icons.phone, keyboard: TextInputType.phone),
+            _buildInputField('फोन / WhatsApp नंबर', _phoneController, '+91 98765 43210', Icons.phone_outlined,
+                keyboard: TextInputType.phone),
             const SizedBox(height: 12),
             _buildInputField('पद / टैगलाइन', _desigController, 'उदा. प्रोपराइटर / संचालक', Icons.badge_outlined),
             const SizedBox(height: 12),
             _buildInputField('पता / शहर', _addressController, 'उदा. मेन मार्केट, इंदौर', Icons.location_on_outlined),
-            const SizedBox(height: 24),
-
+            const SizedBox(height: 22),
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 48,
               child: ElevatedButton(
                 onPressed: _isSaving ? null : _save,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
                 ),
                 child: _isSaving
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                    ? const SizedBox(
+                        width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                     : Text(
-                        'सुरक्षित करें (Save & Apply)',
-                        style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                        'सुरक्षित करें',
+                        style: GoogleFonts.hind(fontSize: 15, fontWeight: FontWeight.w700),
                       ),
               ),
             ),
@@ -614,37 +955,54 @@ class _BusinessBrandingSheetState extends State<_BusinessBrandingSheet> {
       },
       selectedColor: AppColors.primary,
       backgroundColor: AppColors.bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        side: BorderSide(
+          color: isSelected ? AppColors.primary : AppColors.surfaceBorder,
+        ),
+      ),
       labelStyle: GoogleFonts.hind(
         color: isSelected ? Colors.white : AppColors.textPrimary,
         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-        fontSize: 13,
+        fontSize: 12,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     );
   }
 
-  Widget _buildInputField(String label, TextEditingController controller, String hint, IconData icon, {TextInputType keyboard = TextInputType.text}) {
+  Widget _buildInputField(
+    String label,
+    TextEditingController controller,
+    String hint,
+    IconData icon, {
+    TextInputType keyboard = TextInputType.text,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: GoogleFonts.hind(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+          style: GoogleFonts.hind(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 5),
         TextField(
           controller: controller,
           keyboardType: keyboard,
-          style: GoogleFonts.hind(fontSize: 15, color: AppColors.textPrimary),
+          style: GoogleFonts.hind(fontSize: 14, color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: AppColors.primary, size: 20),
+            hintStyle: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 13),
+            prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 18),
             filled: true,
             fillColor: AppColors.bg,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: const BorderSide(color: AppColors.surfaceBorder),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
             ),
           ),
         ),

@@ -6,7 +6,7 @@ part of 'search_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$trendingTermsHash() => r'c54692debeaee73892e9192cc3b5280f0ebf515d';
+String _$trendingTermsHash() => r'816029711d050a2bb6890fb9e5ebb5d6eea50da4';
 
 /// See also [trendingTerms].
 @ProviderFor(trendingTerms)
@@ -23,7 +23,7 @@ final trendingTermsProvider = AutoDisposeFutureProvider<List<String>>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef TrendingTermsRef = AutoDisposeFutureProviderRef<List<String>>;
-String _$searchTemplatesHash() => r'e0eefc32fb4cd23f5b640e74f5237c038ef406ef';
+String _$searchTemplatesHash() => r'affe1e1df12faadd9801db64770225949792dded';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -47,10 +47,10 @@ class _SystemHash {
 }
 
 abstract class _$SearchTemplates
-    extends BuildlessAutoDisposeAsyncNotifier<List<TemplateModel>> {
+    extends BuildlessAutoDisposeAsyncNotifier<PagedList<TemplateModel>> {
   late final String query;
 
-  FutureOr<List<TemplateModel>> build(
+  FutureOr<PagedList<TemplateModel>> build(
     String query,
   );
 }
@@ -60,7 +60,8 @@ abstract class _$SearchTemplates
 const searchTemplatesProvider = SearchTemplatesFamily();
 
 /// See also [SearchTemplates].
-class SearchTemplatesFamily extends Family<AsyncValue<List<TemplateModel>>> {
+class SearchTemplatesFamily
+    extends Family<AsyncValue<PagedList<TemplateModel>>> {
   /// See also [SearchTemplates].
   const SearchTemplatesFamily();
 
@@ -99,7 +100,7 @@ class SearchTemplatesFamily extends Family<AsyncValue<List<TemplateModel>>> {
 
 /// See also [SearchTemplates].
 class SearchTemplatesProvider extends AutoDisposeAsyncNotifierProviderImpl<
-    SearchTemplates, List<TemplateModel>> {
+    SearchTemplates, PagedList<TemplateModel>> {
   /// See also [SearchTemplates].
   SearchTemplatesProvider(
     String query,
@@ -130,7 +131,7 @@ class SearchTemplatesProvider extends AutoDisposeAsyncNotifierProviderImpl<
   final String query;
 
   @override
-  FutureOr<List<TemplateModel>> runNotifierBuild(
+  FutureOr<PagedList<TemplateModel>> runNotifierBuild(
     covariant SearchTemplates notifier,
   ) {
     return notifier.build(
@@ -155,8 +156,8 @@ class SearchTemplatesProvider extends AutoDisposeAsyncNotifierProviderImpl<
   }
 
   @override
-  AutoDisposeAsyncNotifierProviderElement<SearchTemplates, List<TemplateModel>>
-      createElement() {
+  AutoDisposeAsyncNotifierProviderElement<SearchTemplates,
+      PagedList<TemplateModel>> createElement() {
     return _SearchTemplatesProviderElement(this);
   }
 
@@ -177,14 +178,14 @@ class SearchTemplatesProvider extends AutoDisposeAsyncNotifierProviderImpl<
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 mixin SearchTemplatesRef
-    on AutoDisposeAsyncNotifierProviderRef<List<TemplateModel>> {
+    on AutoDisposeAsyncNotifierProviderRef<PagedList<TemplateModel>> {
   /// The parameter `query` of this provider.
   String get query;
 }
 
 class _SearchTemplatesProviderElement
     extends AutoDisposeAsyncNotifierProviderElement<SearchTemplates,
-        List<TemplateModel>> with SearchTemplatesRef {
+        PagedList<TemplateModel>> with SearchTemplatesRef {
   _SearchTemplatesProviderElement(super.provider);
 
   @override

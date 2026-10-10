@@ -1,4 +1,7 @@
-﻿const BASE = 'http://localhost:3000/api/v1';
+﻿const BASE = process.env.API_BASE_URL || 'http://localhost:3000/api/v1';
+// Credentials come from the environment — never hard-code them here.
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@statusgo.app';
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || '';
 const C = {
   green:  s => '\x1b[32m' + s + '\x1b[0m',
   red:    s => '\x1b[31m' + s + '\x1b[0m',
@@ -59,7 +62,7 @@ async function main() {
   console.log('  Env  : ' + hb.env + '  v' + hb.version);
 
   section('2. AUTH');
-  const login = await req('POST', '/auth/admin/login', { tag: 'auth', body: { email: 'admin@statusgo.app', password: 'Admin@1234' }, expectStatus: [200, 401, 404] });
+  const login = await req('POST', '/auth/admin/login', { tag: 'auth', body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD }, expectStatus: [200, 401, 404] });
   if (login && login.accessToken) { adminToken = login.accessToken; console.log(C.green('  Admin token obtained')); }
   const dev = await req('POST', '/auth/dev-login', { tag: 'auth', body: { email: 'admin@statusgo.app' }, expectStatus: [200, 201, 404, 403] });
   if (!adminToken && dev && dev.accessToken) { adminToken = dev.accessToken; console.log(C.green('  Dev-login token obtained')); }

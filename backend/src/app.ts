@@ -5,7 +5,10 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import compress from '@fastify/compress';
+import { Prisma } from '@prisma/client';
 import { env } from './config/env';
+import { CK } from './lib/cache/keys';
+import { CacheService } from './lib/cache/cache.service';
 
 // Plugins
 import prismaPlugin from './plugins/prisma.plugin';
@@ -23,20 +26,26 @@ import { creatorRoutes } from './modules/creator/creator.route';
 import { adminRoutes } from './modules/admin/admin.route';
 import { uploadRoutes } from './modules/upload/upload.route';
 
-// ── Per-route rate limit configurations ─────────────────────
-// Applied via config.rateLimit on individual routes
-const RATE_LIMITS = {
-  auth:        { max: 20,  timeWindow: '1 minute'  },  // general auth
-  adminLogin:  { max: 10,  timeWindow: '5 minutes' },  // admin/creator login
-  otpSend:     { max: 5,   timeWindow: '5 minutes' },  // OTP send
-  otpVerify:   { max: 10,  timeWindow: '5 minutes' },  // OTP verify
-  refresh:     { max: 30,  timeWindow: '1 minute'  },  // token refresh
-  payment:     { max: 5,   timeWindow: '1 minute'  },  // payment create/verify
-  search:      { max: 60,  timeWindow: '1 minute'  },  // search
-  campaign:    { max: 5,   timeWindow: '1 minute'  },  // push campaigns
-} as const;
+// Global JSON fallback for BigInt (e.g. un-cast COUNT(*) from $queryRaw) — without
+// this JSON.stringify throws "Do not know how to serialize a BigInt" → 500.
+if (!(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function (this: bigint) {
+    const n = Number(this);
+    return Number.isSafeInteger(n) ? n : this.toString();
+  };
+}
 
-export { RATE_LIMITS };
+// AppConfig keys that are safe to expose to unauthenticated clients via GET /config
+const PUBLIC_CONFIG_KEYS = [
+  'app_version_android',
+  'maintenance_mode',
+  'daily_free_limit_images',
+  'daily_free_limit_videos',
+  'featured_template_count',
+  'trending_template_count',
+  'premium_price_monthly',
+  'premium_price_annual',
+];
 
 export async function buildApp() {
   const app = Fastify({
@@ -54,7 +63,9 @@ export async function buildApp() {
         censor: '[REDACTED]',
       },
     },
-    trustProxy: true,
+    // Only trust X-Forwarded-For when explicitly configured (TRUST_PROXY), otherwise
+    // clients could spoof their IP and bypass per-IP rate limits.
+    trustProxy: env.TRUST_PROXY,
     disableRequestLogging: false,
   });
 
@@ -177,8 +188,46 @@ export async function buildApp() {
     return reply.send({ data: categories, total: categories.length });
   });
 
+  // ── Public: non-sensitive app config (feature flags, limits, prices) ──
+  app.get(`${V1}/config`, async (_req, reply) => {
+    const cache = new CacheService(app.redis);
+    const cached = await cache.get(CK.publicAppConfig).catch(() => null);
+    if (cached) return reply.send({ data: cached });
+
+    const rows = await app.prisma.appConfig.findMany({
+      where: { key: { in: PUBLIC_CONFIG_KEYS } },
+      select: { key: true, value: true, type: true },
+    });
+    const data: Record<string, string | number | boolean> = {};
+    for (const row of rows) {
+      if (row.type === 'boolean') data[row.key] = row.value === 'true';
+      else if (row.type === 'number' && row.value.trim() !== '' && !Number.isNaN(Number(row.value))) data[row.key] = Number(row.value);
+      else data[row.key] = row.value;
+    }
+    await cache.set(CK.publicAppConfig, data, 1800).catch(() => {});
+    return reply.send({ data });
+  });
+
   // ── Global Error Handler ─────────────────────────────────
   app.setErrorHandler((error, _req, reply) => {
+    // Map common Prisma errors to client errors instead of generic 500s
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      const mapped: Record<string, [number, string]> = {
+        P2025: [404, 'Not Found'],          // record to update/delete not found
+        P2002: [409, 'Conflict'],           // unique constraint
+        P2003: [400, 'Bad Request'],        // foreign key (e.g. unknown categoryId)
+      };
+      const hit = mapped[error.code];
+      if (hit) {
+        app.log.warn({ code: error.code, meta: error.meta }, 'Prisma request error');
+        return reply.status(hit[0]).send({ statusCode: hit[0], error: hit[1], message: hit[1] });
+      }
+    }
+    if (error instanceof Prisma.PrismaClientValidationError) {
+      app.log.warn(error.message);
+      return reply.status(400).send({ statusCode: 400, error: 'Bad Request', message: 'Invalid request parameters' });
+    }
+
     app.log.error(error);
 
     if (error.validation) {
@@ -194,7 +243,8 @@ export async function buildApp() {
     return reply.status(statusCode).send({
       statusCode,
       error: error.name ?? 'Internal Server Error',
-      message: env.NODE_ENV === 'production' ? 'An error occurred' : error.message,
+      // 4xx messages (e.g. "request file too large") are safe to show; hide 5xx internals in prod
+      message: env.NODE_ENV === 'production' && statusCode >= 500 ? 'An error occurred' : error.message,
     });
   });
 

@@ -22,49 +22,25 @@ class HomeRepository {
 
   Future<HomeFeedData> getHomeFeed() async {
     final box = Hive.box(AppConstants.hiveBoxSettings);
-    final state = box.get(AppConstants.keyState, defaultValue: 'all') as String;
-    final lang = box.get(AppConstants.keyLanguage, defaultValue: 'HINDI') as String;
+    final state = (box.get(AppConstants.keyState) as String?) ?? 'all';
+    final lang = (box.get(AppConstants.keyLanguage) as String?) ?? 'HINDI';
 
-    try {
-      final res = await _dio.get(
-        '/templates/home',
-        queryParameters: {'state': state, 'lang': lang},
-      );
-
-      if (res.statusCode == 200) {
-        final data = res.data as Map<String, dynamic>;
-        return HomeFeedData.fromJson(data);
-      }
-      return HomeFeedData.empty();
-    } catch (_) {
-      return HomeFeedData.empty();
-    }
+    // Errors propagate so providers expose AsyncError (error UI with retry).
+    final res = await _dio.get(
+      '/templates/home',
+      queryParameters: {'state': state, 'lang': lang},
+    );
+    final data = res.data;
+    if (data is! Map) throw const FormatException('Invalid /templates/home response');
+    return HomeFeedData.fromJson(Map<String, dynamic>.from(data));
   }
 
-  // ─── Legacy individual endpoints (kept for backward compat) ───────────────
-
-  Future<List<CategoryModel>> getCategories() async {
-    try {
-      final res = await _dio.get('/categories');
-      if (res.statusCode == 200 && res.data['data'] != null) {
-        return (res.data['data'] as List).map((e) => CategoryModel.fromJson(e)).toList();
-      }
-      return [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  Future<List<dynamic>> getUpcomingFestivals() async {
-    try {
-      final res = await _dio.get('/festivals/upcoming');
-      if (res.statusCode == 200 && res.data['data'] != null) {
-        return res.data['data'] as List;
-      }
-      return [];
-    } catch (_) {
-      return [];
-    }
+  /// GET /festivals/upcoming → raw festival maps. Throws on failure.
+  Future<List<Map<String, dynamic>>> getUpcomingFestivals({int days = 90}) async {
+    final res = await _dio.get('/festivals/upcoming', queryParameters: {'days': days});
+    final raw = res.data is Map ? res.data['data'] : null;
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 }
 
@@ -100,7 +76,7 @@ class HomeFeedData {
       featured: parseTemplates(json['featured']),
       trending: parseTemplates(json['trending']),
       coordinatorPicks: parseTemplates(json['coordinatorPicks']),
-      festivalToday: json['festivalToday'] as Map<String, dynamic>?,
+      festivalToday: json['festivalToday'] is Map ? Map<String, dynamic>.from(json['festivalToday'] as Map) : null,
       categories: parseCategories(json['categories']),
     );
   }

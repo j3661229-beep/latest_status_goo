@@ -1,8 +1,7 @@
 // lib/features/auth/presentation/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive/hive.dart';
-import '../../../../core/constants/app_constants.dart';
+import '../../../../core/auth/session_store.dart';
 import '../../../../core/theme/app_theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -30,18 +29,21 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigate() async {
-    await Future.delayed(const Duration(milliseconds: 1800));
+    await Future.delayed(const Duration(milliseconds: 1200));
     if (!mounted) return;
-    final box = Hive.box(AppConstants.hiveBoxSettings);
-    final token = box.get(AppConstants.keyAccessToken);
-    final onboarded =
-        box.get(AppConstants.keyOnboardingCompleted, defaultValue: false) == true;
 
-    if (token == null) {
+    final session = SessionStore.instance;
+    final onboarded = session.onboardingCompleted;
+    final userName = session.displayName;
+
+    if (!session.isLoggedIn) {
+      // First time / Not logged in: Take to OTP Login screen
       context.go('/login');
-    } else if (!onboarded) {
+    } else if (!onboarded || userName == null || userName.trim().isEmpty) {
+      // Logged in with OTP but haven't setup Name, Photo, and Region
       context.go('/profile-setup');
     } else {
+      // Setup already complete: Go straight to Crafto Home feed
       context.go('/home');
     }
   }

@@ -1,10 +1,15 @@
 // lib/features/premium/presentation/screens/premium_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../../../core/api/api_error.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../auth/data/auth_repository.dart';
 import '../../../auth/presentation/providers/current_user_provider.dart';
 
 class PremiumScreen extends ConsumerStatefulWidget {
@@ -51,56 +56,172 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
     ),
   ];
 
+  late final Razorpay _razorpay;
+
+  /// Order currently being paid (guards against stale callbacks).
+  String? _pendingOrderId;
+
+  @override
+  void initState() {
+    super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _onPaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _onExternalWallet);
+  }
+
+  @override
+  void dispose() {
+    _razorpay.clear();
+    super.dispose();
+  }
+
+  // 1. POST /subscribe/create → 2. open Razorpay checkout
   Future<void> _initiateCheckout() async {
+    if (_isLoading) return;
     setState(() => _isLoading = true);
     final plan = _annualSelected ? 'ANNUAL' : 'PREMIUM';
 
     try {
       final res = await apiClient.post('/subscribe/create', data: {'plan': plan});
-      if (res.statusCode == 200 && mounted) {
-        final data = res.data;
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.verified, color: AppColors.success, size: 24),
-                const SizedBox(width: 8),
-                Text('ऑर्डर तैयार है', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
-              ],
-            ),
-            content: Text(
-              'Razorpay ऑर्डर आईडी: ${data['orderId'] ?? 'Order Created'}\nराशि: ₹${data['amount'] != null ? (data['amount'] / 100).toInt() : (_annualSelected ? '799' : '99')}',
-              style: GoogleFonts.hind(fontSize: 15),
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  ref.invalidate(currentUserProvider);
-                },
-                child: Text('ठीक है (OK)', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-        );
+      final data = res.data is Map ? res.data as Map : const {};
+      final orderId = data['orderId'] as String?;
+      final amount = data['amount'];
+      final serverKey = data['keyId'] as String?;
+      final key = (serverKey != null && serverKey.isNotEmpty) ? serverKey : AppConstants.razorpayKeyId;
+
+      if (orderId == null || amount == null) {
+        throw const ApiException('ऑर्डर नहीं बन सका। कृपया दोबारा कोशिश करें।');
       }
+      if (key.isEmpty) {
+        throw const ApiException('भुगतान कॉन्फ़िगर नहीं है (Razorpay key missing)।');
+      }
+
+      final user = ref.read(currentUserProvider);
+      _pendingOrderId = orderId;
+      _razorpay.open({
+        'key': key,
+        'order_id': orderId,
+        'amount': amount, // in paise, from the server
+        'currency': data['currency'] ?? 'INR',
+        'name': AppConstants.appName,
+        'description': _annualSelected ? 'Premium Annual' : 'Premium Monthly',
+        'prefill': {
+          if (user?.phoneNumber != null) 'contact': user!.phoneNumber,
+          if (user?.email != null) 'email': user!.email,
+        },
+        'theme': {'color': '#1D4ED8'},
+      });
+      // Loading stays on until a Razorpay callback arrives.
     } catch (e) {
+      _pendingOrderId = null;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('भुगतान शुरू करने में समस्या आई: $e', style: GoogleFonts.hind()),
-            backgroundColor: AppColors.danger,
-          ),
-        );
+        setState(() => _isLoading = false);
+        _showError(apiErrorMessage(e, fallback: 'भुगतान शुरू करने में समस्या आई।'));
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // 3. POST /subscribe/verify → 4. refresh user → 5. success
+  Future<void> _onPaymentSuccess(PaymentSuccessResponse response) async {
+    final orderId = response.orderId ?? _pendingOrderId;
+    try {
+      await apiClient.post('/subscribe/verify', data: {
+        'razorpayOrderId': orderId,
+        'razorpayPaymentId': response.paymentId,
+        'razorpaySignature': response.signature,
+        // snake_case aliases (Razorpay's native field names)
+        'razorpay_order_id': orderId,
+        'razorpay_payment_id': response.paymentId,
+        'razorpay_signature': response.signature,
+      });
+
+      try {
+        await ref.read(authRepositoryProvider).refreshCurrentUser();
+      } catch (_) {
+        // Plan is active server-side; the profile refreshes on next open.
+      }
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _pendingOrderId = null;
+      await _showSuccessDialog();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError(apiErrorMessage(
+        e,
+        fallback: 'भुगतान हो गया पर पुष्टि नहीं हो सकी। चिंता न करें — कुछ देर में प्लान अपडेट हो जाएगा, '
+            'या सहायता से संपर्क करें (Payment ID: ${response.paymentId ?? '-'})।',
+      ));
+    }
+  }
+
+  void _onPaymentError(PaymentFailureResponse response) {
+    _pendingOrderId = null;
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (response.code == Razorpay.PAYMENT_CANCELLED) {
+      _showError('भुगतान रद्द किया गया।');
+    } else {
+      _showError('भुगतान विफल रहा${response.message != null ? ': ${response.message}' : ''}');
+    }
+  }
+
+  void _onExternalWallet(ExternalWalletResponse response) {
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${response.walletName ?? 'वॉलेट'} से भुगतान पूरा करें। पुष्टि होने पर प्लान सक्रिय हो जाएगा।',
+          style: GoogleFonts.hind(),
+        ),
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.hind()),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+  }
+
+  Future<void> _showSuccessDialog() {
+    return showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.verified, color: AppColors.success, size: 24),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('प्रीमियम सक्रिय हो गया! 🎉', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+        content: Text(
+          'धन्यवाद! अब आप सभी प्रीमियम स्टेटस और फ्रेम इस्तेमाल कर सकते हैं।',
+          style: GoogleFonts.hind(fontSize: 15),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (context.canPop()) context.pop();
+            },
+            child: Text('ठीक है (OK)', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final isPremium = ref.watch(currentUserProvider)?.isPremium ?? false;
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -342,7 +463,7 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _initiateCheckout,
+                  onPressed: (_isLoading || isPremium) ? null : _initiateCheckout,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -350,7 +471,11 @@ class _PremiumScreenState extends ConsumerState<PremiumScreen> {
                   child: _isLoading
                       ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
                       : Text(
-                          _annualSelected ? 'प्रीमियम शुरू करें — ₹799 / वर्ष' : 'प्रीमियम शुरू करें — ₹99 / माह',
+                          isPremium
+                              ? 'आप प्रीमियम सदस्य हैं ⭐'
+                              : _annualSelected
+                                  ? 'प्रीमियम शुरू करें — ₹799 / वर्ष'
+                                  : 'प्रीमियम शुरू करें — ₹99 / माह',
                           style: GoogleFonts.hind(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white),
                         ),
                 ),

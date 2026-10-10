@@ -1,6 +1,7 @@
 // lib/features/templates/presentation/widgets/branding_frame_overlay.dart
 import 'package:flutter/material.dart';
 import '../../../../core/models/branding_frame.dart';
+import '../../../../core/widgets/profile_photo.dart';
 
 class BrandingFrameOverlay extends StatelessWidget {
   final BrandingFrameData data;
@@ -370,7 +371,8 @@ class BrandingFrameOverlay extends StatelessWidget {
   }
 
   Widget _buildAvatar({required double size, required Color borderColor}) {
-    final photo = data.photoUrl ?? data.businessLogo;
+    // photoUrl may be a remote URL or a local file path.
+    final photo = firstPhotoImageProvider([data.photoUrl, data.businessLogo]);
     return Container(
       width: size,
       height: size,
@@ -385,9 +387,9 @@ class BrandingFrameOverlay extends StatelessWidget {
         ],
       ),
       child: ClipOval(
-        child: photo != null && photo.isNotEmpty
-            ? Image.network(
-                photo,
+        child: photo != null
+            ? Image(
+                image: photo,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _buildFallbackAvatar(size),
               )

@@ -14,111 +14,9 @@ const prisma = new PrismaClient();
 
 console.log('🔧 Status Go BullMQ Workers starting...');
 
-// ── QUEUE: notifications ────────────────────────────────────
-const notificationWorker = new Worker(
-  'notifications',
-  async (job) => {
-    const { name, data } = job;
-    console.log(`[notifications] Processing job: ${name}`);
-
-    switch (name) {
-      case 'notify_creator_approved': {
-        const { creatorUserId, templateId, templateName } = data;
-        const user = await prisma.user.findUnique({
-          where: { id: creatorUserId },
-          select: { oneSignalPlayerId: true },
-        });
-        if (user?.oneSignalPlayerId) {
-          await OneSignalService.send({
-            heading: '✅ Template Approved!',
-            content: `"${templateName}" is now live in the app!`,
-            playerIds: [user.oneSignalPlayerId],
-            data: { screen: 'creator_templates', templateId },
-          });
-        }
-        break;
-      }
-
-      case 'notify_creator_rejected': {
-        const { creatorUserId, templateName, reason } = data;
-        const user = await prisma.user.findUnique({
-          where: { id: creatorUserId },
-          select: { oneSignalPlayerId: true },
-        });
-        if (user?.oneSignalPlayerId) {
-          await OneSignalService.send({
-            heading: '❌ Template Needs Changes',
-            content: `"${templateName}": ${reason.slice(0, 80)}`,
-            playerIds: [user.oneSignalPlayerId],
-            data: { screen: 'creator_templates' },
-          });
-        }
-        break;
-      }
-
-      case 'daily_status_push': {
-        // Hindi users
-        await OneSignalService.send({
-          heading: '🙏 आज का स्टेटस तैयार है!',
-          content: 'नए devotional और motivational status देखें। अभी share करें!',
-          filters: [{ field: 'tag', key: 'language', relation: '=', value: 'HINDI' }],
-          data: { screen: 'home' },
-        });
-        // Marathi users
-        await OneSignalService.send({
-          heading: '🙏 आजचा स्टेटस तयार आहे!',
-          content: 'नवे devotional आणि motivational status पहा. आत्ता share करा!',
-          filters: [{ field: 'tag', key: 'language', relation: '=', value: 'MARATHI' }],
-          data: { screen: 'home' },
-        });
-        break;
-      }
-
-      case 'send_premium_welcome': {
-        const { userId } = data;
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { oneSignalPlayerId: true },
-        });
-        if (user?.oneSignalPlayerId) {
-          await OneSignalService.send({
-            heading: '⭐ Premium Activated!',
-            content: 'अब unlimited status enjoy करें। आपका Status Go Premium शुरू हो गया!',
-            playerIds: [user.oneSignalPlayerId],
-            data: { screen: 'home' },
-          });
-        }
-        break;
-      }
-    }
-  },
-  { connection, concurrency: 5 }
-);
-
-// ── QUEUE: cache ─────────────────────────────────────────────
-const cacheWorker = new Worker(
-  'cache',
-  async (job) => {
-    if (job.name === 'invalidate_template_cache') {
-      const redis = connection;
-      const patterns = ['tpl:list:*', 'tpl:featured', 'tpl:trending', 'tpl:new'];
-      let totalDeleted = 0;
-      for (const pattern of patterns) {
-        let cursor = '0';
-        do {
-          const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
-          cursor = nextCursor;
-          if (keys.length > 0) {
-            await redis.del(...keys);
-            totalDeleted += keys.length;
-          }
-        } while (cursor !== '0');
-      }
-      console.log(`[cache] Invalidated ${totalDeleted} template cache keys`);
-    }
-  },
-  { connection }
-);
+// NOTE: the former `notifications` and `cache` queues had no producers anywhere in
+// the API (notifications are sent inline and caches are invalidated inline), so
+// their workers were removed. Only the CRON queue below is active.
 
 // ── CRON Worker: Processes scheduled jobs ─────────────────────
 const cronQueue = new Queue('cron', { connection });
@@ -196,26 +94,6 @@ if (env.NODE_ENV === 'production') {
 }
 
 // Error handlers — upgraded to structured logging
-notificationWorker.on('failed', (job, err) => {
-  console.error(JSON.stringify({
-    level: 'error',
-    worker: 'notifications',
-    jobId: job?.id,
-    jobName: job?.name,
-    error: err.message,
-    attemptsMade: job?.attemptsMade,
-  }));
-});
-
-cacheWorker.on('failed', (job, err) => {
-  console.error(JSON.stringify({
-    level: 'error',
-    worker: 'cache',
-    jobId: job?.id,
-    error: err.message,
-  }));
-});
-
 cronWorker.on('failed', (job, err) => {
   console.error(JSON.stringify({
     level: 'error',
@@ -227,14 +105,12 @@ cronWorker.on('failed', (job, err) => {
   }));
 });
 
-console.log('✅ Workers running: notifications, cache, cron');
+console.log('✅ Workers running: cron');
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('[workers] SIGTERM received — shutting down gracefully');
   await Promise.allSettled([
-    notificationWorker.close(),
-    cacheWorker.close(),
     cronWorker.close(),
     cronQueue.close(),
   ]);
@@ -245,8 +121,6 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   console.log('[workers] SIGINT received — shutting down');
   await Promise.allSettled([
-    notificationWorker.close(),
-    cacheWorker.close(),
     cronWorker.close(),
     cronQueue.close(),
   ]);
@@ -257,65 +131,105 @@ process.on('SIGINT', async () => {
 
 async function checkPlanExpiry() {
   console.log('[cron] Checking plan expiry...');
+  const now = new Date();
 
   const expired = await prisma.subscription.findMany({
     where: {
       status: 'ACTIVE',
-      expiresAt: { lt: new Date() },
+      expiresAt: { lt: now },
     },
     select: { id: true, userId: true },
   });
 
+  let downgraded = 0;
   for (const sub of expired) {
-    await prisma.$transaction([
-      prisma.subscription.update({
-        where: { id: sub.id },
-        data: { status: 'EXPIRED' },
+    await prisma.subscription.update({
+      where: { id: sub.id },
+      data: { status: 'EXPIRED' },
+    });
+
+    // Only downgrade when the user has no other subscription still running and their
+    // plan expiry (which renewals extend) has actually passed.
+    const [otherActive, user] = await Promise.all([
+      prisma.subscription.count({
+        where: { userId: sub.userId, status: 'ACTIVE', expiresAt: { gt: now } },
       }),
-      prisma.user.update({
+      prisma.user.findUnique({ where: { id: sub.userId }, select: { plan: true, planExpiresAt: true } }),
+    ]);
+    const planStillValid = !!user?.planExpiresAt && user.planExpiresAt > now;
+
+    if (otherActive === 0 && !planStillValid && user?.plan !== 'FREE') {
+      await prisma.user.update({
         where: { id: sub.userId },
         data: { plan: 'FREE', planExpiresAt: null },
-      }),
-    ]);
-    console.log(`[cron] Expired plan for user ${sub.userId}`);
+      });
+      downgraded++;
+      console.log(`[cron] Expired plan for user ${sub.userId}`);
+    }
+
+    // Drop cached profile / plan / auth state so the API sees the change immediately
+    await connection
+      .del(`user:${sub.userId}`, `plan:${sub.userId}`, `authstate:${sub.userId}`)
+      .catch(() => 0);
   }
 
-  console.log(`[cron] Plan expiry check done. Expired: ${expired.length}`);
+  console.log(`[cron] Plan expiry check done. Subscriptions expired: ${expired.length}, users downgraded: ${downgraded}`);
 }
 
 // ── CRON: Festival Alert ──────────────────────────────────────
+// Runs every 6h. Each festival is announced once, when it enters its own
+// notifyDaysBefore window; a Redis key per festival+date prevents repeats.
 async function checkFestivalAlerts() {
   console.log('[cron] Checking festival alerts...');
 
-  const twoDaysFromNow = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const now = new Date();
+  const horizon = new Date(now.getTime() + 31 * DAY_MS); // notifyDaysBefore is capped at 30
 
   const festivals = await prisma.festival.findMany({
     where: {
       isActive: true,
-      date: { gte: tomorrow, lte: twoDaysFromNow },
+      date: { gte: now, lte: horizon },
     },
   });
 
   for (const festival of festivals) {
-    // Hindi notification
-    await OneSignalService.send({
-      heading: `🎉 ${festival.nameHi} कल है!`,
-      content: `Special ${festival.nameHi} status के साथ wishes share करें`,
-      filters: [{ field: 'tag', key: 'language', relation: '=', value: 'HINDI' }],
-      data: { screen: 'discover', query: festival.nameHi },
-    });
-    // Marathi notification
-    await OneSignalService.send({
-      heading: `🎉 ${festival.nameMr} उद्या आहे!`,
-      content: `Special ${festival.nameMr} status सह wishes share करा`,
-      filters: [{ field: 'tag', key: 'language', relation: '=', value: 'MARATHI' }],
-      data: { screen: 'discover', query: festival.nameMr },
-    });
-    console.log(`[cron] Festival alert sent: ${festival.nameEn}`);
+    const daysUntil = Math.ceil((festival.date.getTime() - now.getTime()) / DAY_MS);
+    const window = festival.notifyDaysBefore ?? 2;
+    if (daysUntil > window) continue;
+
+    // Dedupe: one alert per festival occurrence (key lives until the festival has passed)
+    const dedupeKey = `festival:alerted:${festival.id}:${festival.date.toISOString().slice(0, 10)}`;
+    const ttlSeconds = Math.max(60, Math.ceil((festival.date.getTime() - now.getTime()) / 1000) + 2 * 86400);
+    const firstTime = await connection.set(dedupeKey, '1', 'EX', ttlSeconds, 'NX');
+    if (firstTime === null) continue;
+
+    const whenHi = daysUntil <= 1 ? 'कल है!' : `${daysUntil} दिन में है!`;
+    const whenMr = daysUntil <= 1 ? 'उद्या आहे!' : `${daysUntil} दिवसांत आहे!`;
+
+    try {
+      // Hindi notification
+      await OneSignalService.send({
+        heading: `🎉 ${festival.nameHi} ${whenHi}`,
+        content: `Special ${festival.nameHi} status के साथ wishes share करें`,
+        filters: [{ field: 'tag', key: 'language', relation: '=', value: 'HINDI' }],
+        data: { screen: 'discover', query: festival.nameHi },
+      });
+      // Marathi notification
+      await OneSignalService.send({
+        heading: `🎉 ${festival.nameMr} ${whenMr}`,
+        content: `Special ${festival.nameMr} status सह wishes share करा`,
+        filters: [{ field: 'tag', key: 'language', relation: '=', value: 'MARATHI' }],
+        data: { screen: 'discover', query: festival.nameMr },
+      });
+      console.log(`[cron] Festival alert sent: ${festival.nameEn} (in ${daysUntil}d)`);
+    } catch (err) {
+      // Allow a retry on the next run if sending blew up
+      await connection.del(dedupeKey).catch(() => 0);
+      throw err;
+    }
   }
 }
-
 
 // ── CRON helper functions are used by cronWorker above ────────
 

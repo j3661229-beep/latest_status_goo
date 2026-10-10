@@ -26,8 +26,10 @@ export interface SendNotifParams {
   data?: Record<string, string>;
   segment?: NotifSegment;
   playerIds?: string[];
+  userIds?: string[];
   scheduledAt?: Date;
   filters?: OneSignalFilter[];
+  type?: string;
 }
 
 // Notification copy templates (Hindi + Marathi)
@@ -74,11 +76,25 @@ export const NOTIF_TEMPLATES = {
   },
 } as const;
 
+let warnedNotConfigured = false;
+
 export class OneSignalService {
   static async send(params: SendNotifParams): Promise<string | null> {
     if (!env.ONESIGNAL_APP_ID || !env.ONESIGNAL_REST_KEY) {
-      console.warn('OneSignal not configured — skipping push notification');
-      return null;
+      // Production: report failure honestly instead of pretending the push was sent
+      if (env.NODE_ENV === 'production') {
+        if (!warnedNotConfigured) {
+          console.error('OneSignal is not configured (ONESIGNAL_APP_ID / ONESIGNAL_REST_KEY) — push notifications are disabled');
+          warnedNotConfigured = true;
+        }
+        return null;
+      }
+      // Development/test: simulate delivery so flows can be exercised locally
+      if (!warnedNotConfigured) {
+        console.warn('⚠️ OneSignal credentials not set — SIMULATING push delivery (dev only; no notifications are actually sent)');
+        warnedNotConfigured = true;
+      }
+      return `sim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     }
 
     const body: Record<string, unknown> = {
@@ -86,12 +102,15 @@ export class OneSignalService {
       headings: { en: params.heading, hi: params.heading, mr: params.heading },
       contents: { en: params.content, hi: params.content, mr: params.content },
       small_icon: 'ic_notification',
-      android_accent_color: 'FF7C5CFC',
+      android_accent_color: 'FF1A56DB',
       android_channel_id: 'status_go_default',
     };
 
     if (params.playerIds?.length) {
       body.include_player_ids = params.playerIds;
+    } else if (params.userIds?.length) {
+      body.include_aliases = { external_id: params.userIds };
+      body.target_channel = 'push';
     } else if (params.filters?.length) {
       body.filters = params.filters;
     } else {
@@ -113,6 +132,22 @@ export class OneSignalService {
       return res.data.id as string;
     } catch (err: any) {
       console.error('OneSignal send failed:', err?.response?.data ?? err.message);
+      // If external_id alias failed, try legacy include_external_user_ids fallback
+      if (params.userIds?.length && err?.response?.status === 400) {
+        try {
+          delete body.include_aliases;
+          delete body.target_channel;
+          body.include_external_user_ids = params.userIds;
+          const fallbackRes = await axios.post(`${ONESIGNAL_API}/notifications`, body, {
+            headers: {
+              Authorization: `Basic ${env.ONESIGNAL_REST_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 10_000,
+          });
+          return fallbackRes.data.id as string;
+        } catch (_) {}
+      }
       return null;
     }
   }
@@ -133,12 +168,22 @@ export class OneSignalService {
       case 'free':
         return [{ field: 'tag', key: 'plan', relation: '=', value: 'FREE' }];
       case 'premium':
-        return [{ field: 'tag', key: 'plan', relation: '=', value: 'PREMIUM' }];
+        // Both paid plans (monthly PREMIUM and ANNUAL)
+        return [
+          { field: 'tag', key: 'plan', relation: '=', value: 'PREMIUM' },
+          { operator: 'OR' },
+          { field: 'tag', key: 'plan', relation: '=', value: 'ANNUAL' },
+        ];
       case 'inactive_7d':
         return [{ field: 'last_session', relation: '>', hours_ago: String(7 * 24) }];
       case 'premium_expiring':
+        // (plan=PREMIUM AND expiry<3) OR (plan=ANNUAL AND expiry<3) — AND binds tighter than OR
         return [
           { field: 'tag', key: 'plan', relation: '=', value: 'PREMIUM' },
+          { operator: 'AND' },
+          { field: 'tag', key: 'plan_expiry_days', relation: '<', value: '3' },
+          { operator: 'OR' },
+          { field: 'tag', key: 'plan', relation: '=', value: 'ANNUAL' },
           { operator: 'AND' },
           { field: 'tag', key: 'plan_expiry_days', relation: '<', value: '3' },
         ];

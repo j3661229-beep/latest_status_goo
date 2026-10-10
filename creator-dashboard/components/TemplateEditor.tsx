@@ -11,14 +11,12 @@
  * which map directly to the Prisma Template schema fields:
  *   photoZoneX, photoZoneY, photoZoneSize, photoZoneShape
  *   nameZoneX, nameZoneY, nameFont, nameColor, nameFontSize
+ *
+ * Only properties that the backend persists are editable (no alignment / weight —
+ * the Template schema has no columns for them; the app renders names centred & bold).
  */
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import {
-  Move, ZoomIn, Type, Image as ImageIcon,
-  AlignCenter, AlignLeft, AlignRight,
-  ToggleLeft, ToggleRight, ChevronDown,
-} from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────
 export interface PhotoZoneConfig {
@@ -36,8 +34,6 @@ export interface NameZoneConfig {
   fontSize: number; // as fraction of canvas height (0–1)
   color: string;
   font: string;
-  alignment: 'left' | 'center' | 'right';
-  weight: 'normal' | 'bold' | '900';
 }
 
 export interface ZoneConfig {
@@ -47,6 +43,9 @@ export interface ZoneConfig {
 
 interface TemplateEditorProps {
   file: File | null;
+  /** Existing media URL (edit mode) when no new file was picked. */
+  mediaUrl?: string | null;
+  fitMode?: 'contain' | 'cover';
   gradient: string;
   templateType: 'IMAGE' | 'VIDEO';
   zones: ZoneConfig;
@@ -54,13 +53,16 @@ interface TemplateEditorProps {
 }
 
 // ── Constants ──────────────────────────────────────────────────
+// Stored as a plain family name in Template.nameFont (schema default: "Nunito").
 const FONTS = [
-  { value: 'system-ui', label: 'System Default' },
-  { value: 'Georgia, serif', label: 'Georgia (Serif)' },
-  { value: '"Noto Sans", sans-serif', label: 'Noto Sans' },
-  { value: '"Poppins", sans-serif', label: 'Poppins' },
-  { value: '"Baloo 2", cursive', label: 'Baloo 2 (Hindi)' },
+  { value: 'Nunito', label: 'Nunito (Default)' },
+  { value: 'Noto Sans', label: 'Noto Sans' },
+  { value: 'Poppins', label: 'Poppins' },
+  { value: 'Baloo 2', label: 'Baloo 2 (Hindi)' },
+  { value: 'Georgia', label: 'Georgia (Serif)' },
 ];
+
+const SAMPLE_NAME = 'आपका नाम';
 
 const COLORS = [
   '#ffffff', '#f8f8f8', '#FFD700', '#FF6B9D',
@@ -72,7 +74,7 @@ type DragTarget = 'photo' | 'name' | 'photo-resize';
 
 // ── Main Component ─────────────────────────────────────────────
 export default function TemplateEditor({
-  file, gradient, templateType, zones, onZonesChange,
+  file, mediaUrl, fitMode, gradient, templateType, zones, onZonesChange,
 }: TemplateEditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -80,24 +82,15 @@ export default function TemplateEditor({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [zoneSnapshot, setZoneSnapshot] = useState<ZoneConfig>(zones);
   const [activePanel, setActivePanel] = useState<'photo' | 'name'>('photo');
+  const fit = fitMode === 'cover' ? 'cover' : 'contain';
 
   // Create/revoke object URL for the uploaded file
   useEffect(() => {
-    if (!file) { setPreviewUrl(null); return; }
+    if (!file) { setPreviewUrl(mediaUrl || null); return; }
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  // Convert pointer event to normalized canvas coordinates
-  const toNormalized = useCallback((e: React.PointerEvent): { nx: number; ny: number } => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { nx: 0, ny: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const ny = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-    return { nx, ny };
-  }, []);
+  }, [file, mediaUrl]);
 
   const onPointerDown = useCallback((target: DragTarget, e: React.PointerEvent) => {
     e.preventDefault();
@@ -170,14 +163,13 @@ export default function TemplateEditor({
     aspectRatio: '1',
     borderRadius: zones.photo.shape === 'circle' ? '50%'
       : zones.photo.shape === 'rounded' ? '16%' : '4px',
-    border: `3px solid ${zones.photo.enabled ? 'rgba(124,92,252,0.9)' : 'rgba(255,255,255,0.3)'}`,
+    border: '3px solid rgba(37,99,235,0.9)',
     boxShadow: '0 0 0 1px rgba(0,0,0,0.4)',
     cursor: dragging === 'photo' ? 'grabbing' : 'grab',
-    display: 'flex',
+    display: zones.photo.enabled ? 'flex' : 'none',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
-    opacity: zones.photo.enabled ? 1 : 0.3,
     transition: dragging ? 'none' : 'opacity 0.2s',
     touchAction: 'none',
   };
@@ -186,16 +178,16 @@ export default function TemplateEditor({
     position: 'absolute',
     left: `${zones.name.x * 100}%`,
     top: `${zones.name.y * 100}%`,
-    transform: `translate(${zones.name.alignment === 'center' ? '-50%' : zones.name.alignment === 'right' ? '-100%' : '0'}, 0)`,
+    transform: 'translate(-50%, 0)',
     color: zones.name.color,
     fontSize: `${zones.name.fontSize * 100}cqh`,
-    fontWeight: zones.name.weight as any,
-    fontFamily: zones.name.font,
+    fontWeight: 700,
+    fontFamily: `"${zones.name.font}", sans-serif`,
     textShadow: '0 2px 8px rgba(0,0,0,0.7)',
     whiteSpace: 'nowrap',
     cursor: dragging === 'name' ? 'grabbing' : 'grab',
-    opacity: zones.name.enabled ? 1 : 0.3,
-    border: `2px dashed ${zones.name.enabled ? 'rgba(255,107,157,0.8)' : 'rgba(255,255,255,0.2)'}`,
+    display: zones.name.enabled ? 'block' : 'none',
+    border: '2px dashed rgba(255,255,255,0.85)',
     padding: '2px 6px',
     borderRadius: '4px',
     userSelect: 'none',
@@ -204,19 +196,20 @@ export default function TemplateEditor({
   };
 
   return (
-    <div className="flex gap-6 h-full">
+    <div className="flex flex-col md:flex-row gap-5">
       {/* Canvas */}
       <div className="flex-1 min-w-0">
-        <div className="text-xs text-muted font-600 uppercase tracking-wide mb-2">
-          🖱️ Drag zones directly on the canvas — corners resize
+        <div className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider mb-2">
+          Drag zones on the canvas · corner handle resizes the photo zone
         </div>
         <div
-          className="relative mx-auto rounded-2xl overflow-hidden shadow-xl select-none"
+          className="relative mx-auto rounded-xl overflow-hidden shadow-sm ring-1 ring-slate-200 select-none"
           style={{
+            width: '100%',
+            maxWidth: 260,
             aspectRatio: '9/16',
-            maxHeight: '600px',
             background: previewUrl && templateType === 'IMAGE'
-              ? `url(${previewUrl}) center/cover no-repeat`
+              ? `url(${previewUrl}) center/${fit} no-repeat, ${gradient}`
               : gradient,
             containerType: 'size',
           }}
@@ -227,7 +220,7 @@ export default function TemplateEditor({
         >
           {previewUrl && templateType === 'VIDEO' && (
             <video src={previewUrl} autoPlay loop muted playsInline
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
+              className={`absolute inset-0 w-full h-full pointer-events-none ${fit === 'cover' ? 'object-cover' : 'object-contain'}`} />
           )}
 
           {/* WhatsApp-style status bar */}
@@ -246,7 +239,7 @@ export default function TemplateEditor({
             <div style={{
               width: '100%', height: '100%',
               borderRadius: 'inherit',
-              background: 'linear-gradient(135deg, rgba(124,92,252,0.15), rgba(255,107,157,0.15))',
+              background: 'rgba(37,99,235,0.15)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               backdropFilter: 'blur(2px)',
             }}>
@@ -288,20 +281,20 @@ export default function TemplateEditor({
             style={nameZoneStyle}
             onPointerDown={e => onPointerDown('name', e)}
           >
-            Jayesh Jain
+            {SAMPLE_NAME}
           </div>
         </div>
-        <div className="text-center text-xs text-muted mt-2">9:16 ratio · 1080×1920px · normalized coordinates</div>
+        <div className="text-center text-[11px] text-slate-400 mt-2">9:16 · 1080×1920px</div>
       </div>
 
       {/* Control Panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className="w-full md:w-64 flex-shrink-0 space-y-4">
         {/* Tab switcher */}
         <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
           {(['photo', 'name'] as const).map(tab => (
             <button key={tab} onClick={() => setActivePanel(tab)}
-              className={`flex-1 py-2 rounded-lg text-sm font-700 transition-colors ${
-                activePanel === tab ? 'bg-white text-slate-800 shadow-sm' : 'text-muted hover:text-slate-600'
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                activePanel === tab ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-600'
               }`}>
               {tab === 'photo' ? '📸 Photo Zone' : '✏️ Name Zone'}
             </button>
@@ -310,11 +303,11 @@ export default function TemplateEditor({
 
         {/* Photo Zone Controls */}
         {activePanel === 'photo' && (
-          <div className="space-y-4 bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+          <div className="space-y-4 bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
             <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm font-700 text-slate-700">Enable Photo Zone</span>
+              <span className="text-sm font-semibold text-slate-700">Enable Photo Zone</span>
               <div
-                className={`w-11 h-6 rounded-full relative transition-colors ${zones.photo.enabled ? 'bg-primary' : 'bg-slate-200'}`}
+                className={`w-11 h-6 rounded-full relative transition-colors ${zones.photo.enabled ? 'bg-blue-600' : 'bg-slate-200'}`}
                 onClick={() => updatePhoto({ enabled: !zones.photo.enabled })}
               >
                 <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${zones.photo.enabled ? 'translate-x-5' : ''}`} />
@@ -324,15 +317,15 @@ export default function TemplateEditor({
             {zones.photo.enabled && (
               <>
                 <div>
-                  <div className="text-xs font-700 text-slate-500 uppercase tracking-wide mb-2">Shape</div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Shape</div>
                   <div className="grid grid-cols-3 gap-2">
                     {(['circle', 'square', 'rounded'] as const).map(shape => (
                       <button key={shape}
                         onClick={() => updatePhoto({ shape })}
-                        className={`py-2 rounded-lg text-xs font-700 border-2 transition-all ${
+                        className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
                           zones.photo.shape === shape
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-slate-200 text-muted'
+                            ? 'border-blue-600 bg-blue-50 text-blue-700'
+                            : 'border-slate-200 text-slate-500'
                         }`}
                       >
                         {shape === 'circle' ? '⬤' : shape === 'square' ? '⬛' : '▢'}{' '}
@@ -349,19 +342,19 @@ export default function TemplateEditor({
                     { label: 'Size', key: 'size' as const, min: 0.05, max: 0.5 },
                   ].map(({ label, key, min, max }) => (
                     <div key={key}>
-                      <div className="flex justify-between text-xs text-muted mb-1">
-                        <span className="font-600">{label}</span>
+                      <div className="flex justify-between text-xs text-slate-500 mb-1">
+                        <span className="font-medium">{label}</span>
                         <span>{(zones.photo[key] * 100).toFixed(0)}%</span>
                       </div>
                       <input type="range" min={min} max={max} step={0.01}
                         value={zones.photo[key]}
                         onChange={e => updatePhoto({ [key]: parseFloat(e.target.value) } as any)}
-                        className="w-full accent-primary" />
+                        className="w-full accent-blue-600" />
                     </div>
                   ))}
                 </div>
-                <div className="text-xs text-muted bg-slate-50 rounded-lg p-2">
-                  💡 Drag the zone on the canvas or use sliders above
+                <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-2">
+                  Drag the zone on the canvas or use the sliders above
                 </div>
               </>
             )}
@@ -370,11 +363,11 @@ export default function TemplateEditor({
 
         {/* Name Zone Controls */}
         {activePanel === 'name' && (
-          <div className="space-y-4 bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+          <div className="space-y-4 bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
             <label className="flex items-center justify-between cursor-pointer">
-              <span className="text-sm font-700 text-slate-700">Enable Name Zone</span>
+              <span className="text-sm font-semibold text-slate-700">Enable Name Zone</span>
               <div
-                className={`w-11 h-6 rounded-full relative transition-colors ${zones.name.enabled ? 'bg-primary' : 'bg-slate-200'}`}
+                className={`w-11 h-6 rounded-full relative transition-colors ${zones.name.enabled ? 'bg-blue-600' : 'bg-slate-200'}`}
                 onClick={() => updateName({ enabled: !zones.name.enabled })}
               >
                 <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${zones.name.enabled ? 'translate-x-5' : ''}`} />
@@ -390,26 +383,26 @@ export default function TemplateEditor({
                     { label: 'Font Size', key: 'fontSize' as const, min: 0.02, max: 0.12 },
                   ].map(({ label, key, min, max }) => (
                     <div key={key}>
-                      <div className="flex justify-between text-xs text-muted mb-1">
-                        <span className="font-600">{label}</span>
+                      <div className="flex justify-between text-xs text-slate-500 mb-1">
+                        <span className="font-medium">{label}</span>
                         <span>{(zones.name[key] * 100).toFixed(1)}%</span>
                       </div>
                       <input type="range" min={min} max={max} step={0.005}
                         value={zones.name[key]}
                         onChange={e => updateName({ [key]: parseFloat(e.target.value) } as any)}
-                        className="w-full accent-primary" />
+                        className="w-full accent-blue-600" />
                     </div>
                   ))}
                 </div>
 
                 <div>
-                  <div className="text-xs font-700 text-slate-500 uppercase tracking-wide mb-2">Color</div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Color</div>
                   <div className="flex gap-2 flex-wrap">
                     {COLORS.map(c => (
                       <button key={c}
                         onClick={() => updateName({ color: c })}
-                        className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                          zones.name.color === c ? 'border-primary scale-110' : 'border-transparent hover:scale-105'
+                        className={`w-7 h-7 rounded-full border transition-transform ${
+                          zones.name.color === c ? 'border-blue-600 scale-110' : 'border-transparent hover:scale-105'
                         }`}
                         style={{ background: c, boxShadow: '0 0 0 1px rgba(0,0,0,0.2)' }}
                       />
@@ -418,57 +411,20 @@ export default function TemplateEditor({
                 </div>
 
                 <div>
-                  <div className="text-xs font-700 text-slate-500 uppercase tracking-wide mb-2">Font</div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Font</div>
                   <select
                     value={zones.name.font}
                     onChange={e => updateName({ font: e.target.value })}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-primary"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-600"
                   >
                     {FONTS.map(f => (
-                      <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
+                      <option key={f.value} value={f.value} style={{ fontFamily: `"${f.value}", sans-serif` }}>{f.label}</option>
                     ))}
                   </select>
                 </div>
 
-                <div>
-                  <div className="text-xs font-700 text-slate-500 uppercase tracking-wide mb-2">Alignment</div>
-                  <div className="flex gap-2">
-                    {([
-                      { value: 'left', icon: <AlignLeft size={14} /> },
-                      { value: 'center', icon: <AlignCenter size={14} /> },
-                      { value: 'right', icon: <AlignRight size={14} /> },
-                    ] as const).map(({ value, icon }) => (
-                      <button key={value}
-                        onClick={() => updateName({ alignment: value })}
-                        className={`flex-1 flex items-center justify-center py-2 rounded-lg border-2 transition-all ${
-                          zones.name.alignment === value ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 text-muted'
-                        }`}
-                      >
-                        {icon}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-700 text-slate-500 uppercase tracking-wide mb-2">Weight</div>
-                  <div className="flex gap-2">
-                    {(['normal', 'bold', '900'] as const).map(w => (
-                      <button key={w}
-                        onClick={() => updateName({ weight: w })}
-                        className={`flex-1 py-2 rounded-lg border-2 text-xs transition-all ${
-                          zones.name.weight === w ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 text-muted'
-                        }`}
-                        style={{ fontWeight: w }}
-                      >
-                        {w === 'normal' ? 'Regular' : w === 'bold' ? 'Bold' : 'Black'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted bg-slate-50 rounded-lg p-2">
-                  💡 Drag the pink zone on the canvas or use sliders above. Sample shows "Jayesh Jain".
+                <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-2">
+                  Drag the dashed name box on the canvas or use the sliders above.
                 </div>
               </>
             )}

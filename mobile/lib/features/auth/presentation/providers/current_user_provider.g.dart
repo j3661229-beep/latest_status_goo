@@ -6,9 +6,12 @@ part of 'current_user_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$currentUserHash() => r'0fe74d79b6f660544432d7532031e89a13c8f516';
+String _$currentUserHash() => r'8d76f6421cf11c8a28daa3067abb5cd8a10bcc57';
 
-/// See also [currentUser].
+/// The cached current user. Rebuilds whenever the session store changes
+/// (login, profile refresh, logout).
+///
+/// Copied from [currentUser].
 @ProviderFor(currentUser)
 final currentUserProvider = AutoDisposeProvider<UserModel?>.internal(
   currentUser,

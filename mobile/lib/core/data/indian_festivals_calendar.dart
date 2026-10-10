@@ -11,6 +11,9 @@ class IndianFestivalItem {
   final String categorySlug;
   final List<Color> gradient;
 
+  /// Backend category id (only for festivals coming from the API).
+  final String? categoryId;
+
   const IndianFestivalItem({
     required this.id,
     required this.nameHi,
@@ -20,7 +23,35 @@ class IndianFestivalItem {
     required this.day,
     required this.categorySlug,
     required this.gradient,
+    this.categoryId,
   });
+
+  static const List<List<Color>> _apiGradients = [
+    [Color(0xFFFF416C), Color(0xFFFF4B2B)],
+    [Color(0xFFF7971E), Color(0xFFFFD200)],
+    [Color(0xFF8A2387), Color(0xFFE94057)],
+    [Color(0xFF11998E), Color(0xFF38EF7D)],
+    [Color(0xFF1D4ED8), Color(0xFF3B82F6)],
+  ];
+
+  /// Maps a GET /festivals/upcoming item. Returns null if it can't be parsed.
+  static IndianFestivalItem? fromApi(Map<String, dynamic> json, int index) {
+    final date = DateTime.tryParse(json['date']?.toString() ?? '')?.toLocal();
+    final nameHi = json['nameHi']?.toString();
+    if (date == null || nameHi == null || nameHi.isEmpty) return null;
+    final category = json['category'];
+    return IndianFestivalItem(
+      id: json['id']?.toString() ?? 'festival_$index',
+      nameHi: nameHi,
+      nameEn: json['nameEn']?.toString() ?? '',
+      emoji: (json['emoji']?.toString().isNotEmpty ?? false) ? json['emoji'].toString() : '🎉',
+      month: date.month,
+      day: date.day,
+      categorySlug: category is Map ? (category['slug']?.toString() ?? '') : '',
+      categoryId: json['categoryId']?.toString(),
+      gradient: _apiGradients[index % _apiGradients.length],
+    );
+  }
 
   /// Calculates days remaining from today
   int getDaysRemaining() {

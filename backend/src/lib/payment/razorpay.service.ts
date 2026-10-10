@@ -66,4 +66,24 @@ export class RazorpayService {
       return false;
     }
   }
+
+  /** True when a real webhook secret is configured (not the placeholder default). */
+  static isWebhookConfigured(): boolean {
+    const secret = env.RAZORPAY_WEBHOOK_SECRET;
+    return !!secret && secret !== 'placeholder' && secret !== 'XXXXX';
+  }
+
+  /**
+   * Verify `x-razorpay-signature`: hex HMAC-SHA256 of the *raw* request body
+   * keyed with RAZORPAY_WEBHOOK_SECRET.
+   */
+  static verifyWebhookSignature(rawBody: Buffer, signature: string | undefined): boolean {
+    if (!signature || !this.isWebhookConfigured()) return false;
+    const expected = createHmac('sha256', env.RAZORPAY_WEBHOOK_SECRET).update(rawBody).digest('hex');
+    try {
+      return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
+    } catch {
+      return false;
+    }
+  }
 }

@@ -14,13 +14,15 @@ export class TemplateService {
     this.cache = new CacheService(redis);
   }
 
-  async list(params: TemplateFilterParams) {
-    const lang = params.lang ?? 'ALL';
-    const cat = params.categoryId ?? 'ALL';
-    const type = params.type ?? 'ALL';
-    const page = params.page ?? 1;
-
-    const cacheKey = CK.templateList(lang, cat, type, page);
+  async list(params: TemplateFilterParams & { page: number; limit: number }) {
+    const cacheKey = CK.templateList({
+      lang: params.lang,
+      categoryId: params.categoryId,
+      type: params.type,
+      isPremium: params.isPremium,
+      page: params.page,
+      limit: params.limit,
+    });
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
 
@@ -60,7 +62,7 @@ export class TemplateService {
   }
 
   async getNew(type?: TemplateType, lang?: Language, page = 1) {
-    const cacheKey = `${CK.newArrivals}:${type ?? 'ALL'}:${lang ?? 'ALL'}:${page}`;
+    const cacheKey = CK.newArrivals(type ?? 'ALL', lang ?? 'ALL', page);
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
 

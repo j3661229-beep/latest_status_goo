@@ -1,7 +1,8 @@
 // lib/api.ts — Typed API client for admin dashboard
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { API_BASE_URL, getAccessToken, refreshTokens, clearTokens, redirectToLogin } from './auth';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1';
+const BASE_URL = API_BASE_URL;
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -9,27 +10,45 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach auth token; redirect to /login on 401
+// Attach auth token
 api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('admin_access_token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
+  const token = getAccessToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
+// On 401: refresh once (single-flight across concurrent requests), retry the
+// original request once; if refresh fails, clear tokens and go to /login.
 api.interceptors.response.use(
   (res) => res,
-  (error) => {
-    if (typeof window !== 'undefined' && error.response?.status === 401) {
-      localStorage.removeItem('admin_access_token');
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
-      }
+  async (error: AxiosError) => {
+    const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    const isAuthCall = original?.url?.includes('/auth/');
+    if (typeof window === 'undefined' || error.response?.status !== 401 || !original || original._retry || isAuthCall) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+    original._retry = true;
+    try {
+      const token = await refreshTokens();
+      original.headers.Authorization = `Bearer ${token}`;
+      return api(original);
+    } catch {
+      clearTokens();
+      redirectToLogin();
+      return Promise.reject(error);
+    }
   }
 );
+
+/** Drop undefined / null / '' params so the backend doesn't see empty filters. */
+export function cleanParams(params?: Record<string, any>) {
+  if (!params) return undefined;
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') out[k] = v;
+  }
+  return out;
+}
 
 // ── Auth ────────────────────────────────────────────────────────
 export const authApi = {
@@ -45,9 +64,9 @@ export const adminApi = {
 
   // Templates
   getTemplates: (params?: Record<string, any>) =>
-    api.get('/admin/templates', { params }).then(r => r.data),
+    api.get('/admin/templates', { params: cleanParams(params) }).then(r => r.data),
   getPendingTemplates: (params?: Record<string, any>) =>
-    api.get('/admin/templates/pending', { params }).then(r => r.data),
+    api.get('/admin/templates/pending', { params: cleanParams(params) }).then(r => r.data),
   approveTemplate: (id: string, note?: string) =>
     api.post(`/admin/templates/${id}/approve`, { note }).then(r => r.data),
   rejectTemplate: (id: string, note: string) =>
@@ -57,21 +76,28 @@ export const adminApi = {
   patchTemplate: (id: string, data: Record<string, any>) =>
     api.patch(`/admin/templates/${id}`, data).then(r => r.data),
   // Coordinator Picks
-  getCoordinatorPicks: () => api.get('/admin/coordinator-picks').then(r => r.data),
+  // Backend returns { data, total }; older versions returned a bare array — normalize.
+  getCoordinatorPicks: () =>
+    api.get('/admin/coordinator-picks').then(r => {
+      const d = r.data;
+      const data: any[] = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
+      return { data, total: typeof d?.total === 'number' ? d.total : data.length };
+    }),
   setCoordinatorPick: (id: string, isCoordinatorPick: boolean, coordinatorNote?: string, coordinatorState?: string) =>
     api.patch(`/admin/templates/${id}/coordinator-pick`, { isCoordinatorPick, coordinatorNote, coordinatorState }).then(r => r.data),
   archiveTemplate: (id: string) =>
     api.delete(`/admin/templates/${id}`).then(r => r.data),
 
   // Users
+  getMe: () => api.get('/user/me').then(r => r.data),
   getUsers: (params?: Record<string, any>) =>
-    api.get('/admin/users', { params }).then(r => r.data),
+    api.get('/admin/users', { params: cleanParams(params) }).then(r => r.data),
   patchUser: (id: string, data: Record<string, any>) =>
     api.patch(`/admin/users/${id}`, data).then(r => r.data),
 
   // Creators
   getCreators: (params?: Record<string, any>) =>
-    api.get('/admin/creators', { params }).then(r => r.data),
+    api.get('/admin/creators', { params: cleanParams(params) }).then(r => r.data),
   patchCreator: (id: string, data: Record<string, any>) =>
     api.patch(`/admin/creators/${id}`, data).then(r => r.data),
   inviteCreator: (data: { email: string; name: string; displayName?: string; bio?: string }) =>
@@ -88,6 +114,8 @@ export const adminApi = {
   getCampaigns: () => api.get('/admin/campaigns').then(r => r.data),
   sendCampaign: (data: Record<string, any>) =>
     api.post('/admin/campaigns/send', data).then(r => r.data),
+  sendTestPush: (data: { title: string; body: string; imageUrl?: string; deepLink?: string; testTarget: string; targetType?: string }) =>
+    api.post('/admin/campaigns/test', data).then(r => r.data),
 
   // Analytics
   getDau: (days = 30) => api.get('/admin/analytics/dau', { params: { days } }).then(r => r.data),
@@ -101,5 +129,5 @@ export const adminApi = {
 
   // Audit Log
   getAuditLogs: (params?: Record<string, any>) =>
-    api.get('/admin/audit-log', { params }).then(r => r.data),
+    api.get('/admin/audit-log', { params: cleanParams(params) }).then(r => r.data),
 };

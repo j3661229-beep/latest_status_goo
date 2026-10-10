@@ -11,9 +11,11 @@ export class SearchService {
     this.cache = new CacheService(redis);
   }
 
-  async search(query: string, lang?: string, type?: string, page = 1) {
+  async search(query: string, lang?: string, type?: string, page = 1, limit = 30) {
     const normalizedQ = query.trim().toLowerCase();
     if (!normalizedQ || normalizedQ.length < 2) return { data: [], total: 0 };
+    page = Math.max(1, Math.trunc(page) || 1);
+    limit = Math.min(50, Math.max(1, Math.trunc(limit) || 30));
 
     // Strictly validate type to prevent SQL injection via interpolation
     const ALLOWED_TYPES = ['IMAGE', 'VIDEO'] as const;
@@ -22,11 +24,10 @@ export class SearchService {
       ? (type as AllowedType)
       : undefined;
 
-    const cacheKey = CK.search(normalizedQ, lang ?? 'all', safeType ?? 'all');
+    const cacheKey = CK.search({ q: normalizedQ, lang: lang ?? 'all', type: safeType ?? 'all', page, limit });
     const cached = await this.cache.get(cacheKey);
     if (cached) return cached;
 
-    const limit = 30;
     const skip = (page - 1) * limit;
 
     // Full-text + trigram search (§LLD-03)
@@ -183,7 +184,7 @@ export class SearchService {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const results: any[] = await this.prisma.$queryRaw`
-      SELECT metadata->>'query' as term, COUNT(*) as count
+      SELECT metadata->>'query' as term, COUNT(*)::int as count
       FROM "AnalyticsEvent"
       WHERE event = 'search'
         AND "createdAt" > ${sevenDaysAgo}

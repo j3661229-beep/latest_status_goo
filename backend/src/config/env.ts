@@ -1,11 +1,32 @@
 // src/config/env.ts
 import { z } from 'zod';
 
+// Boolean feature flags: only the literal strings 'true' / '1' enable them.
+const boolFlag = z
+  .string()
+  .optional()
+  .transform((v) => v === 'true' || v === '1');
+
+// TRUST_PROXY: unset/'false' → false (do not trust X-Forwarded-For),
+// 'true' → trust all hops, a number → trust that many hops,
+// anything else (e.g. '10.0.0.0/8,127.0.0.1') → passed to Fastify as an address list.
+const trustProxy = z
+  .string()
+  .optional()
+  .transform((v): boolean | number | string => {
+    if (v === undefined || v === '' || v === 'false' || v === '0') return false;
+    if (v === 'true') return true;
+    if (/^\d+$/.test(v)) return parseInt(v, 10);
+    return v;
+  });
+
 const envSchema = z.object({
   // App
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().default('3000'),
   APP_URL: z.string().default('http://localhost:3000'),
+  // Reverse-proxy trust (affects req.ip used for rate limiting). Default: false.
+  TRUST_PROXY: trustProxy,
 
   // Database
   DATABASE_URL: z.string(),
@@ -35,9 +56,9 @@ const envSchema = z.object({
   // GCS_SA_KEY_JSON: base64-encoded service account key JSON (set in production)
   GCS_SA_KEY_JSON: z.string().optional(),
 
-  // Firebase Admin (for phone OTP verification on backend if needed)
-  FIREBASE_PROJECT_ID: z.string().optional().default('your-firebase-project-id'),
-  FIREBASE_SA_KEY_JSON: z.string().optional(),
+  // Firebase phone auth — ID tokens are verified against this project.
+  // If unset, POST /auth/firebase-phone returns 503.
+  FIREBASE_PROJECT_ID: z.string().optional(),
 
   // OneSignal
   ONESIGNAL_APP_ID: z.string().optional(),
@@ -45,6 +66,19 @@ const envSchema = z.object({
 
   // Sentry
   SENTRY_DSN_API: z.string().optional(),
+
+  // 2Factor.in SMS Gateway
+  TWO_FACTOR_API_KEY: z.string().optional(),
+
+  // Cloudinary (cloudinary://API_KEY:API_SECRET@CLOUD_NAME)
+  CLOUDINARY_URL: z.string().optional(),
+
+  // Dev/test only: accept OTP 123456 and echo the OTP in /auth/otp/send.
+  // Ignored when NODE_ENV=production.
+  ALLOW_TEST_OTP: boolFlag,
+
+  // When true, creator submissions skip the moderation queue and go live immediately.
+  AUTO_APPROVE_TEMPLATES: boolFlag,
 });
 
 function parseEnv() {

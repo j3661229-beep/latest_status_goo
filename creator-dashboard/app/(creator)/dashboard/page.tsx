@@ -2,28 +2,24 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Upload, CheckCircle, XCircle, Clock, Eye, ArrowUpRight, BadgeCheck } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Clock, Eye, BadgeCheck, ArrowRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { creatorApi } from '@/lib/api';
+import { getStatusConfig, templateName } from '@/lib/utils';
+import { QueryError } from '@/components/QueryError';
 
-const BADGE: Record<string, string> = {
-  APPROVED: 'badge-approved',
-  PENDING: 'badge-pending',
-  REJECTED: 'badge-rejected',
-  DRAFT: 'badge-draft',
-};
-
-function StatCard({ label, value, sub, icon: Icon, color = 'primary' }: any) {
+function StatCard({ label, value, sub, icon: Icon, color = 'blue' }: any) {
+  const iconBg = color === 'emerald' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100';
   return (
-    <div className="stat-card flex items-center gap-4">
-      <div className={`w-11 h-11 rounded-xl bg-${color}/10 flex items-center justify-center shrink-0`}>
-        <Icon size={20} className={`text-${color}`} />
+    <div className="stat-card">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</span>
+        <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${iconBg}`}>
+          <Icon size={16} />
+        </div>
       </div>
-      <div className="min-w-0">
-        <div className="font-900 text-xl md:text-2xl text-slate-800">{value}</div>
-        <div className="text-sm font-700 text-slate-700">{label}</div>
-        {sub && <div className="text-xs text-muted mt-0.5 leading-tight">{sub}</div>}
-      </div>
+      <div className="text-2xl font-bold text-slate-900 tracking-tight tabular-nums mb-1">{value}</div>
+      {sub && <div className="text-xs text-slate-500 leading-tight">{sub}</div>}
     </div>
   );
 }
@@ -31,47 +27,48 @@ function StatCard({ label, value, sub, icon: Icon, color = 'primary' }: any) {
 function SkeletonCard() {
   return (
     <div className="stat-card animate-pulse">
-      <div className="flex items-center gap-4">
-        <div className="w-11 h-11 rounded-xl bg-slate-100 shrink-0" />
-        <div className="space-y-2">
-          <div className="h-7 w-16 bg-slate-100 rounded" />
-          <div className="h-4 w-24 bg-slate-100 rounded" />
-        </div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="h-3.5 w-20 bg-slate-100 rounded" />
+        <div className="w-8 h-8 rounded-lg bg-slate-100" />
       </div>
+      <div className="h-7 w-24 bg-slate-100 rounded mb-2" />
+      <div className="h-3 w-32 bg-slate-100 rounded" />
     </div>
   );
 }
 
 export default function CreatorDashboardPage() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['creator-stats'],
     queryFn: () => creatorApi.getStats(),
     staleTime: 2 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
   });
 
-  // Build weekly uses from totalAppUses — spread over 7 days with realistic variance
-  const weeklyUses = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
-    const avg = stats?.totalAppUses ? Math.floor(stats.totalAppUses / 7) : 0;
-    const seed = [0.65, 0.8, 0.72, 1.1, 1.0, 1.35, 1.18][i];
-    return { day, uses: Math.round(avg * seed) };
-  });
+  // Real per-template totals (backend has no time-series endpoint for creators).
+  const usesByTemplate = (stats?.topTemplates ?? []).map((t: any) => ({
+    name: templateName(t).slice(0, 18),
+    uses: t.useCount ?? 0,
+  }));
+  const hasUsage = usesByTemplate.some((d: any) => d.uses > 0);
 
   return (
-    <div className="space-y-6 md:space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-900 text-slate-800">My Creator Studio</h1>
-          <p className="text-muted text-sm mt-1">Here's your performance overview, updated live.</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Creator Studio</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Template performance, usage analytics, and status updates</p>
         </div>
-        <Link href="/upload" className="btn-primary flex items-center gap-2 self-start sm:self-auto">
-          <Upload size={16} /> Upload Template
+        <Link href="/upload" className="btn-primary text-xs self-start sm:self-auto flex items-center gap-1.5">
+          <Upload size={14} /> Upload New Template
         </Link>
       </div>
 
+      {isError && <QueryError error={error} onRetry={() => refetch()} title="Could not load your stats" />}
+
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
@@ -80,155 +77,183 @@ export default function CreatorDashboardPage() {
               label="Total Uploads"
               value={stats?.totalUploads ?? 0}
               sub={`${stats?.approved ?? 0} approved · ${stats?.pending ?? 0} pending`}
-              icon={Upload} color="primary"
+              icon={Upload}
+              color="blue"
             />
             <StatCard
               label="Approval Rate"
               value={`${(stats?.approvalRate ?? 0).toFixed(1)}%`}
-              sub="Overall acceptance"
-              icon={CheckCircle} color="success"
+              sub="Acceptance standard"
+              icon={CheckCircle}
+              color="emerald"
             />
             <StatCard
               label="Total App Uses"
               value={(stats?.totalAppUses ?? 0).toLocaleString()}
-              sub="Users used your templates"
-              icon={Eye} color="primary"
+              sub="User personalizations"
+              icon={Eye}
+              color="blue"
             />
             <StatCard
-              label="Verification"
-              value={stats?.isVerified ? 'Verified' : 'Pending'}
-              sub={stats?.isVerified ? 'You are a Verified Creator' : 'Complete profile to verify'}
+              label="Creator Status"
+              value={stats?.isVerified ? 'Verified' : 'Active'}
+              sub={stats?.isVerified ? 'Official Verified Creator' : 'Standard Creator Account'}
               icon={stats?.isVerified ? BadgeCheck : Clock}
-              color={stats?.isVerified ? 'success' : 'secondary'}
+              color={stats?.isVerified ? 'emerald' : 'blue'}
             />
           </>
         )}
       </div>
 
       {/* Chart + Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Uses chart */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-5 md:p-6 shadow-card border border-surface-border">
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="font-800 text-slate-800">Template Uses This Week</h3>
-            {!isLoading && stats?.totalAppUses > 0 && (
-              <div className="flex items-center gap-1 text-success text-sm font-700">
-                <ArrowUpRight size={14} /> Live Data
-              </div>
-            )}
+        <div className="lg:col-span-2 bg-white rounded-xl p-5 border border-slate-200/80 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Uses by Top Template</h3>
+              <p className="text-slate-400 text-xs mt-0.5">All-time uses of your top live templates</p>
+            </div>
           </div>
           {isLoading ? (
-            <div className="h-48 bg-slate-50 rounded-xl animate-pulse" />
-          ) : stats?.totalAppUses === 0 ? (
-            <div className="h-48 flex flex-col items-center justify-center text-muted text-sm">
-              <div className="text-3xl mb-2">📊</div>
-              <p>No usage data yet.</p>
-              <p className="text-xs mt-1">Upload and submit templates to see stats here.</p>
+            <div className="h-48 bg-slate-50 rounded-lg animate-pulse" />
+          ) : !hasUsage ? (
+            <div className="h-48 flex flex-col items-center justify-center text-slate-400 text-xs">
+              <div className="text-2xl mb-1.5 opacity-60">📊</div>
+              <p>No user engagements recorded yet</p>
+              <p className="text-[11px] mt-0.5 text-slate-400">Once users share your posters on WhatsApp, views will appear here.</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={weeklyUses} barSize={28}>
-                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9A96B8', fontWeight: 600 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9A96B8' }} />
+              <BarChart data={usesByTemplate} barSize={24}>
+                <XAxis dataKey="name" interval={0} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
                 <Tooltip
-                  contentStyle={{ borderRadius: 12, border: 'none', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                  contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
                   formatter={(v: number) => [v.toLocaleString(), 'Uses']}
                 />
-                <Bar dataKey="uses" fill="#2563EB" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="uses" fill="#2563EB" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
         </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white rounded-2xl p-5 md:p-6 shadow-card border border-surface-border space-y-3">
-          <h3 className="font-800 text-slate-800 mb-2">Quick Actions</h3>
-          <Link href="/upload" className="flex items-center gap-3 p-3 rounded-xl bg-primary/5 hover:bg-primary/10 transition-colors">
-            <Upload size={16} className="text-primary" />
-            <div>
-              <div className="text-sm font-800 text-primary">Upload Template</div>
-              <div className="text-xs text-muted">Submit for review</div>
-            </div>
-          </Link>
-          {(stats?.rejected ?? 0) > 0 && (
-            <Link href="/templates?status=REJECTED" className="flex items-center gap-3 p-3 rounded-xl bg-red-50 hover:bg-red-100 transition-colors">
-              <XCircle size={16} className="text-danger" />
-              <div>
-                <div className="text-sm font-800 text-danger">Fix Rejected</div>
-                <div className="text-xs text-muted">{stats?.rejected} need fixing</div>
+        {/* Quick Actions & Guidelines */}
+        <div className="bg-white rounded-xl p-5 border border-slate-200/80 shadow-sm space-y-4">
+          <h3 className="text-sm font-semibold text-slate-900">Quick Actions</h3>
+          <div className="space-y-2">
+            <Link
+              href="/upload"
+              className="flex items-center gap-2.5 p-2.5 rounded-lg border border-slate-200/70 hover:border-blue-300 hover:bg-blue-50/40 transition-all text-xs font-semibold text-slate-700"
+            >
+              <div className="w-7 h-7 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                <Upload size={14} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-slate-900">Upload New Template</div>
+                <div className="text-slate-400 font-normal text-[11px]">Artwork or video status</div>
               </div>
             </Link>
-          )}
-          {(stats?.pending ?? 0) > 0 && (
-            <Link href="/templates?status=PENDING" className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 hover:bg-amber-100 transition-colors">
-              <Clock size={16} className="text-amber-600" />
-              <div>
-                <div className="text-sm font-800 text-amber-700">Pending Review</div>
-                <div className="text-xs text-muted">{stats?.pending} awaiting approval</div>
-              </div>
-            </Link>
-          )}
-          <div className="pt-2 border-t border-surface-border">
-            <div className="text-xs font-800 text-muted uppercase tracking-wide mb-2">Upload Guidelines</div>
-            <div className="space-y-1 text-xs text-muted">
-              <div>✅ Image: 1080×1920px (9:16), JPG/PNG max 5MB</div>
-              <div>✅ Video: 1080×1920px, MP4, max 50MB, 30s</div>
-              <div>✅ Hindi + Marathi + English required</div>
-              <div>✅ Configure name/photo overlay zones</div>
-              <div>❌ No copyright watermarks or branded content</div>
-            </div>
+
+            {(stats?.rejected ?? 0) > 0 && (
+              <Link
+                href="/templates?status=REJECTED"
+                className="flex items-center gap-2.5 p-2.5 rounded-lg border border-rose-200 bg-rose-50/50 hover:bg-rose-50 transition-all text-xs font-semibold text-rose-700"
+              >
+                <div className="w-7 h-7 rounded-md bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <XCircle size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div>Fix Rejected ({stats?.rejected})</div>
+                  <div className="text-rose-500 font-normal text-[11px]">Update metadata or zones</div>
+                </div>
+              </Link>
+            )}
+
+            {(stats?.pending ?? 0) > 0 && (
+              <Link
+                href="/templates?status=PENDING"
+                className="flex items-center gap-2.5 p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 hover:bg-amber-50 transition-all text-xs font-semibold text-amber-700"
+              >
+                <div className="w-7 h-7 rounded-md bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                  <Clock size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div>Pending Review ({stats?.pending})</div>
+                  <div className="text-amber-500 font-normal text-[11px]">Under moderation</div>
+                </div>
+              </Link>
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-slate-100">
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Upload Standards</div>
+            <ul className="space-y-1.5 text-xs text-slate-500">
+              <li className="flex items-start gap-1.5">
+                <span className="text-emerald-600 font-bold">✓</span> Portrait 1080×1920px (9:16 aspect ratio)
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-emerald-600 font-bold">✓</span> Configure user photo & name zones
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-emerald-600 font-bold">✓</span> High resolution, clean Hindi/English text
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-rose-500 font-bold">✕</span> No third-party watermarks or logos
+              </li>
+            </ul>
           </div>
         </div>
       </div>
 
       {/* Top Templates */}
-      <div className="bg-white rounded-2xl p-5 md:p-6 shadow-card border border-surface-border">
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="font-800 text-slate-800">My Top Templates</h3>
-          <Link href="/templates" className="text-primary text-sm font-700 hover:underline">See all →</Link>
+      <div className="bg-white rounded-xl p-5 border border-slate-200/80 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-slate-900">My Top Templates</h3>
+          <Link href="/templates" className="text-blue-600 text-xs font-medium hover:underline inline-flex items-center gap-1">
+            View all <ArrowRight size={12} />
+          </Link>
         </div>
         {isLoading ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />
+              <div key={i} className="h-12 bg-slate-50 rounded-lg animate-pulse" />
             ))}
           </div>
         ) : !stats?.topTemplates || stats.topTemplates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-muted text-sm">
-            <div className="text-3xl mb-2">🖼️</div>
-            <p className="font-700 text-slate-600">No approved templates yet.</p>
-            <Link href="/upload" className="mt-3 btn-primary text-xs px-4">Upload your first template →</Link>
+          <div className="flex flex-col items-center justify-center py-10 text-slate-400 text-xs">
+            <div className="text-2xl mb-1.5 opacity-60">🖼️</div>
+            <p className="font-semibold text-slate-600">No approved templates yet</p>
+            <Link href="/upload" className="mt-2.5 btn-primary text-xs px-3.5 py-1.5">Upload your first template</Link>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-slate-100">
             {stats.topTemplates.map((t: any, i: number) => (
-              <div key={t.id ?? i} className="flex items-center gap-4 p-3 rounded-xl hover:bg-surface transition-colors">
-                <div className="w-2 h-2 rounded-full bg-primary/30 shrink-0" />
+              <div key={t.id ?? i} className="flex items-center gap-3.5 py-2.5 first:pt-0 last:pb-0 hover:bg-slate-50/50 rounded-lg px-1 transition-colors">
                 <div
-                  className="w-10 h-14 rounded-lg shrink-0 flex items-center justify-center"
-                  style={{ background: t.gradient || 'linear-gradient(135deg,#2563EB,#0EA5E9)' }}
-                >
-                  <span className="text-white font-800 text-[8px] text-center px-1 leading-tight">
-                    {(t.nameEn || t.nameHi || '').slice(0, 8)}
-                  </span>
-                </div>
+                  className="w-8 h-11 rounded-md shrink-0 border border-slate-200/60 bg-cover bg-center flex items-center justify-center"
+                  style={{
+                    backgroundImage: t.imageThumbUrl || t.imageUrl ? `url(${t.imageThumbUrl || t.imageUrl})` : undefined,
+                    background: !t.imageThumbUrl && !t.imageUrl ? (t.gradient || 'linear-gradient(135deg,#2563EB,#0EA5E9)') : undefined,
+                  }}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="font-800 text-slate-800 text-sm truncate">{t.nameEn || t.nameHi}</span>
-                    <span className={BADGE[t.status] || 'badge-draft'}>{t.status}</span>
-                    {t.type === 'VIDEO' && <span className="badge-video">VIDEO</span>}
+                    <span className="font-semibold text-slate-800 text-sm truncate">{templateName(t)}</span>
+                    <span className={getStatusConfig(t.status).cls}>{getStatusConfig(t.status).label}</span>
                   </div>
-                  <div className="flex gap-3 text-xs text-muted">
-                    <span>👁 {(t.useCount ?? 0).toLocaleString()} uses</span>
-                    <span>🔗 {(t.shareCount ?? 0).toLocaleString()} shares</span>
+                  <div className="flex gap-3 text-xs text-slate-400">
+                    <span>{(t.useCount ?? 0).toLocaleString()} uses</span>
+                    <span>·</span>
+                    <span>{(t.shareCount ?? 0).toLocaleString()} shares</span>
                   </div>
                 </div>
                 {t.status === 'APPROVED' && (t.useCount ?? 0) > 0 && (
                   <div className="text-right shrink-0">
-                    <div className="text-base font-900 text-primary">
+                    <div className="text-sm font-bold text-slate-800 tabular-nums">
                       {(((t.shareCount ?? 0) / (t.useCount ?? 1)) * 100).toFixed(0)}%
                     </div>
-                    <div className="text-[10px] text-muted">share rate</div>
+                    <div className="text-[10px] text-slate-400">share rate</div>
                   </div>
                 )}
               </div>

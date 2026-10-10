@@ -1,8 +1,27 @@
+// src/scripts/clear-mock-data.ts
+// Deletes seeded mock users/templates AND wipes all audit logs + analytics events.
+// Usage: npx tsx src/scripts/clear-mock-data.ts --yes
+// Refuses to run with NODE_ENV=production unless FORCE_CLEAR=true.
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function clearMockData() {
+  if (process.env.NODE_ENV === 'production' && process.env.FORCE_CLEAR !== 'true') {
+    console.error('❌ Refusing to run with NODE_ENV=production (set FORCE_CLEAR=true to override).');
+    process.exitCode = 1;
+    await prisma.$disconnect();
+    return;
+  }
+  if (!process.argv.includes('--yes')) {
+    console.error('❌ This permanently deletes mock data and ALL audit-log / analytics rows.');
+    console.error('   Re-run with --yes to confirm.');
+    process.exitCode = 1;
+    await prisma.$disconnect();
+    return;
+  }
+
   console.log('🧹 Clearing mock data from database...');
 
   try {

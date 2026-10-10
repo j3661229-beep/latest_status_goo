@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Eye, CheckCircle, XCircle, Clock, RefreshCw, Loader2, X, Pin } from 'lucide-react';
 import { adminApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
+import { toast } from '@/lib/toast';
+import { QueryError } from '@/components/QueryError';
 
 const REJECTION_REASONS = [
   'Image resolution too low (minimum 1080×1920px required)',
@@ -14,6 +16,9 @@ const REJECTION_REASONS = [
   'Duplicate content already exists in the app',
   'Copyright music or watermark detected in video',
 ];
+
+// Neutral placeholder rendered in the name zone during preview
+const PREVIEW_NAME = 'आपका नाम';
 
 function ZoneOverlay({ template }: { template: any }) {
   // Render creator-defined photo and name zones so admin can verify placement
@@ -66,7 +71,7 @@ function ZoneOverlay({ template }: { template: any }) {
       {/* Name zone overlay */}
       {template.nameZoneEnabled !== false && (
         <div style={nameZoneStyle}>
-          Jayesh Jain
+          {PREVIEW_NAME}
         </div>
       )}
     </div>
@@ -95,29 +100,29 @@ function PreviewModal({ template, onClose }: { template: any; onClose: () => voi
         {/* Metadata panel */}
         <div className="flex-1 text-white space-y-4 min-w-[240px]">
           <div>
-            <h2 className="text-xl font-900">{template.nameEn || template.nameHi}</h2>
+            <h2 className="text-xl font-bold">{template.nameEn || template.nameHi}</h2>
             <p className="text-white/50 text-sm">{template.nameHi} · {template.nameMr}</p>
           </div>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-white/50">Category</span>
-              <span className="font-700">{template.category?.nameEn ?? '—'}</span>
+              <span className="font-semibold">{template.category?.nameEn ?? '—'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-white/50">Type</span>
-              <span className="font-700">{template.type}</span>
+              <span className="font-semibold">{template.type}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-white/50">Creator</span>
-              <span className="font-700">{template.creator?.name ?? 'Unknown'}</span>
+              <span className="font-semibold">{template.creator?.name ?? 'Unknown'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-white/50">Premium</span>
-              <span className="font-700">{template.isPremium ? '⭐ Yes' : 'No (Free)'}</span>
+              <span className="font-semibold">{template.isPremium ? '⭐ Yes' : 'No (Free)'}</span>
             </div>
           </div>
           <div className="border-t border-white/10 pt-3 space-y-1 text-xs">
-            <div className="text-white/50 uppercase tracking-wider font-700 mb-2">Zone Config</div>
+            <div className="text-white/50 uppercase tracking-wider font-semibold mb-2">Zone Config</div>
             <div className="flex justify-between">
               <span className="text-white/50">Photo Zone</span>
               <span className={template.photoZoneEnabled ? 'text-green-400' : 'text-white/30'}>
@@ -138,8 +143,8 @@ function PreviewModal({ template, onClose }: { template: any; onClose: () => voi
             </div>
           )}
           <div className="bg-white/10 rounded-xl p-3 text-xs text-white/60">
-            <p className="font-700 text-white/80 mb-1">👆 Zone Preview</p>
-            <p>The overlays show exactly where the user's photo (👤) and name "Jayesh Jain" will appear. Verify positioning before approving.</p>
+            <p className="font-semibold text-white/80 mb-1">👆 Zone Preview</p>
+            <p>The overlays show exactly where the user's photo (👤) and name ("{PREVIEW_NAME}") will appear. Verify positioning before approving.</p>
           </div>
         </div>
       </div>
@@ -156,8 +161,8 @@ function RejectModal({ templateName, onConfirm, onCancel, isRejecting }: {
   const [reason, setReason] = useState('');
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
-        <h3 className="font-900 text-slate-800 text-lg mb-1">❌ Reject Template</h3>
+      <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl border border-slate-200">
+        <h3 className="font-bold text-slate-800 text-lg mb-1">❌ Reject Template</h3>
         <p className="text-muted text-sm mb-4">
           This reason will be sent directly to the creator via push notification.
         </p>
@@ -206,20 +211,22 @@ function ReviewCard({ template, onApprove, onReject, onPreview, onToggleCoordina
   const isApproved = template.status === 'APPROVED';
   const isRejected = template.status === 'REJECTED';
 
-  const badgeClass = isPending ? 'badge-pending' : isApproved ? 'badge-success' : 'badge-danger';
+  const badgeClass = isPending ? 'badge-pending' : isApproved ? 'badge-approved' : 'badge-rejected';
 
   return (
-    <div className="bg-white rounded-2xl border border-surface-border shadow-card overflow-hidden">
+    <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden hover:border-slate-300 transition-all">
       {/* Thumbnail */}
-      <div className="h-36 md:h-44 relative flex items-center justify-center"
-        style={{ background: template.gradient || 'linear-gradient(135deg,#2563EB,#0EA5E9)' }}>
+      <div
+        className="h-36 md:h-44 relative flex items-center justify-center overflow-hidden"
+        style={{ background: template.gradient || 'linear-gradient(135deg,#2563EB,#0EA5E9)' }}
+      >
         <div className="text-center text-white px-4">
-          {template.imageUrl ? (
-            <img src={template.imageUrl} alt={template.nameEn} className="h-full w-full object-cover absolute inset-0" />
+          {(template.imageUrl || template.imageThumbUrl) ? (
+            <img src={template.imageUrl || template.imageThumbUrl} alt={template.nameEn} className="h-full w-full object-cover absolute inset-0" />
           ) : (
             <>
-              <div className="font-800 text-base leading-tight drop-shadow">{template.nameHi || template.nameEn}</div>
-              <div className="text-xs opacity-70 mt-1">{template.quoteHi?.slice(0, 50)}</div>
+              <div className="font-bold text-sm leading-tight drop-shadow">{template.nameHi || template.nameEn}</div>
+              <div className="text-xs opacity-75 mt-1">{template.quoteHi?.slice(0, 50)}</div>
             </>
           )}
         </div>
@@ -227,17 +234,17 @@ function ReviewCard({ template, onApprove, onReject, onPreview, onToggleCoordina
           <div className="absolute top-2 right-2 badge-video">VIDEO</div>
         )}
         {template.isCoordinatorPick && (
-          <div className="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-800 px-2 py-0.5 rounded-md flex items-center gap-1 shadow">
+          <div className="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
             <Pin size={10} className="fill-white" /> Coordinator Pick
           </div>
         )}
       </div>
 
       <div className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <div className="font-800 text-slate-800 text-sm">{template.nameEn || template.nameHi}</div>
-            <div className="text-xs text-muted">{template.nameHi} · {template.nameMr}</div>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-slate-900 text-sm truncate">{template.nameEn || template.nameHi}</div>
+            <div className="text-xs text-slate-400 truncate">{template.nameHi} · {template.nameMr}</div>
           </div>
           <span className={`${badgeClass} shrink-0`}>{template.status}</span>
         </div>
@@ -258,9 +265,13 @@ function ReviewCard({ template, onApprove, onReject, onPreview, onToggleCoordina
             {(template.creator?.name || 'U')[0]}
           </div>
           <span className="truncate">{template.creator?.name || 'Unknown Creator'}</span>
-          <span>·</span>
-          <Clock size={11} className="shrink-0" />
-          <span className="whitespace-nowrap">{formatRelativeTime(template.submittedAt)}</span>
+          {(template.submittedAt || template.createdAt) && (
+            <>
+              <span>·</span>
+              <Clock size={11} className="shrink-0" />
+              <span className="whitespace-nowrap">{formatRelativeTime(template.submittedAt || template.createdAt)}</span>
+            </>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-1.5">
@@ -281,7 +292,7 @@ function ReviewCard({ template, onApprove, onReject, onPreview, onToggleCoordina
                 {isRejecting ? '...' : 'Reject'}
               </button>
             </>
-          ) : (
+          ) : isApproved ? (
             <button
               onClick={onToggleCoordinatorPick}
               className={`col-span-2 flex items-center justify-center gap-1.5 text-xs py-2 rounded-xl font-700 transition-colors ${
@@ -293,6 +304,10 @@ function ReviewCard({ template, onApprove, onReject, onPreview, onToggleCoordina
               <Pin size={12} className={template.isCoordinatorPick ? 'fill-amber-600' : ''} />
               {template.isCoordinatorPick ? 'Pinned Pick' : 'Pin to Coordinator'}
             </button>
+          ) : (
+            <div className="col-span-2 flex items-center justify-center text-xs text-slate-400">
+              {isRejected ? 'Rejected' : template.status}
+            </div>
           )}
         </div>
       </div>
@@ -308,13 +323,13 @@ export default function ReviewQueuePage() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
 
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ['review-queue', activeTab],
     queryFn: async () => {
       if (activeTab === 'pending') return adminApi.getPendingTemplates({ page: 1, limit: 20 });
       if (activeTab === 'coordinator') {
-        const res = await adminApi.getCoordinatorPicks();
-        return { data: res, total: res.length };
+        // getCoordinatorPicks() already normalizes to { data, total }
+        return adminApi.getCoordinatorPicks();
       }
       return adminApi.getTemplates({ status: activeTab.toUpperCase(), page: 1, limit: 20 });
     },
@@ -325,7 +340,9 @@ export default function ReviewQueuePage() {
     mutationFn: (id: string) => adminApi.approveTemplate(id),
     onMutate: (id) => setApprovingId(id),
     onSettled: () => setApprovingId(null),
+    onError: (err) => toast.apiError(err, 'Failed to approve template'),
     onSuccess: () => {
+      toast.success('Template approved');
       queryClient.invalidateQueries({ queryKey: ['review-queue'] });
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
     },
@@ -334,7 +351,9 @@ export default function ReviewQueuePage() {
   const toggleCoordinatorMutation = useMutation({
     mutationFn: ({ id, isCoordinatorPick }: { id: string; isCoordinatorPick: boolean }) =>
       adminApi.setCoordinatorPick(id, isCoordinatorPick),
-    onSuccess: () => {
+    onError: (err) => toast.apiError(err, 'Failed to update coordinator pick'),
+    onSuccess: (_d, vars) => {
+      toast.success(vars.isCoordinatorPick ? 'Pinned to coordinator picks' : 'Removed from coordinator picks');
       queryClient.invalidateQueries({ queryKey: ['review-queue'] });
       queryClient.invalidateQueries({ queryKey: ['admin-coordinator-picks'] });
     },
@@ -344,7 +363,9 @@ export default function ReviewQueuePage() {
     mutationFn: ({ id, note }: { id: string; note: string }) => adminApi.rejectTemplate(id, note),
     onMutate: ({ id }) => setRejectingId(id),
     onSettled: () => setRejectingId(null),
+    onError: (err) => toast.apiError(err, 'Failed to reject template'),
     onSuccess: () => {
+      toast.success('Template rejected — creator notified');
       setRejectTarget(null);
       queryClient.invalidateQueries({ queryKey: ['review-queue'] });
       queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
@@ -365,26 +386,34 @@ export default function ReviewQueuePage() {
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-900 text-slate-800">Review Queue</h1>
-          <p className="text-muted text-sm mt-1">Template submissions awaiting approval</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Review Queue</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Submissions awaiting moderator review and approval</p>
         </div>
-        <button onClick={() => refetch()} disabled={isLoading || isRefetching}
-          className="btn-ghost flex items-center gap-2 self-start sm:self-auto disabled:opacity-50">
-          <RefreshCw size={14} className={isRefetching ? 'animate-spin' : ''} /> 
+        <button
+          onClick={() => refetch()}
+          disabled={isLoading || isRefetching}
+          className="btn-outline text-xs flex items-center gap-1.5 self-start sm:self-auto disabled:opacity-50"
+        >
+          <RefreshCw size={13} className={isRefetching ? 'animate-spin' : ''} /> 
           {isRefetching ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-surface p-1 rounded-xl w-fit border border-surface-border">
+      <div className="flex gap-1 bg-slate-100/80 p-1 rounded-lg w-fit border border-slate-200/80">
         {tabs.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-700 transition-colors ${
-              activeTab === tab.key ? 'bg-white text-slate-800 shadow-sm' : 'text-muted hover:text-slate-600'
-            }`}>
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              activeTab === tab.key
+                ? 'bg-white text-slate-800 shadow-sm border border-slate-200/60'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
             {tab.label}
             {activeTab === tab.key && total > 0 && (
-              <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary`}>
+              <span className="ml-1.5 text-[11px] px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 font-bold border border-blue-200/60">
                 {total}
               </span>
             )}
@@ -396,17 +425,19 @@ export default function ReviewQueuePage() {
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map(i => (
-            <div key={i} className="bg-white rounded-2xl h-72 animate-pulse border border-surface-border" />
+            <div key={i} className="bg-white rounded-xl h-72 animate-pulse border border-slate-200/80" />
           ))}
         </div>
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
       ) : templates.length === 0 ? (
-        <div className="bg-white rounded-2xl p-16 text-center border border-surface-border">
-          <div className="text-5xl mb-4">{activeTab === 'pending' ? '🎉' : '📭'}</div>
-          <div className="font-800 text-slate-700 text-lg">
-            {activeTab === 'pending' ? 'All clear! No pending templates.' : `No ${activeTab} templates.`}
+        <div className="bg-white rounded-xl p-16 text-center border border-slate-200/80 shadow-sm">
+          <div className="text-4xl mb-3">{activeTab === 'pending' ? '🎉' : '📭'}</div>
+          <div className="font-bold text-slate-800 text-base">
+            {activeTab === 'pending' ? 'All clear! No pending templates' : `No ${activeTab} templates`}
           </div>
-          <div className="text-muted text-sm mt-1">
-            {activeTab === 'pending' ? 'Check back later for new submissions.' : ''}
+          <div className="text-slate-400 text-xs mt-1">
+            {activeTab === 'pending' ? 'New submissions will appear here automatically.' : ''}
           </div>
         </div>
       ) : (

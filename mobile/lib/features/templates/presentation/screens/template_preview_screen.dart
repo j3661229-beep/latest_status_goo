@@ -1,25 +1,27 @@
 // lib/features/templates/presentation/screens/template_preview_screen.dart
-import 'dart:ui' as ui;
 import 'dart:typed_data';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
 
-import '../../../../core/api/api_client.dart';
-import '../../../../core/utils/color_utils.dart';
+import '../../../../core/api/api_error.dart';
+import '../../../../core/auth/session_store.dart';
+import '../../../../core/services/status_export_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/app_ui_components.dart';
 import '../../../../core/models/branding_frame.dart';
-import '../widgets/branding_frame_overlay.dart';
+import '../../../../core/widgets/profile_photo.dart';
 import '../widgets/frame_picker_sheet.dart';
 import '../widgets/quote_picker_sheet.dart';
+import '../widgets/template_composition.dart';
 import '../../data/template_repository.dart';
+import '../../domain/models/template_model.dart';
 import '../providers/template_list_provider.dart';
 import '../../../auth/presentation/providers/current_user_provider.dart';
+import '../../../user/data/saved_templates.dart';
 
 class TemplatePreviewScreen extends ConsumerStatefulWidget {
   final String templateId;
@@ -33,22 +35,32 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
   String _displayName = '';
   String? _customQuote;
   BrandingFrameData? _brandingFrame;
-  bool _isSaved = false;
+  bool _isTogglingSave = false;
   bool _isSharing = false;
+  bool _isSavingGallery = false;
 
-  // Positions (percentages 0.0 to 1.0)
-  bool _positionsInitialized = false;
-  double _nameTop = 0.77;
-  double _nameLeft = 0.5;
-  double _photoTop = 0.65;
-  double _photoLeft = 0.5;
+  /// While true, edit affordances (placeholders) are hidden so they don't end
+  /// up in the exported image.
+  bool _exporting = false;
+
+  final GlobalKey _repaintBoundaryKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    // Engagement tracking — fire-and-forget, errors ignored.
+    ref.read(templateRepositoryProvider).recordView(widget.templateId);
+    // Initial bookmark state: cached id set now, server copy in background.
+    ref.read(savedIdsProvider.notifier).ensureSynced();
+  }
 
   void _initBrandingFrame() {
     if (_brandingFrame != null) return;
     final user = ref.read(currentUserProvider);
     _brandingFrame = BrandingFrameData(
       name: user?.name ?? 'आपका नाम',
-      photoUrl: user?.profilePhoto,
+      // Local file or remote URL — the overlay renders either.
+      photoUrl: SessionStore.instance.effectivePhoto ?? user?.profilePhoto,
       businessName: user?.businessName,
       businessPhone: user?.phoneNumber ?? user?.businessPhone,
       businessAddress: user?.state ?? user?.businessAddress,
@@ -88,87 +100,6 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
     );
   }
 
-  final GlobalKey _repaintBoundaryKey = GlobalKey();
-
-  Future<void> _shareImage() async {
-    if (_isSharing) return;
-    setState(() => _isSharing = true);
-
-    try {
-      final pngBytes = await _captureImage();
-      if (pngBytes == null) throw Exception("Cannot capture image");
-
-      final xfile = XFile.fromData(pngBytes, mimeType: 'image/png', name: 'status_go.png');
-      
-      // Record Engagement
-      ref.read(templateRepositoryProvider).recordShare(widget.templateId, 'NATIVE');
-
-      await Share.shareXFiles([xfile], text: 'Status Go ऐप से साझा किया गया 📲');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('शेयर करने में त्रुटि: $e', style: GoogleFonts.hind()),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSharing = false);
-    }
-  }
-
-  Future<Uint8List?> _captureImage() async {
-    final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) return null;
-
-    final image = await boundary.toImage(pixelRatio: 3.0);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
-  }
-
-  Future<void> _saveToGallery() async {
-    final status = await Permission.photos.status;
-    if (status.isDenied) {
-      final result = await Permission.photos.request();
-      if (!result.isGranted) return;
-    }
-
-    try {
-      final pngBytes = await _captureImage();
-      if (pngBytes == null) return;
-
-      final result = await ImageGallerySaverPlus.saveImage(
-        pngBytes,
-        quality: 100,
-        name: "status_go_${DateTime.now().millisecondsSinceEpoch}",
-      );
-      
-      if (mounted) {
-        final success = result['isSuccess'] ?? false;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              success ? '✅ फोटो गैलरी में सेव हो गई!' : '❌ सेव नहीं हो सकी',
-              style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 15),
-            ),
-            backgroundColor: success ? AppColors.success : AppColors.danger,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('त्रुटि: $e', style: GoogleFonts.hind()),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-    }
-  }
-
   void _showEditNameSheet() {
     showModalBottomSheet(
       context: context,
@@ -184,56 +115,128 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
     );
   }
 
+  Future<Uint8List?> _captureClean() async {
+    setState(() => _exporting = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      return await StatusExportService.capture(_repaintBoundaryKey);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _shareImage() async {
+    if (_isSharing) return;
+    setState(() => _isSharing = true);
+
+    try {
+      final pngBytes = await _captureClean();
+      if (pngBytes == null) throw const ApiException('इमेज कैप्चर नहीं हो सकी');
+
+      final platform = await StatusExportService.sharePng(pngBytes, text: 'Status Go ऐप से साझा किया गया 📲');
+      if (platform != null) {
+        final repo = ref.read(templateRepositoryProvider);
+        repo.recordShare(widget.templateId, platform);
+        repo.recordUse(widget.templateId);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('शेयर करने में समस्या: ${apiErrorMessage(e)}', style: GoogleFonts.hind()),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
+    }
+  }
+
+  Future<void> _saveToGallery() async {
+    if (_isSavingGallery) return;
+    setState(() => _isSavingGallery = true);
+
+    try {
+      final pngBytes = await _captureClean();
+      final result =
+          pngBytes == null ? GallerySaveResult.failed : await StatusExportService.saveToGallery(pngBytes);
+      if (result == GallerySaveResult.saved) {
+        ref.read(templateRepositoryProvider).recordUse(widget.templateId);
+      }
+      if (mounted) StatusExportService.showSaveResult(context, result);
+    } finally {
+      if (mounted) setState(() => _isSavingGallery = false);
+    }
+  }
+
+  Future<void> _toggleSaved() async {
+    if (_isTogglingSave) return;
+    setState(() => _isTogglingSave = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      // Optimistic update with rollback inside the notifier.
+      final nowSaved = await ref.read(savedIdsProvider.notifier).toggle(widget.templateId);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            nowSaved ? 'स्टेटस सेव हो गया' : 'स्टेटस सेव से हटा दिया गया',
+            style: GoogleFonts.hind(),
+          ),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            apiErrorMessage(e, fallback: 'सेव नहीं हो सका। कृपया दोबारा कोशिश करें।'),
+            style: GoogleFonts.hind(),
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isTogglingSave = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final templateAsync = ref.watch(singleTemplateProvider(widget.templateId));
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
+    final currentUser = ref.watch(currentUserProvider);
+    final isSaved = ref.watch(savedIdsProvider).contains(widget.templateId);
+    final userPhoto = currentUserPhotoProvider(serverPhoto: currentUser?.profilePhoto);
+
+    if (_displayName.isEmpty) {
+      _displayName = SessionStore.instance.displayName ?? currentUser?.name ?? '';
+    }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1E293B), // Soft Slate background for previewing canvas
+      backgroundColor: const Color(0xFF0F172A), // Dark slate backdrop for artwork presentation
       appBar: AppBar(
-        backgroundColor: AppColors.primary,
+        backgroundColor: const Color(0xFF0F172A),
+        foregroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => context.pop(),
         ),
         title: Text(
           'स्टेटस तैयार करें',
-          style: GoogleFonts.hind(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 19),
+          style: GoogleFonts.hind(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
         ),
         actions: [
           IconButton(
             icon: Icon(
-              _isSaved ? Icons.bookmark : Icons.bookmark_border,
-              color: _isSaved ? AppColors.accent : Colors.white,
-              size: 26,
+              isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+              color: isSaved ? AppColors.accent : Colors.white,
+              size: 24,
             ),
-            tooltip: 'सेव करें',
-            onPressed: () async {
-              final newSaved = !_isSaved;
-              setState(() => _isSaved = newSaved);
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                if (newSaved) {
-                  await apiClient.post('/user/saved/${widget.templateId}');
-                } else {
-                  await apiClient.delete('/user/saved/${widget.templateId}');
-                }
-              } catch (_) {}
-              messenger.showSnackBar(
-                SnackBar(
-                  content: Text(
-                    newSaved ? 'स्टेटस सेव हो गया' : 'स्टेटस सेव से हटा दिया गया',
-                    style: GoogleFonts.hind(),
-                  ),
-                  duration: const Duration(seconds: 1),
-                ),
-              );
-            },
+            tooltip: isSaved ? 'सेव से हटाएं' : 'सेव करें',
+            onPressed: _isTogglingSave ? null : _toggleSaved,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
         ],
       ),
       body: templateAsync.when(
@@ -242,17 +245,40 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Colors.white70, size: 48),
-              const SizedBox(height: 16),
+              const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 48),
+              const SizedBox(height: 14),
               Text(
                 'स्टेटस लोड नहीं हो सका',
                 style: GoogleFonts.hind(color: Colors.white, fontSize: 16),
               ),
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  apiErrorMessage(err, fallback: ''),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.hind(color: Colors.white70, fontSize: 13),
+                ),
+              ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => context.pop(),
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                child: Text('वापस जाएं (Back)', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => context.pop(),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white54),
+                    ),
+                    child: Text('वापस जाएं (Back)', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: () => ref.invalidate(singleTemplateProvider(widget.templateId)),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                    child: Text('पुनः प्रयास करें', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
+                  ),
+                ],
               ),
             ],
           ),
@@ -264,305 +290,120 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
             );
           }
 
-          if (!_positionsInitialized) {
-            final currentUser = ref.read(currentUserProvider);
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              setState(() {
-                _nameTop = template.nameZoneY ?? 0.77;
-                _nameLeft = template.nameZoneX ?? 0.5;
-                _photoTop = template.photoZoneY ?? 0.65;
-                _photoLeft = template.photoZoneX ?? 0.5;
-                if (_displayName.isEmpty && currentUser != null) {
-                  _displayName = currentUser.name ?? 'आपका नाम';
-                }
-                _positionsInitialized = true;
-              });
-            });
-          }
-
-          List<Color> gradientColors = [AppColors.primary, AppColors.primaryLight];
-          if (template.gradient != null && template.gradient!.isNotEmpty) {
-            gradientColors = ColorUtils.parseGradientString(template.gradient);
-          } else if (template.category?.gradient != null) {
-            gradientColors = ColorUtils.parseGradientString(template.category!.gradient);
+          if (template.isLocked) {
+            return _LockedTemplateView(template: template);
           }
 
           return Column(
             children: [
-              // ── Preview Canvas Area ───────────────────────────────────────
+              // ── 1. Hero Artwork Preview (shared composition) ────────────────
               Expanded(
                 child: Center(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                     child: RepaintBoundary(
                       key: _repaintBoundaryKey,
-                      child: AspectRatio(
-                        aspectRatio: 9 / 16,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: gradientColors,
-                            ),
-                            image: template.imageUrl != null
-                                ? DecorationImage(image: NetworkImage(template.imageUrl!), fit: BoxFit.cover)
-                                : null,
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black45,
-                                blurRadius: 16,
-                                offset: Offset(0, 6),
-                              ),
-                            ],
+                      child: TemplateComposition(
+                        template: template,
+                        displayName: _displayName,
+                        userPhoto: userPhoto,
+                        customQuote: _customQuote,
+                        brandingFrame: _brandingFrame,
+                        editable: !_exporting,
+                        onPhotoTap: _showFramePickerSheet,
+                        onNameTap: _showEditNameSheet,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black54,
+                            blurRadius: 20,
+                            offset: Offset(0, 8),
                           ),
-                          clipBehavior: Clip.hardEdge,
-                          child: Stack(
-                            children: [
-                              if (template.imageUrl != null)
-                                Positioned.fill(
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [Colors.black54, Colors.transparent, Colors.black87],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
-                              if ((_customQuote ?? template.quoteHi) != null)
-                                Positioned(
-                                  left: 20,
-                                  right: 20,
-                                  top: screenHeight * 0.28,
-                                  child: Text(
-                                    _customQuote ?? template.quoteHi!,
-                                    style: GoogleFonts.hind(
-                                      color: Colors.white,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.35,
-                                      shadows: const [Shadow(blurRadius: 8, color: Colors.black87)],
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-
-                              // Draggable Profile Photo Zone
-                              if (template.photoZoneEnabled)
-                                Positioned(
-                                  top: screenHeight * _photoTop,
-                                  left: (screenWidth * _photoLeft) - 35,
-                                  child: GestureDetector(
-                                    onPanUpdate: (details) {
-                                      setState(() {
-                                        _photoTop += details.delta.dy / screenHeight;
-                                        _photoLeft += details.delta.dx / screenWidth;
-                                      });
-                                    },
-                                    child: Container(
-                                      width: 70,
-                                      height: 70,
-                                      decoration: BoxDecoration(
-                                        color: Colors.black26,
-                                        shape: template.photoZoneShape == 'rectangle'
-                                            ? BoxShape.rectangle
-                                            : BoxShape.circle,
-                                        borderRadius: template.photoZoneShape == 'rectangle'
-                                            ? BorderRadius.circular(14)
-                                            : null,
-                                        border: Border.all(color: Colors.white, width: 2.5),
-                                        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
-                                        image: ref.watch(currentUserProvider)?.profilePhoto != null
-                                            ? DecorationImage(
-                                                image: NetworkImage(ref.watch(currentUserProvider)!.profilePhoto!),
-                                                fit: BoxFit.cover,
-                                              )
-                                            : null,
-                                      ),
-                                      child: ref.watch(currentUserProvider)?.profilePhoto == null
-                                          ? const Center(child: Icon(Icons.person, size: 36, color: Colors.white70))
-                                          : null,
-                                    ),
-                                  ),
-                                ),
-
-                              // Draggable Name Zone
-                              if (template.nameZoneEnabled)
-                                Positioned(
-                                  top: screenHeight * _nameTop,
-                                  left: (screenWidth * _nameLeft) - 100,
-                                  child: GestureDetector(
-                                    onPanUpdate: (details) {
-                                      setState(() {
-                                        _nameTop += details.delta.dy / screenHeight;
-                                        _nameLeft += details.delta.dx / screenWidth;
-                                      });
-                                    },
-                                    onTap: _showEditNameSheet,
-                                    child: Container(
-                                      width: 200,
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: _displayName.isEmpty ? Colors.black54 : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: _displayName.isEmpty ? Border.all(color: Colors.white54) : null,
-                                      ),
-                                      child: Text(
-                                        _displayName.isNotEmpty ? _displayName : 'अपना नाम जोड़ें ✏️',
-                                        style: GoogleFonts.hind(
-                                          color: template.nameColor != null
-                                              ? ColorUtils.fromHex(template.nameColor!)
-                                              : Colors.white,
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w700,
-                                          shadows: const [Shadow(blurRadius: 4, color: Colors.black)],
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
-                              // Branding Frame Footer Overlay
-                              if (_brandingFrame != null)
-                                Positioned(
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 0,
-                                  child: BrandingFrameOverlay(data: _brandingFrame!),
-                                ),
-                            ],
-                          ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
 
-              // ── Bottom Controls Sheet (White, Clean, High Contrast) ───────
+              // ── 2. Clean Personalization & Action Dock ─────────────────────
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+                padding: const EdgeInsets.fromLTRB(AppSpacing.md, 14, AppSpacing.md, AppSpacing.lg),
                 decoration: const BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
+                    topLeft: Radius.circular(AppRadius.xl),
+                    topRight: Radius.circular(AppRadius.xl),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x1F000000),
-                      blurRadius: 12,
-                      offset: Offset(0, -3),
-                    ),
-                  ],
+                  boxShadow: AppShadows.bottomDock,
                 ),
                 child: SafeArea(
                   top: false,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Customize Tools Row
+                      // Quick Personalize Tool Pills
                       Row(
                         children: [
                           Expanded(
-                            child: _CustomToolTile(
-                              icon: Icons.portrait,
-                              label: 'फ्रेम बदलें',
-                              subLabel: 'Frame',
+                            child: _QuickToolPill(
+                              icon: Icons.account_box_outlined,
+                              label: 'फ़ोटो व फ़्रेम',
                               onTap: _showFramePickerSheet,
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: _CustomToolTile(
-                              icon: Icons.format_quote,
-                              label: 'सुविचार',
-                              subLabel: 'Quotes',
-                              onTap: _showQuotePickerSheet,
+                            child: _QuickToolPill(
+                              icon: Icons.edit_outlined,
+                              label: 'नाम बदलें',
+                              onTap: _showEditNameSheet,
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: _CustomToolTile(
-                              icon: Icons.edit,
-                              label: 'नाम बदलें',
-                              subLabel: 'Edit Name',
-                              onTap: _showEditNameSheet,
+                            child: _QuickToolPill(
+                              icon: Icons.format_quote_outlined,
+                              label: 'सुविचार बदलें',
+                              onTap: _showQuotePickerSheet,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 14),
 
-                      // Action Buttons (Gallery Download + WhatsApp Status Share)
+                      // Primary Actions: WhatsApp Share + Gallery Save
                       Row(
                         children: [
-                          // Gallery Download Button
-                          Expanded(
-                            flex: 2,
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.textPrimary,
-                                side: const BorderSide(color: AppColors.surfaceBorder, width: 1.5),
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              onPressed: _saveToGallery,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.download, color: AppColors.textPrimary, size: 22),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'गैलरी में सेव',
-                                    style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 15),
-                                  ),
-                                ],
-                              ),
+                          // Gallery Save
+                          Container(
+                            height: 50,
+                            width: 50,
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceMuted,
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                              border: Border.all(color: AppColors.surfaceBorder),
+                            ),
+                            child: IconButton(
+                              icon: _isSavingGallery
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.download_rounded, color: AppColors.textPrimary, size: 22),
+                              tooltip: 'गैलरी में डाउनलोड करें',
+                              onPressed: _isSavingGallery ? null : _saveToGallery,
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
 
-                          // WhatsApp Share Button (Prominent Green)
+                          // Primary WhatsApp Status Button (Clear Hero CTA)
                           Expanded(
-                            flex: 3,
-                            child: ElevatedButton(
+                            child: AppWhatsAppButton(
                               onPressed: _isSharing ? null : _shareImage,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF25D366),
-                                foregroundColor: Colors.white,
-                                elevation: 1,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              ),
-                              child: _isSharing
-                                  ? const SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                                    )
-                                  : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(Icons.chat_bubble, color: Colors.white, size: 20),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'व्हाट्सएप स्टेटस',
-                                          style: GoogleFonts.hind(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                              isLoading: _isSharing,
+                              label: 'व्हाट्सएप पर स्टेटस लगाएं',
                             ),
                           ),
                         ],
@@ -579,62 +420,116 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
   }
 }
 
-class _CustomToolTile extends StatelessWidget {
+// ─── Locked Premium Template ──────────────────────────────────────────────────
+
+class _LockedTemplateView extends StatelessWidget {
+  final TemplateModel template;
+  const _LockedTemplateView({required this.template});
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = template.displayImageUrl;
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: kStatusAspectRatio,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (thumb != null)
+                        CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover)
+                      else
+                        const ColoredBox(color: Color(0xFF1E293B)),
+                      const TemplateLockOverlay(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'यह प्रीमियम स्टेटस है। इसे इस्तेमाल करने के लिए प्रीमियम सदस्यता लें।',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.hind(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              onPressed: () => context.push('/premium'),
+              icon: const Icon(Icons.workspace_premium_rounded),
+              label: Text('प्रीमियम अनलॉक करें', style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD97706),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Quick Personalize Pill ───────────────────────────────────────────────────
+
+class _QuickToolPill extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String subLabel;
   final VoidCallback onTap;
 
-  const _CustomToolTile({
+  const _QuickToolPill({
     required this.icon,
     required this.label,
-    required this.subLabel,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.primarySurface,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: AppColors.primary, size: 22),
-              const SizedBox(height: 2),
-              Text(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceMuted,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: AppColors.surfaceBorder, width: 0.8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: AppColors.textSecondary),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
                 label,
                 style: GoogleFonts.hind(
-                  color: AppColors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
                 ),
                 maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              Text(
-                subLabel,
-                style: GoogleFonts.hind(
-                  color: AppColors.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
+
+// ─── Edit Name Bottom Sheet ───────────────────────────────────────────────────
 
 class _EditNameBottomSheet extends StatefulWidget {
   final String initialName;
@@ -673,8 +568,8 @@ class _EditNameBottomSheetState extends State<_EditNameBottomSheet> {
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
+          topLeft: Radius.circular(AppRadius.xl),
+          topRight: Radius.circular(AppRadius.xl),
         ),
       ),
       child: Column(
@@ -683,43 +578,43 @@ class _EditNameBottomSheetState extends State<_EditNameBottomSheet> {
         children: [
           Row(
             children: [
-              const Icon(Icons.edit, color: AppColors.primary, size: 22),
+              const Icon(Icons.badge_outlined, color: AppColors.primary, size: 22),
               const SizedBox(width: 8),
               Text(
-                'अपना नाम लिखें (Add Name)',
-                style: GoogleFonts.hind(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                'स्टेटस पर दिखने वाला नाम',
+                style: GoogleFonts.hind(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           TextField(
             controller: _controller,
             autofocus: true,
-            style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 17),
+            style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16),
             decoration: InputDecoration(
               hintText: 'उदा. राजेश शर्मा',
               filled: true,
-              fillColor: AppColors.bg,
+              fillColor: AppColors.surfaceMuted,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.surfaceBorder),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                borderSide: BorderSide.none,
               ),
-              prefixIcon: const Icon(Icons.person, color: AppColors.primary),
+              prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.primary, size: 20),
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
-            height: 50,
+            height: 48,
             child: ElevatedButton(
-              onPressed: () => widget.onSave(_controller.text),
+              onPressed: () => widget.onSave(_controller.text.trim()),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
               ),
               child: Text(
-                'सेव करें (Save)',
-                style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                'सेव करें',
+                style: GoogleFonts.hind(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white),
               ),
             ),
           ),

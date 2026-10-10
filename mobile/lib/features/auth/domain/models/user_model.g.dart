@@ -55,4 +55,3 @@ Map<String, dynamic> _$UserModelToJson(UserModel instance) => <String, dynamic>{
       'businessLogo': instance.businessLogo,
       'frameType': instance.frameType,
     };
-

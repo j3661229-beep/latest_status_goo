@@ -1,5 +1,6 @@
 // src/lib/cache/cache.service.ts
 import type { Redis } from 'ioredis';
+import { CK } from './keys';
 
 export class CacheService {
   constructor(private redis: Redis) {}
@@ -27,7 +28,8 @@ export class CacheService {
     await this.redis.del(...keys);
   }
 
-  // Scan and delete by pattern (safe for production — no KEYS command)
+  // Scan and delete by pattern (safe for production — no KEYS command).
+  // Works against the in-memory fallback too (it implements SCAN).
   async invalidatePattern(pattern: string): Promise<number> {
     let cursor = '0';
     let totalDeleted = 0;
@@ -50,35 +52,23 @@ export class CacheService {
     return totalDeleted;
   }
 
-  // Invalidate all template list caches after any admin action
-  async invalidateTemplateCache(): Promise<void> {
-    const patterns = ['tpl:list:*', 'tpl:featured', 'tpl:trending', 'tpl:new'];
-    for (const pattern of patterns) {
-      await this.invalidatePattern(pattern);
+  /**
+   * Invalidate every cache that can contain template data after any change to a
+   * template's status / flags: lists, featured/trending/new, home feeds, search
+   * results, admin stats and (optionally) the template's own detail entry.
+   */
+  async invalidateTemplateCache(templateId?: string): Promise<void> {
+    const patterns = ['tpl:list:*', 'tpl:new:*', 'home:feed:*', 'search:q:*', 'suggest:*'];
+    const keys: string[] = [CK.featured, CK.trending, CK.adminStats];
+    if (templateId) keys.push(CK.templateById(templateId));
+
+    try {
+      await this.delMany(keys);
+      for (const pattern of patterns) {
+        await this.invalidatePattern(pattern);
+      }
+    } catch {
+      // Cache invalidation must never fail the request; TTLs bound staleness.
     }
-  }
-
-  // Sliding window rate limiter (100 req/min per IP by default)
-  async checkRateLimit(
-    key: string,
-    windowMs = 60_000,
-    limit = 100
-  ): Promise<{ allowed: boolean; remaining: number }> {
-    const now = Date.now();
-    const windowStart = now - windowMs;
-
-    const pipe = this.redis.pipeline();
-    pipe.zremrangebyscore(key, '-inf', windowStart);
-    pipe.zadd(key, now, `${now}-${Math.random()}`);
-    pipe.zcard(key);
-    pipe.expire(key, Math.ceil(windowMs / 1000));
-
-    const results = await pipe.exec();
-    const count = (results?.[2]?.[1] as number) ?? 0;
-
-    return {
-      allowed: count <= limit,
-      remaining: Math.max(0, limit - count),
-    };
   }
 }

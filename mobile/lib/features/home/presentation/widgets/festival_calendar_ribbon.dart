@@ -7,14 +7,24 @@ import '../../../../core/data/indian_festivals_calendar.dart';
 class FestivalCalendarRibbon extends StatelessWidget {
   final ValueChanged<IndianFestivalItem>? onFestivalSelected;
 
+  /// Festivals to show (e.g. from GET /festivals/upcoming). Defaults to the
+  /// bundled static calendar (offline fallback).
+  final List<IndianFestivalItem>? festivals;
+
+  /// Header text colour — white for dark backgrounds, dark for light ones.
+  final Color headerColor;
+
   const FestivalCalendarRibbon({
     super.key,
     this.onFestivalSelected,
+    this.festivals,
+    this.headerColor = Colors.white,
   });
 
   @override
   Widget build(BuildContext context) {
-    final festivals = IndianFestivalsCalendar.getSortedUpcoming();
+    final festivals = this.festivals ?? IndianFestivalsCalendar.getSortedUpcoming();
+    if (festivals.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -32,7 +42,7 @@ class FestivalCalendarRibbon extends StatelessWidget {
                   Text(
                     'आगामी त्योहार • Festivals',
                     style: GoogleFonts.outfit(
-                      color: Colors.white,
+                      color: headerColor,
                       fontWeight: FontWeight.w800,
                       fontSize: 16,
                       letterSpacing: 0.2,
@@ -43,7 +53,7 @@ class FestivalCalendarRibbon extends StatelessWidget {
               Text(
                 'कैलेंडर',
                 style: GoogleFonts.outfit(
-                  color: Colors.white.withOpacity(0.5),
+                  color: headerColor.withOpacity(0.5),
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),

@@ -1,10 +1,29 @@
 // prisma/seed.ts
 import { PrismaClient, Language, Plan, UserRole, TemplateType, TemplateStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 
 const prisma = new PrismaClient();
 
+// ── Seed safety ─────────────────────────────────────────────
+// Never hard-code passwords: use SEED_*_PASSWORD from the environment, otherwise a
+// random password is generated and printed once. Existing accounts keep their
+// password unless the env var is set explicitly.
+function assertSeedAllowed() {
+  if (process.env.NODE_ENV === 'production' && process.env.FORCE_SEED !== 'true') {
+    throw new Error('Refusing to seed with NODE_ENV=production (set FORCE_SEED=true to override).');
+  }
+}
+
+function resolveSeedPassword(envVar: string): { password: string; fromEnv: boolean } {
+  const fromEnv = process.env[envVar];
+  if (fromEnv) return { password: fromEnv, fromEnv: true };
+  return { password: randomBytes(12).toString('base64url'), fromEnv: false };
+}
+
+
 async function main() {
+  assertSeedAllowed();
   console.log('🌱 Starting Status Go database seed...\n');
 
   // ── 1. CATEGORIES ─────────────────────────────────────────
@@ -34,11 +53,14 @@ async function main() {
   // ── 2. ADMIN + CREATOR USERS ───────────────────────────────
   console.log('👥 Seeding users...');
   
-  const defaultPassword = await bcrypt.hash('admin123', 10);
+  const adminSeed = resolveSeedPassword('SEED_ADMIN_PASSWORD');
+  const defaultPassword = await bcrypt.hash(adminSeed.password, 12);
+  // Only overwrite existing admin passwords when explicitly requested via env
+  const adminPasswordUpdate = adminSeed.fromEnv ? { password: defaultPassword } : {};
 
   const superAdmin = await prisma.user.upsert({
     where: { email: 'superadmin@statusgo.app' },
-    update: { password: defaultPassword },
+    update: adminPasswordUpdate,
     create: {
       email: 'superadmin@statusgo.app',
       name: 'Super Admin',
@@ -53,7 +75,7 @@ async function main() {
 
   const manager = await prisma.user.upsert({
     where: { email: 'manager@statusgo.app' },
-    update: { password: defaultPassword },
+    update: adminPasswordUpdate,
     create: {
       email: 'manager@statusgo.app',
       password: defaultPassword,
@@ -600,6 +622,9 @@ async function main() {
   console.log(`   Users      : 5 (1 super admin, 1 manager, 2 creators, 1 test user)`);
   console.log(`   App Config : ${configs.length} entries`);
   console.log('\n🔑 Test Credentials:');
+  console.log(adminSeed.fromEnv
+    ? '   Admin/Manager password: (from SEED_ADMIN_PASSWORD)'
+    : `   Admin/Manager password (generated, applies to newly created accounts only): ${adminSeed.password}`);
   console.log('   Super Admin: superadmin@statusgo.app');
   console.log('   Manager:     manager@statusgo.app');
   console.log('   Creator 1:   creator1@statusgo.app');

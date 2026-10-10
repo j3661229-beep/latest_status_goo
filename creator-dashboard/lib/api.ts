@@ -1,7 +1,6 @@
 // lib/api.ts — Typed API client for creator dashboard
-import axios from 'axios';
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000/api/v1';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { BASE_URL, getAccessToken, refreshTokens, clearTokens, redirectToLogin } from './auth';
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -9,25 +8,34 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach auth token; redirect to /login on 401
+// Attach auth token
 api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('creator_access_token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  }
+  const token = getAccessToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
+// On 401: refresh once (single-flight, shared by concurrent requests), retry the original
+// request once; if refresh fails, clear tokens and send the user to /login.
 api.interceptors.response.use(
   (res) => res,
-  (error) => {
-    if (typeof window !== 'undefined' && error.response?.status === 401) {
-      localStorage.removeItem('creator_access_token');
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
-      }
+  async (error: AxiosError) => {
+    const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+    const isAuthCall = original?.url?.startsWith('/auth/');
+    if (typeof window === 'undefined' || error.response?.status !== 401 || !original || original._retry || isAuthCall) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+
+    original._retry = true;
+    try {
+      const token = await refreshTokens();
+      original.headers.Authorization = `Bearer ${token}`;
+      return api(original);
+    } catch {
+      clearTokens();
+      redirectToLogin();
+      return Promise.reject(error);
+    }
   }
 );
 
@@ -35,21 +43,20 @@ api.interceptors.response.use(
 export const authApi = {
   // Exchange Google idToken for our backend JWT (Creator Studio only)
   creatorGoogleLogin: (idToken: string) =>
-    axios
-      .post(`${BASE_URL}/auth/google/creator`, { idToken })
-      .then((r) => r.data),
+    axios.post(`${BASE_URL}/auth/google/creator`, { idToken }).then((r) => r.data),
 
-  // Creator email & password login (for invited creators / demo)
+  // Creator email & password login (for invited creators)
   creatorLogin: (email: string, password: string) =>
-    axios
-      .post(`${BASE_URL}/auth/creator/login`, { email, password })
-      .then((r) => r.data),
+    axios.post(`${BASE_URL}/auth/creator/login`, { email, password }).then((r) => r.data),
 };
 
 // ── Creator API functions ────────────────────────────────────────
 export const creatorApi = {
   // Stats
   getStats: () => api.get('/creator/stats').then(r => r.data),
+
+  // Categories (public endpoint: GET /categories → { data, total })
+  getCategories: () => api.get('/categories').then(r => r.data),
 
   // Templates
   getTemplates: (params?: Record<string, any>) =>
@@ -68,7 +75,17 @@ export const creatorApi = {
     formData.append('file', file);
     return api.post('/upload/template', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120_000,
     }).then(r => r.data);
+  },
+
+  uploadProfilePhoto: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload/profile-photo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60_000,
+    }).then(r => r.data as { url: string });
   },
 
   getCloudinarySignature: (data: { folder: string; tags?: string[] }) =>

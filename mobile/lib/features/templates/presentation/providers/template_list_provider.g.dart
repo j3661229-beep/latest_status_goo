@@ -158,27 +158,43 @@ class _SingleTemplateProviderElement
   String get id => (origin as SingleTemplateProvider).id;
 }
 
-String _$templateListHash() => r'23ebb407ca67825f30a053133f0e3dbde736a807';
+String _$templateListHash() => r'a81221f663c863fa811adcd7ed82dec35dc834ba';
 
 abstract class _$TemplateList
-    extends BuildlessAutoDisposeAsyncNotifier<List<TemplateModel>> {
+    extends BuildlessAutoDisposeAsyncNotifier<PagedList<TemplateModel>> {
   late final TemplateFilter filter;
 
-  FutureOr<List<TemplateModel>> build(
+  FutureOr<PagedList<TemplateModel>> build(
     TemplateFilter filter,
   );
 }
 
-/// See also [TemplateList].
+/// Paginated template list. The first page is the provider's AsyncValue (so
+/// loading / error UIs work as usual); further pages are appended by
+/// [loadMore] while the previous data stays visible.
+///
+/// Copied from [TemplateList].
 @ProviderFor(TemplateList)
 const templateListProvider = TemplateListFamily();
 
-/// See also [TemplateList].
-class TemplateListFamily extends Family<AsyncValue<List<TemplateModel>>> {
-  /// See also [TemplateList].
+/// Paginated template list. The first page is the provider's AsyncValue (so
+/// loading / error UIs work as usual); further pages are appended by
+/// [loadMore] while the previous data stays visible.
+///
+/// Copied from [TemplateList].
+class TemplateListFamily extends Family<AsyncValue<PagedList<TemplateModel>>> {
+  /// Paginated template list. The first page is the provider's AsyncValue (so
+  /// loading / error UIs work as usual); further pages are appended by
+  /// [loadMore] while the previous data stays visible.
+  ///
+  /// Copied from [TemplateList].
   const TemplateListFamily();
 
-  /// See also [TemplateList].
+  /// Paginated template list. The first page is the provider's AsyncValue (so
+  /// loading / error UIs work as usual); further pages are appended by
+  /// [loadMore] while the previous data stays visible.
+  ///
+  /// Copied from [TemplateList].
   TemplateListProvider call(
     TemplateFilter filter,
   ) {
@@ -211,10 +227,18 @@ class TemplateListFamily extends Family<AsyncValue<List<TemplateModel>>> {
   String? get name => r'templateListProvider';
 }
 
-/// See also [TemplateList].
+/// Paginated template list. The first page is the provider's AsyncValue (so
+/// loading / error UIs work as usual); further pages are appended by
+/// [loadMore] while the previous data stays visible.
+///
+/// Copied from [TemplateList].
 class TemplateListProvider extends AutoDisposeAsyncNotifierProviderImpl<
-    TemplateList, List<TemplateModel>> {
-  /// See also [TemplateList].
+    TemplateList, PagedList<TemplateModel>> {
+  /// Paginated template list. The first page is the provider's AsyncValue (so
+  /// loading / error UIs work as usual); further pages are appended by
+  /// [loadMore] while the previous data stays visible.
+  ///
+  /// Copied from [TemplateList].
   TemplateListProvider(
     TemplateFilter filter,
   ) : this._internal(
@@ -244,7 +268,7 @@ class TemplateListProvider extends AutoDisposeAsyncNotifierProviderImpl<
   final TemplateFilter filter;
 
   @override
-  FutureOr<List<TemplateModel>> runNotifierBuild(
+  FutureOr<PagedList<TemplateModel>> runNotifierBuild(
     covariant TemplateList notifier,
   ) {
     return notifier.build(
@@ -269,8 +293,8 @@ class TemplateListProvider extends AutoDisposeAsyncNotifierProviderImpl<
   }
 
   @override
-  AutoDisposeAsyncNotifierProviderElement<TemplateList, List<TemplateModel>>
-      createElement() {
+  AutoDisposeAsyncNotifierProviderElement<TemplateList,
+      PagedList<TemplateModel>> createElement() {
     return _TemplateListProviderElement(this);
   }
 
@@ -291,14 +315,14 @@ class TemplateListProvider extends AutoDisposeAsyncNotifierProviderImpl<
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 mixin TemplateListRef
-    on AutoDisposeAsyncNotifierProviderRef<List<TemplateModel>> {
+    on AutoDisposeAsyncNotifierProviderRef<PagedList<TemplateModel>> {
   /// The parameter `filter` of this provider.
   TemplateFilter get filter;
 }
 
 class _TemplateListProviderElement
     extends AutoDisposeAsyncNotifierProviderElement<TemplateList,
-        List<TemplateModel>> with TemplateListRef {
+        PagedList<TemplateModel>> with TemplateListRef {
   _TemplateListProviderElement(super.provider);
 
   @override

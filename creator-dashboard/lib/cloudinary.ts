@@ -5,7 +5,7 @@ import axios from 'axios';
  */
 export async function uploadToCloudinary(
   file: File, 
-  signData: { signature: string; timestamp: number; cloudName: string; apiKey: string; folder: string }
+  signData: { signature: string; timestamp: number; cloudName: string; apiKey: string; folder: string; allowedFormats?: string; tags?: string }
 ) {
   const formData = new FormData();
   formData.append('file', file);
@@ -13,6 +13,9 @@ export async function uploadToCloudinary(
   formData.append('timestamp', signData.timestamp.toString());
   formData.append('api_key', signData.apiKey);
   formData.append('folder', signData.folder);
+  // Must match the signed params exactly or Cloudinary rejects the signature
+  if (signData.allowedFormats) formData.append('allowed_formats', signData.allowedFormats);
+  if (signData.tags) formData.append('tags', signData.tags);
 
   const url = `https://api.cloudinary.com/v1_1/${signData.cloudName}/auto/upload`;
 

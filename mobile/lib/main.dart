@@ -3,16 +3,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:onesignal_flutter/onesignal_flutter.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
 
+import 'package:google_fonts/google_fonts.dart';
+
+import 'core/auth/session_store.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
+import 'core/services/notification_service.dart';
+import 'features/auth/presentation/providers/current_user_provider.dart';
+import 'features/home/presentation/providers/home_data_provider.dart';
+import 'features/user/data/saved_templates.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  GoogleFonts.config.allowRuntimeFetching = true;
+  // Offline GoogleFonts fetch failures are noisy but harmless (system font
+  // fallback) — log them briefly. Every other framework error is reported.
+  FlutterError.onError = (details) {
+    final errStr = details.exception.toString();
+    if (errStr.contains('google_fonts') || errStr.contains('Failed to load font')) {
+      debugPrint('GoogleFonts: ${details.exceptionAsString()}');
+      return;
+    }
+    FlutterError.presentError(details);
+  };
 
   // Lock to portrait
   await SystemChrome.setPreferredOrientations([
@@ -26,32 +42,21 @@ void main() async {
     statusBarIconBrightness: Brightness.dark,
   ));
 
-  // Initialize Firebase (required for Phone OTP Auth)
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    debugPrint('Firebase initialized successfully');
-  } catch (e) {
-    debugPrint('Firebase init error: $e');
-  }
-
   // Initialize Hive (local storage)
   await Hive.initFlutter();
   await Hive.openBox(AppConstants.hiveBoxUser);
   await Hive.openBox(AppConstants.hiveBoxSettings);
   await Hive.openBox(AppConstants.hiveBoxSaved);
+  await Hive.openBox(AppConstants.hiveBoxNotifications);
 
-  // Initialize OneSignal (only if configured)
-  const oneSignalAppId = String.fromEnvironment(
-    'FLUTTER_ONESIGNAL_APP_ID',
-    defaultValue: '',
-  );
-  if (oneSignalAppId.isNotEmpty) {
-    try {
-      OneSignal.initialize(oneSignalAppId);
-      OneSignal.Notifications.requestPermission(true);
-    } catch (_) {}
+  // Consolidate legacy duplicated user/photo keys into one source of truth.
+  await SessionStore.instance.migrateLegacy();
+
+  // Initialize OneSignal Push & In-App Notification Service
+  try {
+    await NotificationService.instance.init();
+  } catch (e) {
+    debugPrint('NotificationService init error: $e');
   }
 
   runApp(
@@ -68,6 +73,15 @@ class StatusGoApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
 
+    // Drop per-account cached data when the session ends (logout or refresh
+    // failure) so the next account never sees stale feed / bookmarks.
+    ref.listen<bool>(sessionStoreProvider.select((s) => s.isLoggedIn), (prev, next) {
+      if (prev == true && !next) {
+        ref.invalidate(homeDataProvider);
+        ref.invalidate(savedIdsProvider);
+      }
+    });
+
     return MaterialApp.router(
       title: 'Status Go',
       debugShowCheckedModeBanner: false,
@@ -82,7 +96,7 @@ class StatusGoApp extends ConsumerWidget {
               mediaQuery.textScaler.scale(1.0).clamp(0.8, 1.2),
             ),
           ),
-          child: child!,
+          child: child ?? const SizedBox.shrink(),
         );
       },
     );

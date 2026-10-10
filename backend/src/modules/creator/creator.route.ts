@@ -1,24 +1,85 @@
 // src/modules/creator/creator.route.ts
 import { FastifyInstance } from 'fastify';
-import { TemplateStatus } from '@prisma/client';
+import { TemplateStatus, TemplateType, Language } from '@prisma/client';
+import { z } from 'zod';
 import { CloudinaryService } from '../../lib/storage/cloudinary.service';
 import { OneSignalService } from '../../lib/notification/onesignal.service';
+import { CacheService } from '../../lib/cache/cache.service';
+import { CREATOR_ROLES, requireNotSuspended } from '../../lib/auth/guards';
+import { invalidateUserCaches } from '../../lib/auth/auth-state';
+import { env } from '../../config/env';
+import {
+  httpsUrl, optionalEnum, parsePagination, sendValidationError,
+} from '../../lib/http/validation';
+
+// Formats Cloudinary will accept for creator signed uploads
+const CLOUDINARY_ALLOWED_FORMATS = 'jpg,jpeg,png,webp,mp4';
+
+const tagsSchema = z.array(z.string().trim().min(1).max(50)).max(20);
+/** Optional nullable text ('' → null). */
+const text = (max: number) => z.preprocess((v) => (v === '' ? null : v), z.string().max(max).nullable().optional());
+/** Optional nullable media URL ('' → null). */
+const mediaUrl = z.preprocess((v) => (v === '' ? null : v), z.string().url().max(2048).nullable().optional());
+const ratio = z.number().min(0).max(1).nullable().optional();
+
+const ListQuerySchema = z.object({
+  status: optionalEnum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'ARCHIVED']),
+  type: optionalEnum(['IMAGE', 'VIDEO']),
+});
+
+// NOTE: creators can never set isPremium / isFeatured / isTrending / coordinator fields —
+// unknown keys are stripped by zod, so those flags stay admin-only.
+const CreateTemplateSchema = z.object({
+  type: z.nativeEnum(TemplateType),
+  categoryId: z.string().min(1).max(64),
+  primaryLanguage: z.nativeEnum(Language).optional(),
+  gradient: text(500),
+  tags: tagsSchema.optional(),
+});
+
+const UpdateTemplateSchema = z.object({
+  type: z.nativeEnum(TemplateType).optional(),
+  categoryId: z.string().min(1).max(64).optional(),
+  primaryLanguage: z.nativeEnum(Language).optional(),
+  nameHi: text(100), nameMr: text(100), nameEn: text(100),
+  quoteHi: text(5000), quoteMr: text(5000), quoteEn: text(5000),
+  tags: tagsSchema.optional(),
+  photoZoneEnabled: z.boolean().optional(),
+  photoZoneX: ratio, photoZoneY: ratio, photoZoneSize: ratio,
+  photoZoneShape: text(20),
+  nameZoneEnabled: z.boolean().optional(),
+  nameZoneX: ratio, nameZoneY: ratio,
+  nameFontSize: z.number().min(0).max(1).nullable().optional(),
+  nameColor: text(20),
+  nameFont: text(50),
+  gradient: text(500),
+  imageUrl: mediaUrl, imageThumbUrl: mediaUrl,
+  videoUrl: mediaUrl, videoThumbUrl: mediaUrl,
+  videoDuration: z.number().int().min(0).max(600).nullable().optional(),
+  videoStreamId: text(200),
+});
+
+const ProfileSchema = z.object({
+  displayName: z.string().trim().min(1).max(100).optional(),
+  bio: text(500),
+  portfolioUrl: z.preprocess((v) => (v === '' ? null : v), httpsUrl.nullable().optional()),
+  specialization: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
+});
 
 export async function creatorRoutes(fastify: FastifyInstance) {
-  const CREATOR_ROLES = ['CREATOR', 'MANAGER', 'SUPER_ADMIN'];
-
-  const requireCreator = fastify.requireRole(CREATOR_ROLES);
+  const requireCreator = [fastify.requireRole(CREATOR_ROLES), requireNotSuspended];
+  const cache = new CacheService(fastify.redis);
 
   // GET /creator/templates
-  fastify.get('/templates', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.get('/templates', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
-    const { status, type, page = '1', limit = '20' } = req.query as any;
-    const p = parseInt(page);
-    const l = Math.min(parseInt(limit), 50);
+    const parsed = ListQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid query');
+    const { page: p, limit: l } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 });
 
     const where: any = { creatorId: userId };
-    if (status) where.status = status;
-    if (type) where.type = type;
+    if (parsed.data.status) where.status = parsed.data.status;
+    if (parsed.data.type) where.type = parsed.data.type;
 
     const [data, total] = await Promise.all([
       fastify.prisma.template.findMany({
@@ -35,9 +96,11 @@ export async function creatorRoutes(fastify: FastifyInstance) {
   });
 
   // POST /creator/templates
-  fastify.post('/templates', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.post('/templates', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
-    const body = req.body as any;
+    const parsed = CreateTemplateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid template');
+    const body = parsed.data;
 
     const template = await fastify.prisma.template.create({
       data: {
@@ -55,10 +118,12 @@ export async function creatorRoutes(fastify: FastifyInstance) {
   });
 
   // PUT /creator/templates/:id
-  fastify.put('/templates/:id', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.put('/templates/:id', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
     const { id } = req.params as { id: string };
-    const body = req.body as any;
+    const parsed = UpdateTemplateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid template');
+    const body = parsed.data;
 
     const existing = await fastify.prisma.template.findUnique({ where: { id } });
     if (!existing) return reply.status(404).send({ error: 'Template not found' });
@@ -67,13 +132,16 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Can only edit DRAFT or REJECTED templates' });
     }
 
+    // Prisma ignores `undefined`, so omitted fields (incl. tags) are left untouched
     const template = await fastify.prisma.template.update({
       where: { id },
       data: {
+        type: body.type,
+        categoryId: body.categoryId,
+        primaryLanguage: body.primaryLanguage,
         nameHi: body.nameHi, nameMr: body.nameMr, nameEn: body.nameEn,
         quoteHi: body.quoteHi, quoteMr: body.quoteMr, quoteEn: body.quoteEn,
         tags: body.tags,
-        isPremium: body.isPremium,
         photoZoneEnabled: body.photoZoneEnabled,
         photoZoneX: body.photoZoneX, photoZoneY: body.photoZoneY,
         photoZoneSize: body.photoZoneSize, photoZoneShape: body.photoZoneShape,
@@ -91,20 +159,20 @@ export async function creatorRoutes(fastify: FastifyInstance) {
   });
 
   // POST /creator/templates/:id/submit
-  fastify.post('/templates/:id/submit', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.post('/templates/:id/submit', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
     const { id } = req.params as { id: string };
 
     const existing = await fastify.prisma.template.findUnique({ where: { id } });
     if (!existing) return reply.status(404).send({ error: 'Template not found' });
     if (existing.creatorId !== userId) return reply.status(403).send({ error: 'Not your template' });
-    if (existing.status !== TemplateStatus.DRAFT) {
-      return reply.status(400).send({ error: 'Only DRAFT templates can be submitted' });
+    if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
+      return reply.status(400).send({ error: 'Only DRAFT or REJECTED templates can be submitted' });
     }
 
     // Validate required fields before submission
     const missing = [];
-    if (!existing.nameHi) missing.push('nameHi');
+    if (!existing.nameHi && !existing.nameEn && !existing.nameMr) missing.push('name (nameHi, nameEn or nameMr)');
     if (!existing.categoryId) missing.push('categoryId');
     // Must have either image or video URL
     if (!existing.imageUrl && !existing.videoUrl) missing.push('imageUrl or videoUrl');
@@ -113,10 +181,29 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Missing required fields', missing });
     }
 
+    const autoApprove = env.AUTO_APPROVE_TEMPLATES;
+    const isFirstSubmission = existing.status === 'DRAFT';
+
+    // Default: send to the moderation queue. AUTO_APPROVE_TEMPLATES=true publishes immediately.
     const template = await fastify.prisma.template.update({
       where: { id },
-      data: { status: TemplateStatus.PENDING, submittedAt: new Date() },
+      data: autoApprove
+        ? { status: TemplateStatus.APPROVED, submittedAt: new Date(), reviewedAt: new Date(), reviewNote: null }
+        : { status: TemplateStatus.PENDING, submittedAt: new Date(), reviewedAt: null, reviewNote: null },
     });
+
+    // Update creator stats
+    await fastify.prisma.creatorProfile.updateMany({
+      where: { userId },
+      data: {
+        ...(autoApprove ? { approvedCount: { increment: 1 } } : { pendingCount: { increment: 1 } }),
+        ...(isFirstSubmission && { totalUploads: { increment: 1 } }),
+      },
+    });
+
+    if (autoApprove) {
+      await cache.invalidateTemplateCache(id);
+    }
 
     // Notify all admins
     const admins = await fastify.prisma.user.findMany({
@@ -126,25 +213,27 @@ export async function creatorRoutes(fastify: FastifyInstance) {
 
     const playerIds = admins.map(a => a.oneSignalPlayerId).filter(Boolean) as string[];
     if (playerIds.length > 0) {
-      OneSignalService.send({
-        heading: '📋 New Template Pending Review',
-        content: `A new template "${existing.nameEn ?? existing.nameHi}" needs review`,
-        playerIds,
-        data: { screen: 'review_queue' },
-      }).catch(() => {});
+      const name = existing.nameEn ?? existing.nameHi;
+      OneSignalService.send(autoApprove
+        ? {
+            heading: '📋 New Template Live',
+            content: `A new template "${name}" is now live`,
+            playerIds,
+            data: { screen: 'templates' },
+          }
+        : {
+            heading: '📋 New Template Pending Review',
+            content: `A new template "${name}" needs review`,
+            playerIds,
+            data: { screen: 'review_queue' },
+          }).catch(() => {});
     }
-
-    // Update creator stats
-    await fastify.prisma.creatorProfile.updateMany({
-      where: { userId },
-      data: { pendingCount: { increment: 1 }, totalUploads: { increment: 1 } },
-    });
 
     return reply.send({ template });
   });
 
   // DELETE /creator/templates/:id
-  fastify.delete('/templates/:id', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.delete('/templates/:id', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
     const { id } = req.params as { id: string };
 
@@ -154,15 +243,16 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     if (existing.status !== 'DRAFT') return reply.status(400).send({ error: 'Only DRAFT templates can be deleted' });
 
     await fastify.prisma.template.delete({ where: { id } });
+    await cache.invalidateTemplateCache(id);
     return reply.send({ success: true });
   });
 
   // POST /creator/upload/sign-cloudinary
-  fastify.post('/upload/sign-cloudinary', { 
-    preHandler: [requireCreator],
+  fastify.post('/upload/sign-cloudinary', {
+    preHandler: requireCreator,
     config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
   }, async (req, reply) => {
-    const { folder = 'templates', tags } = req.body as any;
+    const { folder = 'templates', tags } = (req.body as any) ?? {};
 
     // Security: validate folder is one of the allowed values (prevent path traversal)
     const ALLOWED_FOLDERS = ['templates', 'thumbnails'];
@@ -172,8 +262,9 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     const params: Record<string, any> = {
       timestamp,
       folder: `status-go/${safeFolder}`,
-      // Restrict allowed formats server-side so Cloudinary rejects invalid types
-      allowed_formats: 'jpg,jpeg,png,webp,mp4',
+      // Restrict allowed formats server-side so Cloudinary rejects invalid types.
+      // Clients must send `allowed_formats` (returned below) with the upload.
+      allowed_formats: CLOUDINARY_ALLOWED_FORMATS,
     };
 
     if (Array.isArray(tags) && tags.length > 0) {
@@ -201,11 +292,13 @@ export async function creatorRoutes(fastify: FastifyInstance) {
       cloudName: signData.cloudName,  // from server CLOUDINARY_URL — correct
       folder: params.folder,
       timestamp,
+      allowedFormats: CLOUDINARY_ALLOWED_FORMATS,
+      ...(params.tags && { tags: params.tags }),
     });
   });
 
   // GET /creator/stats
-  fastify.get('/stats', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.get('/stats', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
 
     const profile = await fastify.prisma.creatorProfile.findUnique({ where: { userId } });
@@ -230,9 +323,9 @@ export async function creatorRoutes(fastify: FastifyInstance) {
   });
 
   // GET /creator/profile
-  fastify.get('/profile', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.get('/profile', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
-    const profile = await fastify.prisma.creatorProfile.findUnique({ 
+    const profile = await fastify.prisma.creatorProfile.findUnique({
       where: { userId },
       include: { user: { select: { name: true, email: true, profilePhoto: true } } }
     });
@@ -240,9 +333,11 @@ export async function creatorRoutes(fastify: FastifyInstance) {
   });
 
   // PATCH /creator/profile
-  fastify.patch('/profile', { preHandler: [requireCreator] }, async (req, reply) => {
+  fastify.patch('/profile', { preHandler: requireCreator }, async (req, reply) => {
     const { userId } = req.user as any;
-    const body = req.body as any;
+    const parsed = ProfileSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid profile');
+    const body = parsed.data;
 
     const profile = await fastify.prisma.creatorProfile.upsert({
       where: { userId },
@@ -260,6 +355,7 @@ export async function creatorRoutes(fastify: FastifyInstance) {
         specialization: body.specialization || [],
       }
     });
+    await invalidateUserCaches(fastify.redis, userId);
     return reply.send(profile);
   });
 }

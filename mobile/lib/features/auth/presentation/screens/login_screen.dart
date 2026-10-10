@@ -1,6 +1,5 @@
-// lib/features/auth/presentation/screens/login_screen.dart
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
 
+import '../../../../core/api/api_error.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/auth_repository.dart';
 
@@ -24,6 +24,9 @@ class _State {
   final bool isBackendFallback;
   final int resendCountdown;
 
+  /// OTP echoed by the backend in test-OTP mode (development only).
+  final String? devOtp;
+
   const _State({
     this.step = _Step.phone,
     this.loading = false,
@@ -32,6 +35,7 @@ class _State {
     this.verificationId,
     this.isBackendFallback = false,
     this.resendCountdown = 0,
+    this.devOtp,
   });
 
   _State copyWith({
@@ -43,6 +47,8 @@ class _State {
     String? verificationId,
     bool? isBackendFallback,
     int? resendCountdown,
+    String? devOtp,
+    bool clearDevOtp = false,
   }) =>
       _State(
         step: step ?? this.step,
@@ -52,6 +58,7 @@ class _State {
         verificationId: verificationId ?? this.verificationId,
         isBackendFallback: isBackendFallback ?? this.isBackendFallback,
         resendCountdown: resendCountdown ?? this.resendCountdown,
+        devOtp: clearDevOtp ? null : (devOtp ?? this.devOtp),
       );
 }
 
@@ -99,7 +106,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
   }
 
-  // ── Send OTP via Firebase with Backend Fallback ───────────────────────────
+  // ── Send OTP via backend ──────────────────────────────────────────────────
 
   Future<void> _sendOtp() async {
     final raw = _phoneCtrl.text.trim().replaceAll(' ', '');
@@ -109,60 +116,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
     final phone = raw.startsWith('+') ? raw : '+91$raw';
     setState(() => _state = _state.copyWith(loading: true, clearError: true));
-
-    try {
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phone,
-        timeout: const Duration(seconds: 60),
-        verificationCompleted: (PhoneAuthCredential cred) async {
-          await _signInWithFirebase(cred);
-        },
-        verificationFailed: (FirebaseAuthException e) async {
-          debugPrint('Firebase phone verification failed (${e.code}: ${e.message}). Falling back to backend OTP...');
-          await _sendBackendOtp(phone, fallbackReason: e.message);
-        },
-        codeSent: (String vid, int? resendToken) {
-          if (!mounted) return;
-          setState(() => _state = _state.copyWith(
-                step: _Step.otp,
-                loading: false,
-                phone: phone,
-                verificationId: vid,
-                isBackendFallback: false,
-              ));
-          _startCountdown();
-          Future.delayed(const Duration(milliseconds: 300), _otpFocus.requestFocus);
-        },
-        codeAutoRetrievalTimeout: (String vid) {
-          if (mounted) setState(() => _state = _state.copyWith(verificationId: vid));
-        },
-      );
-    } catch (e) {
-      debugPrint('Direct Firebase verify error: $e. Using backend OTP...');
-      await _sendBackendOtp(phone, fallbackReason: null);
-    }
+    await _sendBackendOtp(phone);
   }
 
-  Future<void> _sendBackendOtp(String phone, {String? fallbackReason}) async {
+  Future<void> _sendBackendOtp(String phone) async {
+    String? devOtp;
     try {
-      await ref.read(authRepositoryProvider).sendOtp(phone);
-      if (!mounted) return;
-      setState(() => _state = _state.copyWith(
-            step: _Step.otp,
-            loading: false,
-            phone: phone,
-            verificationId: 'BACKEND_OTP',
-            isBackendFallback: true,
-          ));
-      _startCountdown();
-      Future.delayed(const Duration(milliseconds: 300), _otpFocus.requestFocus);
+      devOtp = await ref.read(authRepositoryProvider).sendOtp(phone);
     } catch (e) {
       if (!mounted) return;
       setState(() => _state = _state.copyWith(
             loading: false,
-            error: 'OTP भेजने में समस्या हुई। कृपया पुनः प्रयास करें।',
+            error: apiErrorMessage(e, fallback: 'OTP भेजने में समस्या हुई। कृपया दोबारा कोशिश करें।'),
           ));
+      return;
     }
+    if (!mounted) return;
+    setState(() => _state = _state.copyWith(
+          step: _Step.otp,
+          loading: false,
+          phone: phone,
+          verificationId: 'BACKEND_OTP',
+          isBackendFallback: true,
+          clearError: true,
+          devOtp: devOtp,
+          clearDevOtp: devOtp == null,
+        ));
+    _startCountdown();
+    Future.delayed(const Duration(milliseconds: 300), _otpFocus.requestFocus);
   }
 
   // ── Verify OTP ────────────────────────────────────────────────────────────
@@ -170,51 +151,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _verifyOtp(String otp) async {
     if (otp.length < 6) return;
     setState(() => _state = _state.copyWith(loading: true, clearError: true));
-
-    if (_state.isBackendFallback || _state.verificationId == 'BACKEND_OTP') {
-      await _signInWithBackendOtp(otp);
-      return;
-    }
-
-    // Try Firebase credential first
-    try {
-      final cred = PhoneAuthProvider.credential(
-        verificationId: _state.verificationId ?? '',
-        smsCode: otp,
-      );
-      await _signInWithFirebase(cred);
-    } on FirebaseAuthException catch (e) {
-      debugPrint('Firebase verify failed: ${e.message}. Trying backend fallback...');
-      // If Firebase verification fails, also attempt backend verify
-      await _signInWithBackendOtp(otp);
-    } catch (e) {
-      await _signInWithBackendOtp(otp);
-    }
-  }
-
-  Future<void> _signInWithFirebase(PhoneAuthCredential cred) async {
-    try {
-      final uc = await FirebaseAuth.instance.signInWithCredential(cred);
-      final idToken = await uc.user?.getIdToken();
-      if (idToken == null) throw Exception('Token not found');
-
-      final result = await ref
-          .read(authRepositoryProvider)
-          .signInWithFirebaseToken(idToken);
-
-      if (!mounted) return;
-      if (result['onboardingRequired'] == true) {
-        context.go('/profile-setup');
-      } else {
-        context.go('/home');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _state = _state.copyWith(
-            loading: false,
-            error: 'OTP गलत है या एक्सपायर हो गया है। दोबारा कोशिश करें।',
-          ));
-    }
+    await _signInWithBackendOtp(otp);
   }
 
   Future<void> _signInWithBackendOtp(String otp) async {
@@ -224,17 +161,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           .verifyOtp(_state.phone, otp);
 
       if (!mounted) return;
-      if (result['onboardingRequired'] == true) {
-        context.go('/profile-setup');
-      } else {
-        context.go('/home');
-      }
+      _goAfterLogin(result);
     } catch (e) {
       if (!mounted) return;
       setState(() => _state = _state.copyWith(
             loading: false,
-            error: 'OTP अमान्य है। कृपया सही 6 अंकों का OTP दर्ज करें।',
+            error: apiErrorMessage(e, fallback: 'OTP अमान्य है। कृपया सही 6 अंकों का OTP दर्ज करें।'),
           ));
+    }
+  }
+
+  /// Same onboarding check for every login method.
+  void _goAfterLogin(AuthResult result) {
+    if (result.onboardingRequired) {
+      context.go('/profile-setup');
+    } else {
+      context.go('/home');
     }
   }
 
@@ -243,18 +185,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _signInWithGoogle() async {
     setState(() => _state = _state.copyWith(loading: true, clearError: true));
     try {
-      final user = await ref.read(authRepositoryProvider).signInWithGoogle();
+      final result = await ref.read(authRepositoryProvider).signInWithGoogle();
       if (!mounted) return;
-      if (user != null) {
-        context.go('/home');
+      if (result != null) {
+        _goAfterLogin(result);
       } else {
         setState(() => _state = _state.copyWith(loading: false));
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _state = _state.copyWith(
             loading: false,
-            error: 'Google Sign-In में समस्या हुई।',
+            error: apiErrorMessage(e, fallback: 'Google Sign-In में समस्या हुई।'),
           ));
     }
   }
@@ -274,12 +216,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 40),
               _buildHeader(),
               const SizedBox(height: 36),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                child: _state.step == _Step.phone
-                    ? _buildPhoneStep()
-                    : _buildOtpStep(),
-              ),
+              if (_state.step == _Step.phone)
+                _buildPhoneStep()
+              else
+                _buildOtpStep(),
             ],
           ),
         ),
@@ -523,28 +463,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 16),
+
+        // Dev-only: backend echoed the OTP (test-OTP mode). Never shown in release.
+        if (kDebugMode && _state.devOtp != null) _buildDevOtpCard(_state.devOtp!),
+        const SizedBox(height: 24),
 
         Center(
-          child: Pinput(
-            controller: _otpCtrl,
-            focusNode: _otpFocus,
-            length: 6,
-            defaultPinTheme: defaultPin,
-            focusedPinTheme: defaultPin.copyWith(
-              decoration: defaultPin.decoration!.copyWith(
-                border: Border.all(color: AppColors.primary, width: 2.5),
+          child: Semantics(
+            label: 'OTP दर्ज करें (6 अंक)',
+            child: Pinput(
+              controller: _otpCtrl,
+              focusNode: _otpFocus,
+              length: 6,
+              defaultPinTheme: defaultPin,
+              focusedPinTheme: defaultPin.copyWith(
+                decoration: defaultPin.decoration!.copyWith(
+                  border: Border.all(color: AppColors.primary, width: 2.5),
+                ),
               ),
-            ),
-            submittedPinTheme: defaultPin.copyWith(
-              decoration: defaultPin.decoration!.copyWith(
-                color: AppColors.primarySurface,
-                border: Border.all(color: AppColors.primary, width: 2),
+              submittedPinTheme: defaultPin.copyWith(
+                decoration: defaultPin.decoration!.copyWith(
+                  color: AppColors.primarySurface,
+                  border: Border.all(color: AppColors.primary, width: 2),
+                ),
               ),
+              onCompleted: _verifyOtp,
+              hapticFeedbackType: HapticFeedbackType.lightImpact,
+              keyboardType: TextInputType.number,
             ),
-            onCompleted: _verifyOtp,
-            hapticFeedbackType: HapticFeedbackType.lightImpact,
-            keyboardType: TextInputType.number,
           ),
         ),
 
@@ -597,6 +544,63 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ],
     );
   }
+  Widget _buildDevOtpCard(String otp) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.key_rounded, color: Color(0xFF16A34A), size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'टेस्ट OTP: $otp',
+                  style: GoogleFonts.hind(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF15803D),
+                  ),
+                ),
+                Text(
+                  'केवल डेवलपमेंट मोड (Debug build)',
+                  style: GoogleFonts.hind(fontSize: 12, color: const Color(0xFF166534)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: _state.loading
+                ? null
+                : () {
+                    _otpCtrl.text = otp;
+                    _verifyOtp(otp);
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              visualDensity: VisualDensity.compact,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              elevation: 0,
+            ),
+            icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.white),
+            label: Text(
+              '$otp भरें',
+              style: GoogleFonts.hind(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── Helper Widgets ───────────────────────────────────────────────────────────
@@ -639,7 +643,7 @@ class _OrDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Expanded(child: Divider(color: AppColors.surfaceBorder, thickness: 1)),
+        Expanded(child: Container(height: 1, color: AppColors.surfaceBorder)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
@@ -647,7 +651,7 @@ class _OrDivider extends StatelessWidget {
             style: GoogleFonts.hind(fontSize: 15, color: AppColors.textMuted, fontWeight: FontWeight.w600),
           ),
         ),
-        const Expanded(child: Divider(color: AppColors.surfaceBorder, thickness: 1)),
+        Expanded(child: Container(height: 1, color: AppColors.surfaceBorder)),
       ],
     );
   }

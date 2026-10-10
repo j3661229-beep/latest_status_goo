@@ -28,8 +28,8 @@
                                │
         ┌──────────┬───────────┼───────────┬──────────┐
         ▼          ▼           ▼           ▼          ▼
-   PostgreSQL    Redis 7   Cloudflare   Cloudflare  OneSignal
-   (Supabase)  (Upstash)     R2 CDN      Stream      Push
+   PostgreSQL    Redis 7   Cloudinary /  Razorpay   OneSignal
+   (Supabase)  (Upstash)   GCS storage  Payments    Push
 ```
 
 ---
@@ -82,8 +82,10 @@ npm install          # installs all workspace dependencies
 ```bash
 cp .env.example .env           # Root
 cp backend/.env.example backend/.env   # Backend
-# Fill in DATABASE_URL, DIRECT_DATABASE_URL, REDIS_URL, JWT_SECRET, GOOGLE_CLIENT_ID
-# Everything else (R2, OneSignal, Sentry) is optional — leave blank to skip gracefully
+# Fill in DATABASE_URL, DIRECT_DATABASE_URL, REDIS_URL, JWT_SECRET, JWT_REFRESH_SECRET, GOOGLE_CLIENT_ID
+# Media uploads need CLOUDINARY_URL (and optionally GCS_* for Google Cloud Storage).
+# Phone login needs TWO_FACTOR_API_KEY (SMS OTP) and/or FIREBASE_PROJECT_ID.
+# For local testing without SMS set ALLOW_TEST_OTP=true (accepts OTP 123456; ignored in production).
 ```
 
 **Generate JWT secrets:**
@@ -99,6 +101,10 @@ cd backend
 npm run db:generate  # Generate Prisma client
 npm run db:migrate   # Push schema to Supabase
 npm run db:seed      # Seed categories, templates, users, festivals
+                     # Admin password: set SEED_ADMIN_PASSWORD, or a random one is printed once
+
+# Create/update a SUPER_ADMIN for the admin dashboard (email + password login):
+SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD='a-long-password' node scripts/seed-admin.js
 npm run studio       # (Optional) Explore data at localhost:5555
 ```
 
@@ -131,8 +137,8 @@ flutter run            # needs Android device/emulator connected
 |---|---|---|
 | **Fastify API** | http://localhost:3000 | — |
 | **API Health** | http://localhost:3000/api/v1/health | DB + Redis status |
-| **Admin Dashboard** | http://localhost:3001 | Google OAuth (MANAGER/SUPER_ADMIN role) |
-| **Creator Dashboard** | http://localhost:3002 | Google OAuth (CREATOR role) |
+| **Admin Dashboard** | http://localhost:3001 | Email + password (MANAGER/SUPER_ADMIN role) |
+| **Creator Dashboard** | http://localhost:3002 | Google sign-in or email + password (invited CREATOR role) |
 | **Prisma Studio** | http://localhost:5555 | `npm run studio` in /backend |
 
 ---
@@ -146,9 +152,8 @@ flutter run            # needs Android device/emulator connected
 | **Database** | PostgreSQL 16 | GIN indexes, trigram FTS, pg_trgm for Hindi search |
 | **Cache** | Redis 7 + Upstash | 4-layer cache, BullMQ queues, sliding window rate limit |
 | **Queue** | BullMQ | CRON jobs, retries, priorities — notification + analytics |
-| **Auth** | Google OAuth + JWT | HS256 access (15min) + rotating refresh (30d) |
-| **CDN** | Cloudflare R2 + Images | Zero egress, auto-webp, global delivery |
-| **Video** | Cloudflare Stream | HLS transcoding, adaptive bitrate, signed URLs |
+| **Auth** | Phone OTP (2Factor) / Firebase phone, Google, email+password (admins) + JWT | HS256 access (15min) + rotating refresh (30d) |
+| **Media storage** | Cloudinary (default) + Google Cloud Storage (optional) | Image/video uploads, CDN delivery |
 | **Push** | OneSignal | Segment targeting, A/B testing, free 10k subscribers |
 | **Payments** | Razorpay | Best Indian gateway — UPI, cards, netbanking |
 | **Admin UI** | Next.js 15 + shadcn/ui | Server components, Recharts, TanStack Table |
@@ -193,8 +198,16 @@ See [`.env.example`](./.env.example) for all required variables with description
 | `JWT_SECRET` | Backend | `openssl rand -hex 32` |
 | `GOOGLE_CLIENT_ID` | Backend + Dashboards | Google Cloud Console |
 | `RAZORPAY_KEY_ID` | Backend + Flutter | Razorpay Dashboard |
-| `ONESIGNAL_APP_ID` | Backend + Flutter | OneSignal Dashboard |
-| `CF_R2_*` | Backend (file uploads) | Cloudflare Dashboard |
+| `ONESIGNAL_APP_ID` / `ONESIGNAL_REST_KEY` | Backend + Flutter | OneSignal Dashboard |
+| `CLOUDINARY_URL` | Backend (media uploads) | Cloudinary console (`cloudinary://key:secret@cloud`) |
+| `GCS_*` | Backend (optional GCS uploads) | Google Cloud Console (service account, base64 JSON) |
+| `TWO_FACTOR_API_KEY` | Backend (SMS OTP) | 2factor.in |
+| `FIREBASE_PROJECT_ID` | Backend (Firebase phone login) | Firebase console |
+| `RAZORPAY_WEBHOOK_SECRET` | Backend (`POST /api/v1/subscribe/webhook`) | Razorpay Dashboard → Webhooks |
+| `ALLOW_TEST_OTP` | Backend (dev only) | `true` to accept OTP 123456 outside production |
+| `AUTO_APPROVE_TEMPLATES` | Backend | `true` to skip the moderation queue for creator submissions |
+| `TRUST_PROXY` | Backend | Set to the number of proxy hops (e.g. `1`) when behind a load balancer |
+| `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Seed scripts | Your choice (never commit them) |
 
 ---
 

@@ -5,8 +5,10 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** All money amounts from the backend are integers in paise (₹1 = 100 paise). */
 export function formatCurrency(paiseAmount: number): string {
-  return `₹${(paiseAmount / 100).toLocaleString('en-IN')}`;
+  const rupees = (Number(paiseAmount) || 0) / 100;
+  return `₹${rupees.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
 export function formatNumber(n: number): string {
@@ -37,4 +39,41 @@ export function getStatusBadgeClass(status: string): string {
     ARCHIVED: 'badge-draft',
   };
   return map[status] ?? 'badge-draft';
+}
+
+/** Extract the most useful human-readable message from an axios/unknown error. */
+export function getErrorMessage(err: unknown, fallback = 'Something went wrong'): string {
+  const e = err as any;
+  return e?.response?.data?.error || e?.response?.data?.message || e?.message || fallback;
+}
+
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = value instanceof Date ? value.toISOString() : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Client-side CSV export of the currently loaded rows.
+ * `columns` maps header label → accessor.
+ */
+export function downloadCsv<T>(
+  filename: string,
+  rows: T[],
+  columns: { header: string; value: (row: T) => unknown }[],
+) {
+  const lines = [
+    columns.map(c => csvCell(c.header)).join(','),
+    ...rows.map(r => columns.map(c => csvCell(c.value(r))).join(',')),
+  ];
+  // BOM so Excel opens UTF-8 (Hindi/Marathi) correctly
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

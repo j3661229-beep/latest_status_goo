@@ -1,27 +1,32 @@
+// test-db.ts — quick connectivity check for the configured Postgres URLs.
+// Usage: npx tsx test-db.ts
+// Reads DATABASE_URL / DIRECT_DATABASE_URL from the environment (.env via dotenv).
+// Never hard-code credentials here.
+import 'dotenv/config';
 import { Client } from 'pg';
 
-async function testConnection(url: string) {
+const redact = (url: string) => url.replace(/\/\/([^:@/]+):[^@]*@/, '//$1:***@');
+
+async function testConnection(label: string, url: string | undefined) {
+  if (!url) {
+    console.log(`⏭️  ${label} is not set — skipping`);
+    return;
+  }
   const client = new Client({ connectionString: url });
   try {
     await client.connect();
-    console.log(`✅ Success for: ${url.replace(/:[^:]*@/, ':***@')}`);
-    await client.end();
+    await client.query('SELECT 1');
+    console.log(`✅ ${label} OK: ${redact(url)}`);
   } catch (err: any) {
-    console.error(`❌ Failed for: ${url.replace(/:[^:]*@/, ':***@')} -> ${err.message}`);
+    console.error(`❌ ${label} failed: ${redact(url)} -> ${err.message}`);
+  } finally {
+    await client.end().catch(() => {});
   }
 }
 
 async function run() {
-  const usernameFull = "postgres.eayiqtokycuqnvcxkyoc";
-  const usernameShort = "postgres";
-  const passEncoded = "Jayesh%20jay%402006";
-  const passRawContext = "Jayesh jay@2006";
-  const host = "aws-1-ap-northeast-2.pooler.supabase.com";
-
-  await testConnection(`postgresql://${usernameFull}:${passEncoded}@${host}:5432/postgres`);
-  await testConnection(`postgresql://${usernameShort}:${passEncoded}@${host}:5432/postgres`);
-  await testConnection(`postgresql://${usernameFull}:${passEncoded}@${host}:6543/postgres`);
-  await testConnection(`postgresql://${usernameShort}:${passEncoded}@${host}:6543/postgres`);
+  await testConnection('DATABASE_URL', process.env.DATABASE_URL);
+  await testConnection('DIRECT_DATABASE_URL', process.env.DIRECT_DATABASE_URL);
 }
 
 run();

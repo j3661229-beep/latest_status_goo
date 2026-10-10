@@ -5,35 +5,52 @@
 @layer base {
   :root { --font-nunito: 'Nunito', system-ui, sans-serif; }
   * { @apply border-surface-border; }
-  body { @apply bg-surface text-slate-800; }
-  ::-webkit-scrollbar { width: 5px; }
+  body { @apply bg-surface text-slate-800 antialiased; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { @apply bg-transparent; }
-  ::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-200 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-300; }
 }
 
 @layer components {
+  /* Buttons — Professional Restrained Controls */
   .btn-primary {
-    @apply bg-blue-600 text-white font-bold px-4 py-2.5 rounded-xl
-           hover:bg-blue-700 hover:shadow-primary-glow active:scale-[0.99] transition-all duration-150 text-sm shadow-sm;
+    @apply bg-blue-600 text-white font-medium px-4 py-2 rounded-lg
+           hover:bg-blue-700 active:scale-[0.99] transition-all duration-150 text-sm shadow-sm inline-flex items-center justify-center;
   }
   .btn-ghost {
-    @apply text-slate-600 hover:text-slate-900 font-semibold px-4 py-2 rounded-xl
-           hover:bg-slate-100 transition-colors duration-150 text-sm;
+    @apply text-slate-600 hover:text-slate-900 font-medium px-3.5 py-2 rounded-lg
+           hover:bg-slate-100 transition-colors duration-150 text-sm inline-flex items-center justify-center;
   }
   .btn-outline {
-    @apply border border-slate-300 text-slate-700 bg-white font-semibold px-4 py-2.5 rounded-xl
-           hover:border-blue-600 hover:text-blue-600 hover:bg-blue-50/30 transition-all duration-150 text-sm;
+    @apply border border-slate-200 text-slate-700 bg-white font-medium px-4 py-2 rounded-lg
+           hover:border-slate-300 hover:bg-slate-50 transition-all duration-150 text-sm shadow-sm inline-flex items-center justify-center;
   }
+  .btn-danger {
+    @apply bg-rose-600 text-white font-medium px-4 py-2 rounded-lg
+           hover:bg-rose-700 transition-colors duration-150 text-sm shadow-sm inline-flex items-center justify-center;
+  }
+  .btn-success {
+    @apply bg-emerald-600 text-white font-medium px-4 py-2 rounded-lg
+           hover:bg-emerald-700 transition-colors duration-150 text-sm shadow-sm inline-flex items-center justify-center;
+  }
+
+  /* Cards — Crisp White with Subtle Slate Borders */
   .stat-card {
-    @apply bg-white rounded-2xl p-5 shadow-card border border-slate-200/80 hover:shadow-card-hover hover:border-blue-200 transition-all duration-200;
+    @apply bg-white rounded-xl p-5 shadow-sm border border-slate-200/80
+           hover:border-slate-300 transition-all duration-150;
   }
-  .badge-approved { @apply bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-pending  { @apply bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-rejected { @apply bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold px-2.5 py-1 rounded-full; }
-  .badge-draft    { @apply bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold px-2.5 py-1 rounded-full; }
+
+  /* Badges — Refined Soft Tones */
+  .badge-approved  { @apply bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-xs font-semibold px-2.5 py-0.5 rounded-md; }
+  .badge-pending   { @apply bg-amber-50 text-amber-700 border border-amber-200/70 text-xs font-semibold px-2.5 py-0.5 rounded-md; }
+  .badge-rejected  { @apply bg-rose-50 text-rose-700 border border-rose-200/70 text-xs font-semibold px-2.5 py-0.5 rounded-md; }
+  .badge-draft     { @apply bg-slate-100 text-slate-600 border border-slate-200 text-xs font-semibold px-2.5 py-0.5 rounded-md; }
+
+  /* Upload drop zone */
   .upload-zone {
-    @apply border-2 border-dashed border-slate-300 rounded-2xl p-8 bg-slate-50/50
+    @apply border border-dashed border-slate-300 rounded-xl p-8 bg-slate-50/50
            flex flex-col items-center justify-center cursor-pointer
-           hover:border-blue-500 hover:bg-blue-50/40 transition-all duration-200;
+           hover:border-blue-500 hover:bg-blue-50/30 transition-all duration-150;
   }
 }
