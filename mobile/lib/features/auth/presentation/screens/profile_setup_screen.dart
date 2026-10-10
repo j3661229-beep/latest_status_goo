@@ -1,17 +1,18 @@
 // lib/features/auth/presentation/screens/profile_setup_screen.dart
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/api/api_error.dart';
 import '../../../../core/auth/session_store.dart';
-import '../../../../core/theme/app_theme.dart';
 import '../../../../core/data/indian_states.dart';
-import '../../data/auth_repository.dart';
+import '../../../../core/widgets/app_ui.dart';
 import '../../../home/presentation/providers/home_data_provider.dart';
+import '../../data/auth_repository.dart';
+import '../providers/current_user_provider.dart';
 
 // ─── Supported Languages ──────────────────────────────────────────────────────
 
@@ -161,11 +162,16 @@ class ProfileSetupScreen extends ConsumerStatefulWidget {
 
 class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   final _nameController = TextEditingController();
-  final _stateSearchController = TextEditingController();
   final PageController _pageController = PageController();
 
   var _state = const _SetupState();
-  List<IndianState> _filteredStates = IndianStates.all;
+
+  static const _titles = [
+    ('अपनी भाषा चुनें', 'Select your language'),
+    ('अपनी जानकारी जोड़ें', 'Name & photo'),
+    ('अपना राज्य चुनें', 'Select your state'),
+    ('अपना शहर / क्षेत्र चुनें', 'Select your region'),
+  ];
 
   @override
   void initState() {
@@ -180,32 +186,36 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       _nameController.text = savedName;
     }
 
+    // Existing location (when re-opened from the profile screen).
+    final user = ref.read(currentUserProvider);
+    IndianState? existingState;
+    if (user?.state != null) {
+      for (final s in IndianStates.all) {
+        if (s.name == user!.state) existingState = s;
+      }
+    }
+    final existingRegion =
+        existingState != null && existingState.regions.contains(user?.region) ? user!.region : null;
+
     _state = _state.copyWith(
       language: savedLang ?? 'HINDI',
       name: savedName ?? '',
       imageFile: (savedPhoto != null && File(savedPhoto).existsSync()) ? File(savedPhoto) : null,
       // Already uploaded photo (re-used unless the user picks a new one)
       uploadedPhotoUrl: session.profilePhotoUrl,
+      selectedState: existingState,
+      selectedRegion: existingRegion,
     );
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _stateSearchController.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
-  void _filterStates(String query) {
-    setState(() {
-      _filteredStates = query.isEmpty
-          ? IndianStates.all
-          : IndianStates.all
-              .where((s) => s.name.toLowerCase().contains(query.toLowerCase()))
-              .toList();
-    });
-  }
+  // ── Photo ──────────────────────────────────────────────────────────────────
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -219,103 +229,71 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       }
     } catch (e) {
       debugPrint('Image pick error: $e');
+      if (mounted) AppSnack.error(context, 'फ़ोटो नहीं चुनी जा सकी। कृपया अनुमति जांचें।');
     }
   }
 
-  void _showImagePickerSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'प्रोफ़ाइल फ़ोटो जोड़ें',
-                style: GoogleFonts.hind(fontSize: 18, fontWeight: FontWeight.w700),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 18),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primarySurface,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.camera_alt_rounded, color: AppColors.primary),
-                ),
-                title: Text('कैमरा से फोटो लें', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primarySurface,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.photo_library_rounded, color: AppColors.primary),
-                ),
-                title: Text('गैलरी से चुनें', style: GoogleFonts.hind(fontWeight: FontWeight.w600, fontSize: 16)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickImage(ImageSource.gallery);
-                },
-              ),
-              if (_state.imageFile != null) ...[
-                const Divider(),
-                ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFEE2E2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.delete_outline_rounded, color: AppColors.danger),
-                  ),
-                  title: Text('फ़ोटो हटाएं', style: GoogleFonts.hind(color: AppColors.danger, fontWeight: FontWeight.w600, fontSize: 16)),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    setState(() => _state = _state.copyWith(clearImage: true, clearUploadedPhotoUrl: true));
-                    SessionStore.instance.setLocalPhotoPath(null);
-                  },
-                ),
-              ],
-            ],
+  Future<void> _showImagePickerSheet() async {
+    final hasPhoto = _state.imageFile != null || _state.uploadedPhotoUrl != null;
+    final choice = await AppBottomSheet.show<String>(
+      context,
+      title: 'प्रोफ़ाइल फ़ोटो जोड़ें',
+      builder: (ctx) => SettingsSection(
+        margin: EdgeInsets.zero,
+        children: [
+          SettingsTile(
+            icon: Icons.photo_camera_rounded,
+            title: 'कैमरा से फोटो लें',
+            onTap: () => Navigator.of(ctx).pop('camera'),
           ),
-        ),
+          SettingsTile(
+            icon: Icons.photo_library_rounded,
+            title: 'गैलरी से चुनें',
+            onTap: () => Navigator.of(ctx).pop('gallery'),
+          ),
+          if (hasPhoto)
+            SettingsTile(
+              icon: Icons.delete_outline_rounded,
+              title: 'फ़ोटो हटाएं',
+              destructive: true,
+              showChevron: false,
+              onTap: () => Navigator.of(ctx).pop('remove'),
+            ),
+        ],
       ),
     );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'camera':
+        await _pickImage(ImageSource.camera);
+      case 'gallery':
+        await _pickImage(ImageSource.gallery);
+      case 'remove':
+        setState(() => _state = _state.copyWith(clearImage: true, clearUploadedPhotoUrl: true));
+        await SessionStore.instance.setLocalPhotoPath(null);
+    }
   }
 
-  // ── Step 1 → 2 (Language → Name & Photo) ──────────────────────────────────
+  // ── Navigation between steps ───────────────────────────────────────────────
 
+  void _animateTo(int page, {int ms = 300}) {
+    FocusScope.of(context).unfocus();
+    _pageController.animateToPage(page, duration: Duration(milliseconds: ms), curve: Curves.easeInOut);
+  }
+
+  /// Step 1 → 2 (Language → Name & Photo)
   void _proceedToNamePhoto(String languageCode) {
     setState(() => _state = _state.copyWith(
           language: languageCode,
           step: _SetupStep.namePhoto,
           clearError: true,
         ));
-    _pageController.animateToPage(
-      1,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    _animateTo(1);
   }
 
-  // ── Step 2 → 3 (Name & Photo → State) ─────────────────────────────────────
-
+  /// Step 2 → 3 (Name & Photo → State). Uploads the photo first.
   Future<void> _proceedToStateSelection() async {
+    if (_state.loading) return;
     final name = _nameController.text.trim();
     if (name.length < 2) {
       setState(() => _state = _state.copyWith(error: 'कृपया अपना नाम दर्ज करें (कम से कम 2 अक्षर)'));
@@ -353,68 +331,85 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
           uploadedPhotoUrl: photoUrl,
           clearUploadedPhotoUrl: photoUrl == null,
         ));
-
-    _pageController.animateToPage(
-      2,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    _animateTo(2);
   }
 
   Future<_UploadFailureChoice?> _showUploadFailedDialog(String message) {
     return showDialog<_UploadFailureChoice>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
-        title: Text(
-          'फ़ोटो अपलोड नहीं हो सकी',
-          style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-        content: Text(
-          '$message\n\nआप दोबारा कोशिश कर सकते हैं या बिना फ़ोटो आगे बढ़ सकते हैं (फ़ोटो बाद में जोड़ सकते हैं)।',
-          style: GoogleFonts.hind(fontSize: 14, color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, _UploadFailureChoice.continueWithoutPhoto),
-            child: Text(
-              'बिना फ़ोटो आगे बढ़ें',
-              style: GoogleFonts.hind(color: AppColors.textMuted, fontWeight: FontWeight.w600),
+      builder: (ctx) {
+        final p = ctx.palette;
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.warningSurface),
+                    child: const Icon(Icons.cloud_off_rounded, color: AppColors.warning, size: 32),
+                  ),
+                ),
+                Text(
+                  'फ़ोटो अपलोड नहीं हो सकी',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(ctx).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '$message\n\nआप दोबारा कोशिश कर सकते हैं या बिना फ़ोटो आगे बढ़ सकते हैं (फ़ोटो बाद में जोड़ सकते हैं)।',
+                  textAlign: TextAlign.center,
+                  style: AppText.body(size: 15, color: p.textSecondary),
+                ),
+                const SizedBox(height: 24),
+                GradientButton(
+                  label: 'दोबारा कोशिश करें',
+                  icon: Icons.refresh_rounded,
+                  onPressed: () => Navigator.of(ctx).pop(_UploadFailureChoice.retry),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(_UploadFailureChoice.continueWithoutPhoto),
+                  child: const Text('बिना फ़ोटो आगे बढ़ें'),
+                ),
+              ],
             ),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, _UploadFailureChoice.retry),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              elevation: 0,
-            ),
-            child: Text('दोबारा कोशिश करें', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  // ── Step 3 → 4 (State → Region) ───────────────────────────────────────────
-
-  void _proceedToRegionSelection(IndianState state) {
+  /// Selecting a state (does not advance; the Next button does).
+  void _selectState(IndianState s) {
+    final changed = _state.selectedState?.name != s.name;
     setState(() => _state = _state.copyWith(
-          selectedState: state,
-          step: _SetupStep.region,
-          clearRegion: true,
+          selectedState: s,
+          clearRegion: changed,
           clearError: true,
         ));
-    _pageController.animateToPage(
-      3,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
   }
 
-  // ── Step 4 → Complete Setup ───────────────────────────────────────────────
+  /// Step 3 → 4 (State → Region)
+  void _proceedToRegionSelection() {
+    final s = _state.selectedState;
+    if (s == null) {
+      AppSnack.info(context, 'कृपया अपना राज्य चुनें');
+      return;
+    }
+    setState(() => _state = _state.copyWith(step: _SetupStep.region, clearError: true));
+    _animateTo(3);
+  }
 
+  /// Step 4 → complete setup
   Future<void> _completeSetup(String region) async {
+    if (_state.loading) return;
     setState(() => _state = _state.copyWith(loading: true, selectedRegion: region, clearError: true));
 
     final selectedState = _state.selectedState;
@@ -433,47 +428,29 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       ref.invalidate(homeDataProvider);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                const SizedBox(width: 10),
-                Text(
-                  'स्वागत है ${_state.name}! प्रोफ़ाइल तैयार है 🎉',
-                  style: GoogleFonts.hind(color: Colors.white, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFF16A34A),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        AppSnack.success(context, 'स्वागत है ${_state.name}! प्रोफ़ाइल तैयार है 🎉');
         context.go('/home');
       }
     } catch (e) {
       debugPrint('Setup complete error: $e');
       if (!mounted) return;
       // Keep the entered values; let the user retry.
-      setState(() => _state = _state.copyWith(
-            loading: false,
-            error: apiErrorMessage(e, fallback: 'प्रोफ़ाइल सेव नहीं हो सकी। कृपया दोबारा कोशिश करें।'),
-          ));
+      setState(() => _state = _state.copyWith(loading: false));
+      AppSnack.error(context, apiErrorMessage(e, fallback: 'प्रोफ़ाइल सेव नहीं हो सकी। कृपया दोबारा कोशिश करें।'));
     }
   }
 
   void _goBack() {
+    if (_state.loading) return;
     if (_state.step == _SetupStep.region) {
-      setState(() => _state = _state.copyWith(step: _SetupStep.state));
-      _pageController.animateToPage(2, duration: const Duration(milliseconds: 250), curve: Curves.easeInOut);
+      setState(() => _state = _state.copyWith(step: _SetupStep.state, clearError: true));
+      _animateTo(2, ms: 250);
     } else if (_state.step == _SetupStep.state) {
-      setState(() => _state = _state.copyWith(step: _SetupStep.namePhoto));
-      _pageController.animateToPage(1, duration: const Duration(milliseconds: 250), curve: Curves.easeInOut);
+      setState(() => _state = _state.copyWith(step: _SetupStep.namePhoto, clearError: true));
+      _animateTo(1, ms: 250);
     } else if (_state.step == _SetupStep.namePhoto) {
-      setState(() => _state = _state.copyWith(step: _SetupStep.language));
-      _pageController.animateToPage(0, duration: const Duration(milliseconds: 250), curve: Curves.easeInOut);
+      setState(() => _state = _state.copyWith(step: _SetupStep.language, clearError: true));
+      _animateTo(0, ms: 250);
     } else if (SessionStore.instance.onboardingCompleted) {
       // Opened from the profile screen to edit details.
       if (context.canPop()) {
@@ -487,757 +464,705 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     }
   }
 
+  void _onNext() {
+    switch (_state.step) {
+      case _SetupStep.language:
+        _proceedToNamePhoto(_state.language);
+      case _SetupStep.namePhoto:
+        _proceedToStateSelection();
+      case _SetupStep.state:
+        _proceedToRegionSelection();
+      case _SetupStep.region:
+        final r = _state.selectedRegion;
+        if (r == null) {
+          AppSnack.info(context, 'कृपया अपना शहर / क्षेत्र चुनें');
+        } else {
+          _completeSetup(r);
+        }
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    const stepLabels = [
-      'भाषा चुनें (Language)',
-      'नाम व फोटो (Name & Photo)',
-      'राज्य चुनें (Select State)',
-      'क्षेत्र चुनें (Select Region)',
-    ];
+    final p = context.palette;
+    final step = _state.step;
+    final progressValue = (step.index + 1) / 4.0;
+    final title = _titles[step.index];
+    final isLast = step == _SetupStep.region;
+    final nextEnabled = switch (step) {
+      _SetupStep.state => _state.selectedState != null,
+      _SetupStep.region => _state.selectedRegion != null,
+      _ => true,
+    };
 
-    final progressValue = (_state.step.index + 1) / 4.0;
-
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: _goBack,
-        ),
-        title: Text(
-          'प्रोफाइल बनाएं (Profile Setup)',
-          style: GoogleFonts.hind(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w700),
-        ),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Progress Bar & Step Header
-            Container(
-              color: AppColors.surface,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'कदम ${_state.step.index + 1} / 4',
-                        style: GoogleFonts.hind(
-                          color: AppColors.primary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        stepLabels[_state.step.index],
-                        style: GoogleFonts.hind(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: progressValue,
-                      backgroundColor: AppColors.surfaceBorder,
-                      valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                      minHeight: 5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: AppColors.surfaceBorder),
-
-            // Step Pages
-            Expanded(
-              child: PageView(
-                controller: _pageController,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _buildStep1Language(),
-                  _buildStep2NamePhoto(),
-                  _buildStep3State(),
-                  _buildStep4Region(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Step 1 — Language Selection ───────────────────────────────────────────
-
-  Widget _buildStep1Language() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return PopScope(
+      canPop: step == _SetupStep.language,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goBack();
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: Column(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySurface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.language_rounded, color: AppColors.primary, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              // ── Header: back, step counter, title, progress ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.xs, AppSpacing.xxs, AppSpacing.page, AppSpacing.xs),
+                child: Row(
                   children: [
-                    Text(
-                      'अपनी भाषा चुनें 🌐',
-                      style: GoogleFonts.hind(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                    AppIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      semanticLabel: 'वापस जाएं',
+                      onPressed: _state.loading ? null : _goBack,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Expanded(
+                      child: Text(
+                        'प्रोफ़ाइल बनाएं',
+                        style: AppText.heading(size: 18, color: p.textPrimary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Text(
-                      'Select Your Preferred Language',
-                      style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(color: p.primarySurface, borderRadius: AppRadius.pillAll),
+                      child: Text(
+                        'कदम ${step.index + 1} / 4',
+                        style: AppText.body(size: 13.5, weight: FontWeight.w800, color: p.primary, height: 1.2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: progressValue),
+                  duration: AppMotion.slow,
+                  curve: AppMotion.standard,
+                  builder: (context, v, _) => ClipRRect(
+                    borderRadius: AppRadius.pillAll,
+                    child: LinearProgressIndicator(value: v, minHeight: 8),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.md, AppSpacing.page, AppSpacing.xs),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedSwitcher(
+                    duration: AppMotion.normal,
+                    child: Column(
+                      key: ValueKey(step),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title.$1, style: AppText.heading(size: 23, color: p.textPrimary)),
+                        Text(title.$2, style: AppText.body(size: 14, color: p.textMuted, height: 1.3)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Step pages ──
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _stepScroll(_buildStep1Language(p)),
+                    _stepScroll(_buildStep2NamePhoto(p)),
+                    _stepScroll(_buildStep3State(p)),
+                    _stepScroll(_buildStep4Region(p)),
+                  ],
+                ),
+              ),
+
+              // ── Sticky bottom bar ──
+              Container(
+                decoration: BoxDecoration(
+                  color: p.surface,
+                  boxShadow: AppShadows.bottomDock,
+                ),
+                padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.sm, AppSpacing.page, AppSpacing.sm),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (step == _SetupStep.namePhoto && _state.imageFile == null && _state.uploadedPhotoUrl == null)
+                      Align(
+                        alignment: Alignment.center,
+                        child: TextButton(
+                          onPressed: _state.loading ? null : _proceedToStateSelection,
+                          child: const Text('फोटो बाद में जोड़ें (Skip photo)'),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        if (step != _SetupStep.language) ...[
+                          Expanded(
+                            flex: 2,
+                            child: SecondaryButton(
+                              label: 'पीछे',
+                              icon: Icons.arrow_back_rounded,
+                              onPressed: _state.loading ? null : _goBack,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                        ],
+                        Expanded(
+                          flex: 3,
+                          child: GradientButton(
+                            label: isLast ? 'पूरा करें' : 'आगे बढ़ें',
+                            icon: isLast ? Icons.check_rounded : Icons.arrow_forward_rounded,
+                            isLoading: _state.loading,
+                            onPressed: nextEnabled ? _onNext : null,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'आपके स्टेटस और त्यौहार कार्ड्स इसी भाषा में प्राथमिकता से दिखाए जाएंगे।',
-            style: GoogleFonts.hind(fontSize: 14, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 18),
-
-          Expanded(
-            child: ListView.separated(
-              itemCount: kAppLanguages.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, i) {
-                final lang = kAppLanguages[i];
-                final isSelected = _state.language == lang.code;
-
-                return Material(
-                  color: isSelected ? AppColors.primarySurface : AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: () {
-                      setState(() => _state = _state.copyWith(language: lang.code));
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected ? AppColors.primary : AppColors.surfaceBorder,
-                          width: isSelected ? 2 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(lang.flag, style: const TextStyle(fontSize: 26)),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  lang.name,
-                                  style: GoogleFonts.hind(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                    color: isSelected ? AppColors.primary : AppColors.textPrimary,
-                                  ),
-                                ),
-                                Text(
-                                  '${lang.english} • ${lang.desc}',
-                                  style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (isSelected)
-                            const Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 24)
-                          else
-                            const Icon(Icons.radio_button_unchecked_rounded, color: AppColors.textMuted, size: 22),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: () => _proceedToNamePhoto(_state.language),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'आगे बढ़ें (Continue)',
-                    style: GoogleFonts.hind(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+
+  Widget _stepScroll(Widget child) {
+    return SingleChildScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.xs, AppSpacing.page, AppSpacing.lg),
+      child: child,
+    );
+  }
+
+  // ── Step 1 — Language ─────────────────────────────────────────────────────
+
+  Widget _buildStep1Language(AppPalette p) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+          child: Text(
+            'आपके स्टेटस और त्यौहार कार्ड्स इसी भाषा में प्राथमिकता से दिखाए जाएंगे।',
+            style: AppText.body(size: 14.5, color: p.textSecondary),
+          ),
+        ),
+        for (var i = 0; i < kAppLanguages.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: FadeSlideIn(
+              index: i,
+              dy: 12,
+              child: _LanguageCard(
+                language: kAppLanguages[i],
+                selected: _state.language == kAppLanguages[i].code,
+                onTap: () => setState(() => _state = _state.copyWith(language: kAppLanguages[i].code)),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
   // ── Step 2 — Name + Photo ─────────────────────────────────────────────────
 
-  Widget _buildStep2NamePhoto() {
+  Widget _buildStep2NamePhoto(AppPalette p) {
     final displayName = _nameController.text.trim();
-    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
+    final image = _state.imageFile != null
+        ? FileImage(_state.imageFile!) as ImageProvider
+        : photoImageProvider(_state.uploadedPhotoUrl);
+    final hasPhoto = image != null;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(22),
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: AppRadius.xlAll,
+        border: Border.all(color: p.border),
+        boxShadow: AppShadows.subtle,
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'अपनी जानकारी जोड़ें 👋',
-            style: GoogleFonts.hind(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
             'यह नाम और फ़ोटो आपके स्टेटस, फ्रेम और पोस्टर्स पर ब्रांडिंग के लिए दिखाई देगा।',
-            style: GoogleFonts.hind(fontSize: 14, color: AppColors.textMuted),
+            style: AppText.body(size: 14.5, color: p.textSecondary),
           ),
-          const SizedBox(height: 24),
-
-          // Photo Selector
+          const SizedBox(height: AppSpacing.lg),
           Center(
-            child: Column(
-              children: [
-                GestureDetector(
-                  onTap: _showImagePickerSheet,
+            child: Semantics(
+              button: true,
+              label: hasPhoto ? 'फोटो बदलें' : 'फोटो जोड़ें',
+              child: GestureDetector(
+                onTap: _showImagePickerSheet,
+                child: SizedBox(
+                  width: 132,
+                  height: 132,
                   child: Stack(
                     children: [
                       Container(
-                        width: 110,
-                        height: 110,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.primarySurface,
-                          border: Border.all(color: AppColors.primary, width: 2.5),
-                          image: _state.imageFile != null
-                              ? DecorationImage(
-                                  image: FileImage(_state.imageFile!),
-                                  fit: BoxFit.cover,
-                                )
-                              : null,
+                        width: 132,
+                        height: 132,
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(shape: BoxShape.circle, gradient: AppColors.brandGradient),
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: p.surface),
+                          child: ClipOval(
+                            child: Container(
+                              color: p.primarySurface,
+                              alignment: Alignment.center,
+                              child: hasPhoto
+                                  ? Image(image: image, width: 118, height: 118, fit: BoxFit.cover)
+                                  : (displayName.isNotEmpty
+                                      ? Text(
+                                          displayName.characters.first.toUpperCase(),
+                                          style: AppText.heading(size: 48, color: p.primary, height: 1),
+                                        )
+                                      : Icon(Icons.person_rounded, size: 64, color: p.primary)),
+                            ),
+                          ),
                         ),
-                        child: _state.imageFile == null
-                            ? Center(
-                                child: Text(
-                                  initial,
-                                  style: GoogleFonts.hind(
-                                    fontSize: 42,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              )
-                            : null,
                       ),
                       Positioned(
-                        bottom: 2,
                         right: 2,
+                        bottom: 2,
                         child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
                             shape: BoxShape.circle,
+                            gradient: AppColors.brandGradient,
+                            border: Border.all(color: p.surface, width: 3),
+                            boxShadow: AppShadows.primaryGlow,
                           ),
-                          child: const Icon(
-                            Icons.camera_alt_rounded,
-                            size: 18,
-                            color: Colors.white,
-                          ),
+                          child: const Icon(Icons.camera_alt_rounded, size: 20, color: AppColors.white),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: _showImagePickerSheet,
-                  icon: const Icon(Icons.add_a_photo_outlined, size: 18, color: AppColors.primary),
-                  label: Text(
-                    _state.imageFile == null ? 'फोटो जोड़ें (Add Photo)' : 'फोटो बदलें (Change Photo)',
-                    style: GoogleFonts.hind(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 20),
-
-          // Name Field
-          Text(
-            'आपका पूरा नाम (Full Name) *',
-            style: GoogleFonts.hind(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
+          const SizedBox(height: AppSpacing.xs),
+          Center(
+            child: TextButton.icon(
+              onPressed: _showImagePickerSheet,
+              icon: const Icon(Icons.add_a_photo_outlined, size: 20),
+              label: Text(hasPhoto ? 'फोटो बदलें' : 'फोटो जोड़ें'),
             ),
           ),
-          const SizedBox(height: 8),
-          TextField(
+          const SizedBox(height: AppSpacing.sm),
+          AppTextField(
             controller: _nameController,
+            label: 'आपका पूरा नाम (Full Name)',
+            hint: 'उदा. राजेश शर्मा',
+            prefixIcon: Icons.person_outline_rounded,
+            required: true,
             textCapitalization: TextCapitalization.words,
-            onChanged: (val) => setState(() {}),
-            style: GoogleFonts.hind(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-            decoration: InputDecoration(
-              hintText: 'उदा. राजेश शर्मा',
-              prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.primary),
-              fillColor: AppColors.surface,
-              filled: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.surfaceBorder),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.surfaceBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.primary, width: 2),
-              ),
-            ),
+            textInputAction: TextInputAction.done,
+            maxLength: 50,
+            onChanged: (_) => setState(() {
+              if (_state.error != null) _state = _state.copyWith(clearError: true);
+            }),
+            onSubmitted: (_) => _proceedToStateSelection(),
           ),
-
-          if (_state.error != null) ...[
-            const SizedBox(height: 14),
-            _ErrorBox(_state.error!),
-          ],
-
-          const SizedBox(height: 20),
-
-          // Live Card Watermark Preview
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.surfaceBorder),
+          if (_state.error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: InfoCard(tone: InfoTone.danger, message: _state.error!),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.visibility_outlined, size: 16, color: AppColors.textMuted),
-                    const SizedBox(width: 6),
-                    Text(
-                      'कार्ड प्रिव्यू (Card Preview)',
-                      style: GoogleFonts.hind(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.primary,
-                          image: _state.imageFile != null
-                              ? DecorationImage(image: FileImage(_state.imageFile!), fit: BoxFit.cover)
-                              : null,
-                        ),
-                        child: _state.imageFile == null
-                            ? Center(
-                                child: Text(
-                                  initial,
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                                ),
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              displayName.isNotEmpty ? displayName : 'आपका नाम',
-                              style: GoogleFonts.hind(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              'स्टेटस गो • Status Go',
-                              style: GoogleFonts.hind(color: Colors.white70, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.verified_rounded, color: Colors.amber, size: 18),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 28),
-
-          // Submit Button
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: _state.loading ? null : _proceedToStateSelection,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: _state.loading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'आगे बढ़ें (Continue)',
-                          style: GoogleFonts.hind(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
-                      ],
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Step 3 — State Selection ──────────────────────────────────────────────
-
-  Widget _buildStep3State() {
-    final currentLangConfig = kAppLanguages.firstWhere(
-      (l) => l.code == _state.language,
-      orElse: () => kAppLanguages[0],
-    );
-
-    final recommendedStateNames = currentLangConfig.recommendedStates;
-    final recommendedStates = IndianStates.all.where((s) => recommendedStateNames.contains(s.name)).toList();
-
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'अपना राज्य चुनें (Select State) 🗺️',
-            style: GoogleFonts.hind(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'आपके राज्य के प्रमुख त्यौहार और लोकल स्टेटस प्राथमिकता से दिखाए जाएंगे।',
-            style: GoogleFonts.hind(fontSize: 14, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 16),
-
-          // Search Field
-          TextField(
-            controller: _stateSearchController,
-            onChanged: _filterStates,
-            style: GoogleFonts.hind(fontSize: 16),
-            decoration: InputDecoration(
-              hintText: 'राज्य खोजें (Search state)...',
-              prefixIcon: const Icon(Icons.search, color: AppColors.primary),
-              fillColor: AppColors.surface,
-              filled: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.surfaceBorder),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.surfaceBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.primary, width: 2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Recommended banner (if not searching)
-          if (_stateSearchController.text.isEmpty && recommendedStates.isNotEmpty) ...[
-            Text(
-              '⭐ आपकी चुनी हुई भाषा (${currentLangConfig.name}) के अनुसार:',
-              style: GoogleFonts.hind(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 44,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: recommendedStates.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (ctx, i) {
-                  final s = recommendedStates[i];
-                  return InkWell(
-                    onTap: () => _proceedToRegionSelection(s),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primarySurface,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.primary),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(s.emoji, style: const TextStyle(fontSize: 16)),
-                          const SizedBox(width: 6),
-                          Text(
-                            s.name,
-                            style: GoogleFonts.hind(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-
-          Expanded(
-            child: ListView.separated(
-              itemCount: _filteredStates.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
-                final s = _filteredStates[i];
-                return Material(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  child: InkWell(
-                    onTap: () => _proceedToRegionSelection(s),
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.surfaceBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(s.emoji, style: const TextStyle(fontSize: 24)),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  s.name,
-                                  style: GoogleFonts.hind(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                                Text(
-                                  'मुख्य भाषा: ${s.defaultLanguage} • ${s.regions.length} क्षेत्र',
-                                  style: GoogleFonts.hind(
-                                    fontSize: 13,
-                                    color: AppColors.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.textMuted),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Step 4 — Region Selection ─────────────────────────────────────────────
-
-  Widget _buildStep4Region() {
-    final regions = _state.selectedState?.regions ?? [];
-
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+          const SizedBox(height: AppSpacing.lg),
           Row(
             children: [
-              Text(_state.selectedState?.emoji ?? '📍', style: const TextStyle(fontSize: 26)),
-              const SizedBox(width: 10),
+              Icon(Icons.visibility_outlined, size: 18, color: p.textMuted),
+              const SizedBox(width: 6),
+              Text(
+                'स्टेटस पर ऐसा दिखेगा',
+                style: AppText.body(size: 13.5, weight: FontWeight.w700, color: p.textMuted, height: 1.2),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          _StatusPreviewChip(name: displayName, image: image),
+        ],
+      ),
+    );
+  }
+
+  // ── Step 3 — State ────────────────────────────────────────────────────────
+
+  Future<void> _openStatePicker() async {
+    final picked = await AppBottomSheet.show<IndianState>(
+      context,
+      title: 'राज्य चुनें',
+      subtitle: 'Search & select your state',
+      scrollable: false,
+      builder: (ctx) => _StatePickerBody(
+        recommendedNames: _currentLanguage.recommendedStates,
+        selected: _state.selectedState,
+      ),
+    );
+    if (picked != null && mounted) _selectState(picked);
+  }
+
+  AppLanguage get _currentLanguage =>
+      kAppLanguages.firstWhere((l) => l.code == _state.language, orElse: () => kAppLanguages.first);
+
+  Widget _buildStep3State(AppPalette p) {
+    final lang = _currentLanguage;
+    final recommended = IndianStates.all.where((s) => lang.recommendedStates.contains(s.name)).toList();
+    final selected = _state.selectedState;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'आपके राज्य के प्रमुख त्यौहार और लोकल स्टेटस प्राथमिकता से दिखाए जाएंगे।',
+          style: AppText.body(size: 14.5, color: p.textSecondary),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        PressableScale(
+          onTap: _openStatePicker,
+          semanticLabel: 'राज्य चुनें',
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 72),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: selected != null ? p.primarySurface : p.surface,
+              borderRadius: AppRadius.lgAll,
+              border: Border.all(color: selected != null ? p.primary : p.border, width: selected != null ? 2 : 1.2),
+            ),
+            child: Row(
+              children: [
+                Text(selected?.emoji ?? '🗺️', style: const TextStyle(fontSize: 30)),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        selected?.name ?? 'राज्य चुनने के लिए दबाएं',
+                        style: AppText.heading(
+                          size: 17,
+                          weight: FontWeight.w700,
+                          color: selected != null ? p.textPrimary : p.textMuted,
+                          height: 1.25,
+                        ),
+                      ),
+                      if (selected != null)
+                        Text(
+                          '${selected.regions.length} क्षेत्र उपलब्ध',
+                          style: AppText.body(size: 13.5, color: p.textMuted, height: 1.3),
+                        ),
+                    ],
+                  ),
+                ),
+                Icon(selected != null ? Icons.edit_rounded : Icons.search_rounded, color: p.primary),
+              ],
+            ),
+          ),
+        ),
+        if (recommended.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            '⭐ ${lang.name} के अनुसार सुझाव',
+            style: AppText.body(size: 14, weight: FontWeight.w800, color: p.primary, height: 1.2),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (final s in recommended)
+                CategoryChip(
+                  label: s.name,
+                  emoji: s.emoji,
+                  selected: selected?.name == s.name,
+                  onTap: () => _selectState(s),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── Step 4 — Region ───────────────────────────────────────────────────────
+
+  Widget _buildStep4Region(AppPalette p) {
+    final s = _state.selectedState;
+    final regions = s?.regions ?? const <String>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(color: p.primarySurface, borderRadius: AppRadius.mdAll),
+          child: Row(
+            children: [
+              Text(s?.emoji ?? '📍', style: const TextStyle(fontSize: 26)),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  '${s?.name ?? ''} में अपने शहर या क्षेत्र का चयन करें',
+                  style: AppText.body(size: 15, weight: FontWeight.w600, color: p.textPrimary, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            for (final r in regions)
+              CategoryChip(
+                label: r,
+                icon: _state.selectedRegion == r ? Icons.check_rounded : Icons.location_on_outlined,
+                selected: _state.selectedRegion == r,
+                onTap: _state.loading ? null : () => setState(() => _state = _state.copyWith(selectedRegion: r)),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Widgets ──────────────────────────────────────────────────────────────────
+
+class _LanguageCard extends StatelessWidget {
+  final AppLanguage language;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _LanguageCard({required this.language, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Semantics(
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      child: PressableScale(
+        onTap: onTap,
+        haptic: true,
+        semanticLabel: '${language.name} (${language.english})',
+        scale: 0.98,
+        child: AnimatedContainer(
+          duration: AppMotion.fast,
+          constraints: const BoxConstraints(minHeight: 76),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: selected ? p.primarySurface : p.surface,
+            borderRadius: AppRadius.lgAll,
+            border: Border.all(color: selected ? p.primary : p.border, width: selected ? 2 : 1.2),
+            boxShadow: selected ? AppShadows.subtle : null,
+          ),
+          child: Row(
+            children: [
+              Text(language.flag, style: const TextStyle(fontSize: 30)),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'अपना क्षेत्र / संभाग चुनें 📍',
-                      style: GoogleFonts.hind(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
+                      language.name,
+                      style: AppText.heading(size: 22, color: selected ? p.primary : p.textPrimary, height: 1.25),
                     ),
                     Text(
-                      '${_state.selectedState?.name ?? ''} में अपने शहर या क्षेत्र का चयन करें',
-                      style: GoogleFonts.hind(fontSize: 14, color: AppColors.textMuted),
+                      '${language.english} • ${language.desc}',
+                      style: AppText.body(size: 13.5, color: p.textMuted, height: 1.3),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: AppSpacing.xs),
+              AnimatedSwitcher(
+                duration: AppMotion.fast,
+                transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+                child: selected
+                    ? Icon(Icons.check_circle_rounded, key: const ValueKey('on'), color: p.primary, size: 28)
+                    : Icon(Icons.radio_button_unchecked_rounded, key: const ValueKey('off'), color: p.textHint, size: 26),
+              ),
             ],
           ),
-          const SizedBox(height: 16),
+        ),
+      ),
+    );
+  }
+}
 
-          if (_state.error != null) ...[
-            _ErrorBox(_state.error!),
-            const SizedBox(height: 12),
-          ],
+/// "How it will look on a status" strip.
+class _StatusPreviewChip extends StatelessWidget {
+  final String name;
+  final ImageProvider? image;
+  const _StatusPreviewChip({required this.name, required this.image});
 
-          Expanded(
-            child: _state.loading
-                ? const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(color: AppColors.primary),
-                        SizedBox(height: 16),
-                        Text('प्रोफ़ाइल तैयार की जा रही है...'),
-                      ],
-                    ),
+  @override
+  Widget build(BuildContext context) {
+    final shown = name.isEmpty ? 'आपका नाम' : name;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      decoration: BoxDecoration(
+        gradient: AppColors.inkGradient,
+        borderRadius: AppRadius.mdAll,
+        boxShadow: AppShadows.card,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primary,
+              border: Border.all(color: AppColors.gold, width: 2),
+              image: image == null ? null : DecorationImage(image: image!, fit: BoxFit.cover),
+            ),
+            alignment: Alignment.center,
+            child: image == null
+                ? Text(
+                    shown.characters.first.toUpperCase(),
+                    style: AppText.heading(size: 18, color: AppColors.white, height: 1),
                   )
-                : ListView.separated(
-                    itemCount: regions.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                : null,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  shown,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.heading(
+                    size: 16,
+                    color: name.isEmpty ? AppColors.onDarkMuted : AppColors.onDark,
+                    height: 1.25,
+                  ),
+                ),
+                Text(
+                  'स्टेटस गो • Status Go',
+                  style: AppText.body(size: 12.5, color: AppColors.onDarkMuted, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.verified_rounded, color: AppColors.gold, size: 22),
+        ],
+      ),
+    );
+  }
+}
+
+/// Searchable list shown in the state picker bottom sheet.
+class _StatePickerBody extends StatefulWidget {
+  final List<String> recommendedNames;
+  final IndianState? selected;
+  const _StatePickerBody({required this.recommendedNames, required this.selected});
+
+  @override
+  State<_StatePickerBody> createState() => _StatePickerBodyState();
+}
+
+class _StatePickerBodyState extends State<_StatePickerBody> {
+  final _search = TextEditingController();
+  String _q = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final q = _q.trim().toLowerCase();
+    var list = q.isEmpty ? IndianStates.all.toList() : IndianStates.all.where((s) => s.name.toLowerCase().contains(q)).toList();
+    if (q.isEmpty) {
+      // Recommended states first.
+      list.sort((a, b) {
+        final ra = widget.recommendedNames.contains(a.name) ? 0 : 1;
+        final rb = widget.recommendedNames.contains(b.name) ? 0 : 1;
+        return ra.compareTo(rb);
+      });
+    }
+    final height = MediaQuery.of(context).size.height * 0.62;
+    return SizedBox(
+      height: height,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.xs, AppSpacing.page, AppSpacing.sm),
+            child: AppSearchField(
+              controller: _search,
+              hint: 'राज्य खोजें (Search state)...',
+              onChanged: (v) => setState(() => _q = v),
+              onClear: _q.isEmpty
+                  ? null
+                  : () {
+                      _search.clear();
+                      setState(() => _q = '');
+                    },
+            ),
+          ),
+          Expanded(
+            child: list.isEmpty
+                ? const EmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: 'कोई राज्य नहीं मिला',
+                    message: 'दूसरा नाम लिखकर खोजें।',
+                    compact: true,
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.xs, 0, AppSpacing.xs, AppSpacing.xl),
+                    itemCount: list.length,
                     itemBuilder: (context, i) {
-                      final region = regions[i];
-                      return Material(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(10),
-                        child: InkWell(
-                          onTap: () => _completeSetup(region),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppColors.surfaceBorder),
-                            ),
+                      final s = list[i];
+                      final isSel = widget.selected?.name == s.name;
+                      final isRec = q.isEmpty && widget.recommendedNames.contains(s.name);
+                      return InkWell(
+                        onTap: () => Navigator.of(context).pop(s),
+                        borderRadius: AppRadius.mdAll,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 56),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
                             child: Row(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primarySurface,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.location_on_rounded,
-                                    color: AppColors.primary,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
+                                Text(s.emoji, style: const TextStyle(fontSize: 24)),
+                                const SizedBox(width: AppSpacing.sm),
                                 Expanded(
                                   child: Text(
-                                    region,
-                                    style: GoogleFonts.hind(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.textPrimary,
+                                    s.name,
+                                    style: AppText.body(
+                                      size: 16.5,
+                                      weight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                      color: isSel ? p.primary : p.textPrimary,
+                                      height: 1.3,
                                     ),
                                   ),
                                 ),
-                                const Icon(Icons.chevron_right_rounded, size: 24, color: AppColors.primary),
+                                if (isRec && !isSel)
+                                  const Padding(
+                                    padding: EdgeInsets.only(right: 6),
+                                    child: Icon(Icons.star_rounded, color: AppColors.gold, size: 20),
+                                  ),
+                                if (isSel) Icon(Icons.check_circle_rounded, color: p.primary),
                               ],
                             ),
                           ),
@@ -1245,37 +1170,6 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                       );
                     },
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Helper Widgets ───────────────────────────────────────────────────────────
-
-class _ErrorBox extends StatelessWidget {
-  final String message;
-  const _ErrorBox(this.message);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEE2E2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.danger),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: GoogleFonts.hind(color: AppColors.danger, fontSize: 14, fontWeight: FontWeight.w600),
-            ),
           ),
         ],
       ),

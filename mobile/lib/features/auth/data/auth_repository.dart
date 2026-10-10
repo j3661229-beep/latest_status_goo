@@ -186,6 +186,49 @@ class AuthRepository {
     await _session.clearSession();
   }
 
+  // ─── Edit profile / language / delete account ──────────────────────────────
+
+  /// Uploads an image (business logo) without touching the locally cached
+  /// profile photo. Returns the remote URL. Throws on failure.
+  Future<String> uploadImage(String filePath, {String filename = 'image.jpg'}) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath, filename: filename),
+    });
+    final resp = await _api.post(
+      '/upload/profile-photo',
+      data: formData,
+      options: Options(sendTimeout: const Duration(seconds: 60), receiveTimeout: const Duration(seconds: 60)),
+    );
+    final url = resp.data is Map ? resp.data['url'] as String? : null;
+    if (url == null || !SessionStore.isRemoteUrl(url)) {
+      throw const ApiException('फ़ोटो अपलोड नहीं हो सकी।');
+    }
+    return url;
+  }
+
+  /// PUT /user/me with any subset of profile fields. Empty strings clear a
+  /// text field on the server. Persists the returned user.
+  Future<UserModel> updateProfileFields(Map<String, dynamic> fields) async {
+    final resp = await _api.put('/user/me', data: fields);
+    return _persistServerUser(_extractUser(resp.data));
+  }
+
+  /// Persists the preferred language (HINDI / MARATHI / ENGLISH ...) on the server.
+  Future<UserModel> updateLanguage(String language) => updateProfileFields({'language': language});
+
+  /// DELETE /user/me — in-app account deletion (Play Store requirement).
+  /// On success the session and personal local data are wiped, which makes the
+  /// router redirect to /login.
+  Future<void> deleteAccount() async {
+    await _api.delete('/user/me');
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
+    await NotificationService.instance.onSignOut();
+    await _session.clearPersonalData();
+    await _session.clearSession();
+  }
+
   // ─── Getters ──────────────────────────────────────────────────────────────
 
   UserModel? getCurrentUser() => _session.readUser();

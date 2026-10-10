@@ -9,12 +9,13 @@ import 'dart:ui' as ui;
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../constants/app_constants.dart';
+import '../theme/app_theme.dart';
+import '../widgets/ui/feedback.dart';
 
 enum GallerySaveResult { saved, permissionDenied, failed }
 
@@ -76,38 +77,36 @@ class StatusExportService {
   static void showSaveResult(BuildContext context, GallerySaveResult result) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
-    final success = result == GallerySaveResult.saved;
-    final denied = result == GallerySaveResult.permissionDenied;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(success ? Icons.check_circle_rounded : Icons.error_outline_rounded, color: Colors.white, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success
-                    ? 'फोटो गैलरी में सेव हो गई! 📥'
-                    : denied
-                        ? 'गैलरी में सेव करने की अनुमति नहीं मिली'
-                        : 'सेव नहीं हो सकी। कृपया दोबारा कोशिश करें।',
-                style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 15),
-              ),
+    switch (result) {
+      case GallerySaveResult.saved:
+        AppSnack.success(context, 'फोटो गैलरी में सेव हो गई! 📥');
+      case GallerySaveResult.failed:
+        AppSnack.error(context, 'सेव नहीं हो सकी। कृपया दोबारा कोशिश करें।');
+      case GallerySaveResult.permissionDenied:
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'गैलरी में सेव करने की अनुमति नहीं मिली',
+                    style: AppText.body(size: 15, weight: FontWeight.w700, color: AppColors.white),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        backgroundColor: success ? const Color(0xFF16A34A) : Colors.redAccent,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        action: denied
-            ? SnackBarAction(
-                label: 'सेटिंग्स खोलें',
-                textColor: Colors.white,
-                onPressed: openAppSettings,
-              )
-            : null,
-      ),
-    );
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'सेटिंग्स खोलें',
+              textColor: AppColors.primaryLight,
+              onPressed: openAppSettings,
+            ),
+          ),
+        );
+    }
   }
 
   /// Shares PNG bytes via the system share sheet. Returns the backend

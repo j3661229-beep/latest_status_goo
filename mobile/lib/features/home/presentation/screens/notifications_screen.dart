@@ -1,12 +1,12 @@
 // lib/features/home/presentation/screens/notifications_screen.dart
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../../core/data/notification_repository.dart';
 import '../../../../core/models/notification_model.dart';
+import '../../../../core/widgets/app_ui.dart';
 
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
@@ -15,206 +15,67 @@ class NotificationsScreen extends ConsumerStatefulWidget {
   ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  late final NotificationsNotifier _notifier;
+
+  bool _unreadOnly = false;
+
+  /// Swiped-away items whose server/local delete is deferred until the undo
+  /// snackbar closes. Hidden from the list in the meantime.
+  final Set<String> _pendingDelete = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _notifier = ref.read(notificationsListProvider.notifier);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    // Commit anything still waiting for its undo window.
+    for (final id in _pendingDelete) {
+      _notifier.delete(id);
+    }
+    _pendingDelete.clear();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final notificationsAsync = ref.watch(notificationsListProvider);
+  Future<void> _refresh() => _notifier.load();
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        title: Text(
-          'सूचनाएं',
-          style: GoogleFonts.hind(
-            fontWeight: FontWeight.w700,
-            fontSize: 20,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: () {
-              ref.read(notificationsListProvider.notifier).markAllAsRead();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('सभी सूचनाएं पढ़ी हुई मार्क की गईं', style: GoogleFonts.hind()),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            },
-            icon: const Icon(Icons.done_all_rounded, size: 18, color: AppColors.primary),
-            label: Text(
-              'सब पढ़ें',
-              style: GoogleFonts.hind(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Column(
-            children: [
-              TabBar(
-                controller: _tabController,
-                labelColor: AppColors.primary,
-                unselectedLabelColor: AppColors.textSecondary,
-                indicatorColor: AppColors.primary,
-                indicatorWeight: 2.5,
-                labelStyle: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 15),
-                unselectedLabelStyle: GoogleFonts.hind(fontWeight: FontWeight.w500, fontSize: 15),
-                tabs: const [
-                  Tab(text: 'सभी (All)'),
-                  Tab(text: 'अनपढ़े (Unread)'),
-                ],
-              ),
-              Container(color: AppColors.surfaceBorder, height: 1),
-            ],
-          ),
-        ),
-      ),
-      body: notificationsAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline_rounded, size: 44, color: AppColors.danger),
-              const SizedBox(height: 12),
-              Text(
-                'सूचनाएं लोड नहीं हो सकीं',
-                style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: () => ref.read(notificationsListProvider.notifier).load(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.sm)),
-                ),
-                child: Text('पुनः प्रयास करें', style: GoogleFonts.hind(fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-        ),
-        data: (list) {
-          final unreadList = list.where((n) => !n.isRead).toList();
-
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              _buildNotificationList(list),
-              _buildNotificationList(unreadList, isUnreadTab: true),
-            ],
-          );
-        },
-      ),
-    );
+  void _markAllRead() {
+    _notifier.markAllAsRead();
+    AppSnack.success(context, 'सभी सूचनाएं पढ़ी हुई मार्क की गईं');
   }
 
-  Widget _buildNotificationList(List<NotificationModel> items, {bool isUnreadTab = false}) {
-    if (items.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: () => ref.read(notificationsListProvider.notifier).load(),
-        color: AppColors.primary,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Container(
-            height: 450,
-            alignment: Alignment.center,
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    color: AppColors.primarySurface,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.notifications_none_rounded,
-                    size: 36,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  isUnreadTab ? 'कोई नई अनपढ़ी सूचना नहीं है' : 'अभी कोई सूचना नहीं है',
-                  style: GoogleFonts.hind(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'रोज़ाना नए स्टेटस और त्योहारों के विशेष अपडेट्स आपको यहां मिलते रहेंगे।',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.hind(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-              ],
+  void _onDismissed(NotificationModel item) {
+    setState(() => _pendingDelete.add(item.id));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger
+        .showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 4),
+            content: const Text('सूचना हटाई गई'),
+            action: SnackBarAction(
+              label: 'पूर्ववत',
+              onPressed: () {
+                if (mounted) setState(() => _pendingDelete.remove(item.id));
+              },
             ),
           ),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () => ref.read(notificationsListProvider.notifier).load(),
-      color: AppColors.primary,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) {
-          final item = items[index];
-          return _NotificationCard(
-            item: item,
-            onTap: () => _handleCardTap(item),
-            onDismissed: () {
-              ref.read(notificationsListProvider.notifier).delete(item.id);
-            },
-          );
-        },
-      ),
-    );
+        )
+        .closed
+        .then((reason) {
+      if (reason == SnackBarClosedReason.action) return;
+      if (_pendingDelete.remove(item.id)) {
+        _notifier.delete(item.id);
+      }
+    });
   }
 
   void _handleCardTap(NotificationModel item) {
     if (!item.isRead) {
-      ref.read(notificationsListProvider.notifier).markAsRead(item.id);
+      _notifier.markAsRead(item.id);
     }
 
     final data = item.data;
@@ -238,6 +99,156 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
       context.push('/template/${data['templateId']}');
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final notificationsAsync = ref.watch(notificationsListProvider);
+    final p = context.palette;
+    final all = (notificationsAsync.valueOrNull ?? const <NotificationModel>[])
+        .where((n) => !_pendingDelete.contains(n.id))
+        .toList();
+    final unreadCount = all.where((n) => !n.isRead).length;
+
+    return AppScaffold(
+      title: 'सूचनाएं',
+      actions: [
+        AppIconButton(
+          icon: Icons.done_all_rounded,
+          semanticLabel: 'सभी पढ़ी हुई मार्क करें',
+          onPressed: unreadCount == 0 ? null : _markAllRead,
+        ),
+        const SizedBox(width: AppSpacing.xxs),
+      ],
+      body: notificationsAsync.when(
+        loading: () => ListView(
+          padding: const EdgeInsets.only(top: AppSpacing.sm),
+          children: const [ShimmerList(itemCount: 6, itemHeight: 96)],
+        ),
+        error: (e, _) => ErrorState(
+          title: 'सूचनाएं लोड नहीं हो सकीं',
+          onRetry: _notifier.load,
+        ),
+        data: (_) {
+          final items = _unreadOnly ? all.where((n) => !n.isRead).toList() : all;
+          return RefreshIndicator(
+            color: p.primary,
+            onRefresh: _refresh,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                    child: FilterPillRow(
+                      labels: ['सभी', unreadCount > 0 ? 'अनपढ़े ($unreadCount)' : 'अनपढ़े'],
+                      selectedIndex: _unreadOnly ? 1 : 0,
+                      onSelected: (i) => setState(() => _unreadOnly = i == 1),
+                    ),
+                  ),
+                ),
+                if (items.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: EmptyState(
+                      icon: Icons.notifications_none_rounded,
+                      title: _unreadOnly ? 'कोई अनपढ़ी सूचना नहीं है' : 'अभी कोई सूचना नहीं है',
+                      message: 'रोज़ाना नए स्टेटस और त्योहारों के विशेष अपडेट्स आपको यहां मिलते रहेंगे।',
+                      compact: true,
+                    ),
+                  )
+                else
+                  ..._buildGroups(items),
+                const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<Widget> _buildGroups(List<NotificationModel> items) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    final todayList = <NotificationModel>[];
+    final yesterdayList = <NotificationModel>[];
+    final earlier = <NotificationModel>[];
+    for (final n in items) {
+      final local = n.sentAt.toLocal();
+      final d = DateTime(local.year, local.month, local.day);
+      if (!d.isBefore(today)) {
+        todayList.add(n);
+      } else if (!d.isBefore(yesterday)) {
+        yesterdayList.add(n);
+      } else {
+        earlier.add(n);
+      }
+    }
+
+    final slivers = <Widget>[];
+    var counter = 0;
+    void addGroup(String title, List<NotificationModel> list) {
+      if (list.isEmpty) return;
+      slivers.add(SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.md, AppSpacing.page, AppSpacing.xs),
+          child: Text(title, style: AppText.heading(size: 17, color: context.palette.textPrimary)),
+        ),
+      ));
+      final start = counter;
+      counter += list.length;
+      slivers.add(SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, i) {
+            final item = list[i];
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.page, 0, AppSpacing.page, AppSpacing.xs),
+              child: FadeSlideIn(
+                index: start + i,
+                child: _NotificationCard(
+                  key: ValueKey(item.id),
+                  item: item,
+                  onTap: () => _handleCardTap(item),
+                  onDismissed: () => _onDismissed(item),
+                ),
+              ),
+            );
+          },
+          childCount: list.length,
+        ),
+      ));
+    }
+
+    addGroup('आज', todayList);
+    addGroup('कल', yesterdayList);
+    addGroup('पहले', earlier);
+    return slivers;
+  }
+}
+
+class _TypeStyle {
+  final Color color;
+  final IconData icon;
+  const _TypeStyle(this.color, this.icon);
+}
+
+_TypeStyle _styleFor(NotificationModel n, bool dark) {
+  switch (n.type.toUpperCase()) {
+    case 'FESTIVAL_ALERT':
+      return _TypeStyle(dark ? AppColors.accent : AppColors.accentDark, Icons.celebration_rounded);
+    case 'PREMIUM_OFFER':
+      return _TypeStyle(dark ? AppColors.gold : AppColors.goldDark, Icons.workspace_premium_rounded);
+    case 'DAILY_STATUS':
+      return _TypeStyle(dark ? AppColors.primaryLight : AppColors.primary, Icons.wb_sunny_rounded);
+    case 'TEMPLATE_APPROVED':
+      return const _TypeStyle(AppColors.success, Icons.check_circle_rounded);
+    case 'TEMPLATE_REJECTED':
+      return const _TypeStyle(AppColors.danger, Icons.error_outline_rounded);
+    default:
+      return _TypeStyle(dark ? AppColors.primaryLight : AppColors.info, Icons.notifications_rounded);
+  }
 }
 
 class _NotificationCard extends StatelessWidget {
@@ -246,6 +257,7 @@ class _NotificationCard extends StatelessWidget {
   final VoidCallback onDismissed;
 
   const _NotificationCard({
+    super.key,
     required this.item,
     required this.onTap,
     required this.onDismissed,
@@ -253,139 +265,131 @@ class _NotificationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
+    final style = _styleFor(item, p.isDark);
+    final unread = !item.isRead;
+    final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
+
     return Dismissible(
-      key: ValueKey(item.id),
+      key: ValueKey('dismiss_${item.id}'),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        decoration: BoxDecoration(
-          color: AppColors.danger,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 24),
+        padding: const EdgeInsets.only(right: AppSpacing.lg),
+        decoration: BoxDecoration(color: AppColors.danger, borderRadius: AppRadius.lgAll),
+        child: const Icon(Icons.delete_outline_rounded, color: AppColors.white, size: 28),
       ),
       onDismissed: (_) => onDismissed(),
-      child: Material(
-        color: item.isRead ? AppColors.surface : AppColors.primarySurface.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        elevation: 0,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: item.isRead ? AppColors.surfaceBorder : const Color(0xFFBFDBFE),
-                width: item.isRead ? 1 : 1.2,
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Category Icon
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: item.iconColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                  ),
-                  child: Icon(item.iconData, color: item.iconColor, size: 22),
+      child: Semantics(
+        button: true,
+        label: '${unread ? 'नई सूचना: ' : ''}${item.title}. ${item.body}',
+        excludeSemantics: true,
+        child: Material(
+          color: unread ? p.primarySurface : p.surface,
+          borderRadius: AppRadius.lgAll,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: AppRadius.lgAll,
+            child: Container(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                borderRadius: AppRadius.lgAll,
+                border: Border.all(
+                  color: unread ? p.primary.withValues(alpha: 0.35) : p.border,
                 ),
-                const SizedBox(width: 12),
-
-                // Content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              item.title,
-                              style: GoogleFonts.hind(
-                                fontSize: 15,
-                                fontWeight: item.isRead ? FontWeight.w600 : FontWeight.w700,
-                                color: AppColors.textPrimary,
-                                height: 1.25,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: style.color.withValues(alpha: 0.14),
+                      borderRadius: AppRadius.mdAll,
+                    ),
+                    child: Icon(style.icon, color: style.color, size: 26),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                item.title,
+                                style: AppText.body(
+                                  size: 16,
+                                  weight: unread ? FontWeight.w800 : FontWeight.w600,
+                                  color: p.textPrimary,
+                                  height: 1.3,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          if (!item.isRead)
-                            Container(
-                              width: 8,
-                              height: 8,
-                              margin: const EdgeInsets.only(top: 4),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
+                            if (unread)
+                              Container(
+                                width: 10,
+                                height: 10,
+                                margin: const EdgeInsets.only(top: 6, left: 8),
+                                decoration: BoxDecoration(color: p.primary, shape: BoxShape.circle),
                               ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.body,
-                        style: GoogleFonts.hind(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                          height: 1.35,
+                          ],
                         ),
-                      ),
-
-                      // Optional image thumbnail
-                      if (item.imageUrl != null && item.imageUrl!.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(AppRadius.sm),
-                          child: Image.network(
-                            item.imageUrl!,
-                            height: 110,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        if (item.body.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            item.body,
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.body(size: 14.5, color: p.textSecondary, height: 1.4),
                           ),
+                        ],
+                        if (hasImage) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          ClipRRect(
+                            borderRadius: AppRadius.mdAll,
+                            child: CachedNetworkImage(
+                              imageUrl: item.imageUrl!,
+                              height: 120,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => const ShimmerBox(height: 120),
+                              errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.xs),
+                        Wrap(
+                          spacing: AppSpacing.xs,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: style.color.withValues(alpha: 0.14),
+                                borderRadius: AppRadius.pillAll,
+                              ),
+                              child: Text(
+                                item.typeLabel,
+                                style: AppText.body(
+                                    size: 12.5, weight: FontWeight.w700, color: style.color, height: 1.2),
+                              ),
+                            ),
+                            Text(
+                              item.formattedTime,
+                              style: AppText.body(size: 13, color: p.textMuted, height: 1.2),
+                            ),
+                          ],
                         ),
                       ],
-
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: item.iconColor.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(AppRadius.sm),
-                            ),
-                            child: Text(
-                              item.typeLabel,
-                              style: GoogleFonts.hind(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: item.iconColor,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            item.formattedTime,
-                            style: GoogleFonts.hind(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

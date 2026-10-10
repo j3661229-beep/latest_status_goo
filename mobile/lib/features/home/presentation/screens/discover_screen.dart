@@ -1,17 +1,21 @@
 // lib/features/home/presentation/screens/discover_screen.dart
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/api/api_error.dart';
 import '../../../../core/data/indian_festivals_calendar.dart';
-import '../../../../core/theme/app_theme.dart';
-import '../../../../core/theme/app_ui_components.dart';
+import '../../../../core/theme/app_ui_components.dart' show PagingFooter;
+import '../../../../core/widgets/app_ui.dart';
+import '../../../templates/domain/models/template_model.dart';
+import '../../../templates/presentation/providers/template_list_provider.dart';
+import '../../data/home_repository.dart' show HomeFeedData;
 import '../providers/home_data_provider.dart';
 import '../widgets/daily_suvichar_banner.dart';
+import '../widgets/discover_widgets.dart';
 import '../widgets/festival_calendar_ribbon.dart';
-import '../../../templates/presentation/providers/template_list_provider.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -21,10 +25,32 @@ class DiscoverScreen extends ConsumerStatefulWidget {
 }
 
 class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
+  static const double _headerHeight = 76;
+
+  final ScrollController _scroll = ScrollController();
+  final ValueNotifier<bool> _scrolled = ValueNotifier<bool>(false);
+
   String? _selectedCategoryId;
   String? _selectedType; // null = All, 'IMAGE', 'VIDEO'
 
   TemplateFilter get _filter => TemplateFilter(categoryId: _selectedCategoryId, type: _selectedType);
+  bool get _isFiltered => _selectedCategoryId != null || _selectedType != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      final s = _scroll.hasClients && _scroll.offset > 8;
+      if (s != _scrolled.value) _scrolled.value = s;
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    _scrolled.dispose();
+    super.dispose();
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(upcomingFestivalsProvider);
@@ -61,28 +87,19 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final homeData = ref.watch(homeDataProvider);
     final templatesAsync = ref.watch(templateListProvider(_filter));
     final festivalsAsync = ref.watch(upcomingFestivalsProvider);
+    final p = context.palette;
+    final topPad = MediaQuery.of(context).padding.top;
+
+    final feed = homeData.valueOrNull;
+    final trending = feed?.trending ?? const <TemplateModel>[];
+    final fresh = _freshTemplates(feed);
+    final categories = feed?.categories ?? const <CategoryModel>[];
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        scrolledUnderElevation: 0.5,
-        title: Text(
-          'एक्सप्लोर करें (Explore)',
-          style: GoogleFonts.hind(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search_rounded, size: 22),
-            tooltip: 'खोजें',
-            onPressed: () => context.push('/search'),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
+      backgroundColor: p.bg,
       body: RefreshIndicator(
-        color: AppColors.primary,
+        color: p.primary,
+        edgeOffset: topPad + _headerHeight,
         onRefresh: _refresh,
         child: NotificationListener<ScrollNotification>(
           onNotification: (n) {
@@ -93,201 +110,133 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             return false;
           },
           child: CustomScrollView(
+            controller: _scroll,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              // ── Daily Suvichar (time-of-day quote card) ──────────────────────
+              // ── Sticky blurred header with search entry ──────────────────────
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _StickySearchHeader(
+                  extent: topPad + _headerHeight,
+                  topPadding: topPad,
+                  scrolled: _scrolled,
+                  onSearch: () => context.push('/search'),
+                  onBell: () => context.push('/notifications'),
+                ),
+              ),
+
+              // ── Daily Suvichar ───────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: FadeSlideIn(
+                  index: 0,
+                  child: DailySuvicharBanner(onCustomizePoster: () => context.go('/home')),
+                ),
+              ),
+
+              // ── Categories ───────────────────────────────────────────────────
+              if (categories.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                    child: FilterPillRow(
+                      labels: ['सभी', ...categories.map((c) => c.nameHi ?? c.nameEn ?? '')],
+                      emojis: ['✨', ...categories.map((c) => c.emoji)],
+                      selectedIndex: _selectedCategoryId == null
+                          ? 0
+                          : (categories.indexWhere((c) => c.id == _selectedCategoryId) + 1)
+                              .clamp(0, categories.length),
+                      onSelected: (i) => setState(
+                        () => _selectedCategoryId = i == 0 ? null : categories[i - 1].id,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // ── Type filter ──────────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.sm),
-                  child: DailySuvicharBanner(
-                    onCustomizePoster: () => context.go('/home'),
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: TemplateTypeSegment(
+                    value: _selectedType,
+                    onChanged: (v) => setState(() => _selectedType = v),
                   ),
                 ),
               ),
 
-              // ── Upcoming Festivals (API, static calendar fallback) ───────────
-              SliverToBoxAdapter(
-                child: festivalsAsync.maybeWhen(
-                  data: (festivals) => Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: FestivalCalendarRibbon(
-                      festivals: festivals,
-                      headerColor: AppColors.textPrimary,
-                      onFestivalSelected: _onFestivalSelected,
+              // ── Curated sections (only on the unfiltered view) ───────────────
+              if (!_isFiltered) ...[
+                SliverToBoxAdapter(
+                  child: TemplateCarouselSection(
+                    title: 'ट्रेंडिंग',
+                    subtitle: 'आज सबसे ज़्यादा इस्तेमाल हो रहे',
+                    templates: trending,
+                    staggerIndex: 1,
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: TemplateCarouselSection(
+                    title: 'नए',
+                    subtitle: 'ताज़ा जुड़े हुए स्टेटस',
+                    templates: fresh,
+                    staggerIndex: 2,
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: festivalsAsync.maybeWhen(
+                    data: (festivals) => FadeSlideIn(
+                      index: 3,
+                      child: FestivalCalendarRibbon(
+                        festivals: festivals,
+                        onFestivalSelected: _onFestivalSelected,
+                      ),
                     ),
+                    orElse: () => const SizedBox.shrink(),
                   ),
-                  orElse: () => const SizedBox.shrink(),
+                ),
+              ],
+
+              SliverToBoxAdapter(
+                child: SectionHeader(
+                  title: _isFiltered ? 'चुने हुए स्टेटस' : 'सभी स्टेटस',
+                  subtitle: _isFiltered ? 'फ़िल्टर के अनुसार' : 'आपके लिए चुने गए',
                 ),
               ),
 
-              // ── Type Filter Pills ────────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Container(
-                  color: AppColors.surface,
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 8),
-                  child: Row(
-                    children: [
-                      _SegmentPill(
-                        label: 'सभी',
-                        isActive: _selectedType == null,
-                        onTap: () => setState(() => _selectedType = null),
-                      ),
-                      const SizedBox(width: 8),
-                      _SegmentPill(
-                        label: 'फोटो स्टेटस',
-                        isActive: _selectedType == 'IMAGE',
-                        onTap: () => setState(() => _selectedType = 'IMAGE'),
-                      ),
-                      const SizedBox(width: 8),
-                      _SegmentPill(
-                        label: 'वीडियो स्टेटस',
-                        isActive: _selectedType == 'VIDEO',
-                        onTap: () => setState(() => _selectedType = 'VIDEO'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Category Horizontal List ─────────────────────────────────────
-              SliverToBoxAdapter(
-                child: homeData.whenOrNull(
-                      data: (data) {
-                        if (data.categories.isEmpty) return const SizedBox.shrink();
-                        return Container(
-                          color: AppColors.surface,
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: SizedBox(
-                            height: 38,
-                            child: ListView(
-                              scrollDirection: Axis.horizontal,
-                              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                              children: [
-                                _CategoryPill(
-                                  label: 'सभी श्रेणियां',
-                                  isActive: _selectedCategoryId == null,
-                                  onTap: () => setState(() => _selectedCategoryId = null),
-                                ),
-                                const SizedBox(width: 6),
-                                ...data.categories.map((cat) => Padding(
-                                      padding: const EdgeInsets.only(right: 6),
-                                      child: _CategoryPill(
-                                        label: cat.nameHi ?? cat.nameEn ?? '',
-                                        emoji: cat.emoji,
-                                        isActive: _selectedCategoryId == cat.id,
-                                        onTap: () => setState(() => _selectedCategoryId = cat.id),
-                                      ),
-                                    )),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ) ??
-                    const SizedBox.shrink(),
-              ),
-
-              const SliverToBoxAdapter(
-                child: Divider(height: 1, color: AppColors.surfaceBorder),
-              ),
-
-              const SliverToBoxAdapter(
-                child: SizedBox(height: AppSpacing.sm),
-              ),
-
-              // ── Template Grid ─────────────────────────────────────────────────
+              // ── Template grid ────────────────────────────────────────────────
               templatesAsync.when(
-                loading: () => SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                  sliver: SliverGrid(
-                    delegate: SliverChildBuilderDelegate(
-                      (_, __) => Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.shimmer,
-                          borderRadius: BorderRadius.circular(AppRadius.lg),
-                        ),
-                      ),
-                      childCount: 6,
-                    ),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 14,
-                      childAspectRatio: 0.68,
-                    ),
-                  ),
-                ),
+                loading: () => const SliverToBoxAdapter(child: ShimmerGrid(itemCount: 6)),
                 error: (e, _) => SliverToBoxAdapter(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(40),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.cloud_off_rounded, color: AppColors.textMuted, size: 44),
-                          const SizedBox(height: 12),
-                          Text(
-                            'स्टेटस लोड नहीं हो सके',
-                            style: GoogleFonts.hind(
-                                color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 14),
-                          const SizedBox(height: 4),
-                          Text(
-                            apiErrorMessage(e, fallback: ''),
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 13),
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            onPressed: () => ref.invalidate(templateListProvider(_filter)),
-                            style: ElevatedButton.styleFrom(minimumSize: const Size(140, 44)),
-                            child: const Text('पुनः प्रयास करें'),
-                          ),
-                        ],
-                      ),
+                  child: SizedBox(
+                    height: 380,
+                    child: ErrorState(
+                      title: 'स्टेटस लोड नहीं हो सके',
+                      message: apiErrorMessage(e, fallback: 'कृपया इंटरनेट जांचें और दोबारा कोशिश करें।'),
+                      onRetry: () => ref.invalidate(templateListProvider(_filter)),
                     ),
                   ),
                 ),
                 data: (paged) {
-                  final templates = paged.items;
-                  if (templates.isEmpty) {
+                  if (paged.items.isEmpty) {
                     return SliverToBoxAdapter(
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(48),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.inbox_rounded, size: 48, color: AppColors.textHint),
-                              const SizedBox(height: 12),
-                              Text(
-                                'इस श्रेणी में कोई स्टेटस नहीं मिला',
-                                style: GoogleFonts.hind(
-                                    fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                              ),
-                            ],
-                          ),
+                      child: SizedBox(
+                        height: 380,
+                        child: EmptyState(
+                          icon: Icons.search_off_rounded,
+                          title: 'इस श्रेणी में कोई स्टेटस नहीं मिला',
+                          message: 'दूसरी श्रेणी या फ़िल्टर चुनकर देखें।',
+                          actionLabel: _isFiltered ? 'फ़िल्टर हटाएं' : null,
+                          onAction: _isFiltered
+                              ? () => setState(() {
+                                    _selectedCategoryId = null;
+                                    _selectedType = null;
+                                  })
+                              : null,
+                          compact: true,
                         ),
                       ),
                     );
                   }
-
-                  return SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                    sliver: SliverGrid(
-                      delegate: SliverChildBuilderDelegate(
-                        (ctx, i) => AppTemplateCard(template: templates[i]),
-                        childCount: templates.length,
-                      ),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 14,
-                        childAspectRatio: 0.68,
-                      ),
-                    ),
-                  );
+                  return SliverTemplateGrid(templates: paged.items);
                 },
               ),
 
@@ -304,102 +253,89 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 ),
               ),
 
-              const SliverToBoxAdapter(
-                child: SizedBox(height: AppSpacing.xl),
-              ),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-// ─── Segment Pill ─────────────────────────────────────────────────────────────
-
-class _SegmentPill extends StatelessWidget {
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _SegmentPill({
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.textPrimary : AppColors.surfaceMuted,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.hind(
-            fontSize: 13,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-            color: isActive ? Colors.white : AppColors.textSecondary,
-          ),
-        ),
-      ),
-    );
+  /// "नए" section: freshly added templates from the home feed.
+  List<TemplateModel> _freshTemplates(HomeFeedData? feed) {
+    if (feed == null) return const [];
+    final seen = <String>{};
+    final all = <TemplateModel>[
+      ...feed.featured,
+      ...feed.coordinatorPicks,
+    ].where((t) => seen.add(t.id)).toList();
+    final onlyNew = all.where((t) => t.isNew == true).toList();
+    return onlyNew.isNotEmpty ? onlyNew : all;
   }
 }
 
-// ─── Category Pill ────────────────────────────────────────────────────────────
+/// Pinned header: title row + search entry; gains a blur + tint once scrolled.
+class _StickySearchHeader extends SliverPersistentHeaderDelegate {
+  final double extent;
+  final double topPadding;
+  final ValueNotifier<bool> scrolled;
+  final VoidCallback onSearch;
+  final VoidCallback onBell;
 
-class _CategoryPill extends StatelessWidget {
-  final String label;
-  final String? emoji;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _CategoryPill({
-    required this.label,
-    this.emoji,
-    required this.isActive,
-    required this.onTap,
+  _StickySearchHeader({
+    required this.extent,
+    required this.topPadding,
+    required this.scrolled,
+    required this.onSearch,
+    required this.onBell,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.pill),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.primarySurface : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: isActive ? AppColors.primary : AppColors.surfaceBorder,
-            width: 0.8,
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final p = context.palette;
+    final content = Padding(
+      padding: EdgeInsets.fromLTRB(AppSpacing.page, topPadding + AppSpacing.xs, AppSpacing.xs, AppSpacing.xs),
+      child: Row(
+        children: [
+          Expanded(child: DiscoverSearchBar(onTap: onSearch)),
+          const SizedBox(width: AppSpacing.xxs),
+          AppIconButton(
+            icon: Icons.notifications_none_rounded,
+            semanticLabel: 'सूचनाएं',
+            onPressed: onBell,
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (emoji != null && emoji!.isNotEmpty) ...[
-              Text(emoji!, style: const TextStyle(fontSize: 12)),
-              const SizedBox(width: 4),
-            ],
-            Text(
-              label,
-              style: GoogleFonts.hind(
-                color: isActive ? AppColors.primary : AppColors.textSecondary,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                fontSize: 12,
+        ],
+      ),
+    );
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolled,
+      builder: (context, isScrolled, _) {
+        if (!isScrolled) {
+          return ColoredBox(color: p.bg, child: content);
+        }
+        return ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: p.bg.withValues(alpha: 0.82),
+                border: Border(bottom: BorderSide(color: p.divider)),
               ),
+              child: content,
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
+
+  @override
+  bool shouldRebuild(covariant _StickySearchHeader old) =>
+      old.extent != extent || old.topPadding != topPadding;
 }

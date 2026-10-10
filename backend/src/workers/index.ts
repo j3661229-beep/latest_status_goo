@@ -31,6 +31,8 @@ const cronWorker = new Worker(
         await checkPlanExpiry();
       } else if (job.name === 'festival_alerts') {
         await checkFestivalAlerts();
+      } else if (job.name === 'renewal_reminder') {
+        await checkRenewalReminders();
       } else {
         log(`Unknown job name: ${job.name}`);
       }
@@ -77,7 +79,21 @@ async function registerCronJobs() {
     }
   );
 
-  console.log('✅ BullMQ CRON jobs registered: plan_expiry (hourly), festival_alerts (every 6h)');
+  // Renewal reminder: daily at 09:00 IST (03:30 UTC)
+  await cronQueue.add(
+    'renewal_reminder',
+    {},
+    {
+      repeat: { pattern: '30 3 * * *' }, // 09:00 IST daily
+      jobId: 'cron:renewal_reminder',
+      removeOnComplete: { count: 10 },
+      removeOnFail: { count: 50 },
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 },
+    }
+  );
+
+  console.log('✅ BullMQ CRON jobs registered: plan_expiry (hourly), festival_alerts (every 6h), renewal_reminder (daily 09:00 IST)');
 }
 
 // Register CRON jobs in production; in dev, run once immediately for testing
@@ -229,6 +245,62 @@ async function checkFestivalAlerts() {
       throw err;
     }
   }
+}
+
+// ── CRON: Renewal Reminder ────────────────────────────────────
+// Runs daily at 09:00 IST. Reminds users whose recurring subscription will renew in 3 days.
+async function checkRenewalReminders() {
+  console.log('[cron] Checking subscription renewal reminders...');
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const now = new Date();
+  // Window: expires between 2 days and 4 days from now (centered on 3 days)
+  const windowStart = new Date(now.getTime() + 2 * DAY_MS);
+  const windowEnd = new Date(now.getTime() + 4 * DAY_MS);
+
+  const upcomingRenewals = await prisma.subscription.findMany({
+    where: {
+      status: 'ACTIVE',
+      isRecurring: true,
+      expiresAt: { gte: windowStart, lte: windowEnd },
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          oneSignalPlayerId: true,
+          language: true,
+        },
+      },
+    },
+  });
+
+  let sent = 0;
+  for (const sub of upcomingRenewals) {
+    if (!sub.user?.oneSignalPlayerId) continue;
+
+    const expiryDateStr = sub.expiresAt.toISOString().slice(0, 10);
+    const dedupeKey = `notif:renewal_reminder:${sub.id}:${expiryDateStr}`;
+    const firstTime = await connection.set(dedupeKey, '1', 'EX', 7 * 86400, 'NX');
+    if (firstTime === null) continue;
+
+    try {
+      const isMarathi = sub.user.language === 'MARATHI';
+      await OneSignalService.send({
+        heading: isMarathi ? '⭐ Status Go Premium AutoPay' : '⭐ Status Go Premium AutoPay',
+        content: isMarathi
+          ? 'तुमचे प्रीमियम ३ दिवसांत नूतनीकरण होईल — ₹९९ चार्ज होईल. अखंड स्टेटस बनवा!'
+          : 'आपका प्रीमियम 3 दिन में नवीनीकृत होगा — ₹99 चार्ज होगा। बेफिक्र स्टेटस बनाते रहें!',
+        playerIds: [sub.user.oneSignalPlayerId],
+        data: { screen: 'premium' },
+      });
+      sent++;
+    } catch (err: any) {
+      console.warn(`[cron] Failed to send renewal reminder to user ${sub.userId}:`, err.message);
+      await connection.del(dedupeKey).catch(() => 0);
+    }
+  }
+
+  console.log(`[cron] Renewal reminders check done. Sent: ${sent}`);
 }
 
 // ── CRON helper functions are used by cronWorker above ────────

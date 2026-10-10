@@ -1,12 +1,17 @@
 // lib/features/search/presentation/screens/search_screen.dart
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
+import 'package:hive/hive.dart';
 
 import '../../../../core/api/api_error.dart';
-import '../../../../core/theme/app_theme.dart';
-import '../../../../core/theme/app_ui_components.dart';
+import '../../../../core/constants/app_constants.dart';
+import '../../../../core/theme/app_ui_components.dart' show PagingFooter;
+import '../../../../core/widgets/app_ui.dart';
+import '../../../home/presentation/widgets/discover_widgets.dart';
+import '../../../templates/domain/models/template_model.dart';
 import '../providers/search_provider.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -20,21 +25,38 @@ class SearchScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
+  static const String _recentKey = 'recent_searches';
+  static const int _recentMax = 8;
+  static const List<String> _suggestions = [
+    'सुप्रभात',
+    'शुभ रात्रि',
+    'जन्मदिन की शुभकामनाएं',
+    'महाकाल',
+    'भक्ति',
+    'सुविचार',
+    'गणेश जी',
+    'हनुमान जी',
+  ];
+
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   Timer? _debounce;
   String _query = '';
+  String? _type; // null = all, 'IMAGE', 'VIDEO'
+  List<String> _recent = const [];
 
   @override
   void initState() {
     super.initState();
+    _recent = _loadRecent();
     final initial = widget.initialQuery?.trim() ?? '';
     if (initial.isNotEmpty) {
       _searchController.text = initial;
       _query = initial;
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && initial.isEmpty) _focusNode.requestFocus();
+    });
   }
 
   @override
@@ -45,324 +67,376 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
+  // ── Recent searches (Hive settings_box) ────────────────────────────────────
+
+  List<String> _loadRecent() {
+    try {
+      if (!Hive.isBoxOpen(AppConstants.hiveBoxSettings)) return const [];
+      final raw = Hive.box(AppConstants.hiveBoxSettings).get(_recentKey);
+      if (raw is List) return raw.map((e) => e.toString()).take(_recentMax).toList();
+    } catch (_) {}
+    return const [];
+  }
+
+  void _persistRecent(List<String> list) {
+    try {
+      if (Hive.isBoxOpen(AppConstants.hiveBoxSettings)) {
+        Hive.box(AppConstants.hiveBoxSettings).put(_recentKey, list);
+      }
+    } catch (_) {}
+  }
+
+  void _saveRecent(String term) {
+    final t = term.trim();
+    if (t.length < 2) return;
+    final next = [t, ..._recent.where((e) => e.toLowerCase() != t.toLowerCase())].take(_recentMax).toList();
+    setState(() => _recent = next);
+    _persistRecent(next);
+  }
+
+  void _removeRecent(String term) {
+    final next = _recent.where((e) => e != term).toList();
+    setState(() => _recent = next);
+    _persistRecent(next);
+  }
+
+  void _clearRecent() {
+    setState(() => _recent = const []);
+    _persistRecent(const []);
+  }
+
+  // ── Query handling ─────────────────────────────────────────────────────────
+
   void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce?.cancel();
+    setState(() {}); // refresh clear button
     _debounce = Timer(const Duration(milliseconds: 300), () {
       if (mounted) setState(() => _query = query.trim());
     });
   }
 
+  void _submit(String query) {
+    _debounce?.cancel();
+    final q = query.trim();
+    setState(() => _query = q);
+    _saveRecent(q);
+  }
+
+  void _useTerm(String term) {
+    _debounce?.cancel();
+    _searchController.value = TextEditingValue(
+      text: term,
+      selection: TextSelection.collapsed(offset: term.length),
+    );
+    _focusNode.unfocus();
+    setState(() => _query = term);
+    _saveRecent(term);
+  }
+
+  void _clearQuery() {
+    _debounce?.cancel();
+    _searchController.clear();
+    setState(() => _query = '');
+    _focusNode.requestFocus();
+  }
+
+  void _back() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        scrolledUnderElevation: 0.5,
-        titleSpacing: 0,
-        title: Container(
-          height: 44,
-          margin: const EdgeInsets.only(right: AppSpacing.md),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceMuted,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.surfaceBorder, width: 0.8),
-          ),
-          child: TextField(
-            controller: _searchController,
-            focusNode: _focusNode,
-            onChanged: _onSearchChanged,
-            style: GoogleFonts.hind(fontSize: 15, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-            decoration: InputDecoration(
-              hintText: 'स्टेटस खोजें (उदा. सुप्रभात, महाकाल)...',
-              hintStyle: GoogleFonts.hind(fontSize: 14, color: AppColors.textHint),
-              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMuted, size: 20),
-              suffixIcon: _query.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.close_rounded, color: AppColors.textMuted, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _query = '');
-                      },
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              isDense: true,
-            ),
-          ),
-        ),
-      ),
-      body: _query.length < 2 ? _buildIdleState() : _buildSearchResults(),
-    );
-  }
-
-  Widget _buildIdleState() {
-    final trendingAsync = ref.watch(trendingTermsProvider);
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.trending_up_rounded, color: AppColors.primary, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'लोकप्रिय खोजें (Trending Searches)',
-                style: GoogleFonts.hind(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          trendingAsync.when(
-            loading: () => Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: List.generate(
-                6,
-                (_) => Container(
-                  width: 84,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: AppColors.shimmer,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                ),
-              ),
-            ),
-            // Trending is optional — hide it on error.
-            error: (_, __) => const SizedBox.shrink(),
-            data: (terms) {
-              if (terms.isEmpty) return const SizedBox.shrink();
-              return Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: terms.map((t) {
-                  return InkWell(
-                    onTap: () {
-                      _searchController.text = t;
-                      setState(() => _query = t);
-                    },
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        border: Border.all(color: AppColors.surfaceBorder, width: 0.8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.search_rounded, size: 14, color: AppColors.textMuted),
-                          const SizedBox(width: 5),
-                          Text(
-                            t,
-                            style: GoogleFonts.hind(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-
-          const SizedBox(height: 48),
-
-          Center(
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primarySurface,
-                    borderRadius: BorderRadius.circular(AppRadius.xl),
-                  ),
-                  child: const Icon(
-                    Icons.auto_awesome_rounded,
-                    size: 36,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'धार्मिक, प्रेरणादायक एवं त्यौहार के स्टेटस खोजें',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.hind(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'कीवर्ड टाइप करें और तुरंत अपनी पसंद का स्टेटस पाएं',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.hind(
-                    color: AppColors.textMuted,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchResults() {
-    final searchAsync = ref.watch(searchTemplatesProvider(_query));
-
-    return searchAsync.when(
-      loading: () => GridView.builder(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 14,
-          childAspectRatio: 0.68,
-        ),
-        itemCount: 4,
-        itemBuilder: (_, __) => Container(
-          decoration: BoxDecoration(
-            color: AppColors.shimmer,
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-          ),
-        ),
-      ),
-      error: (e, _) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.cloud_off_rounded, color: AppColors.textMuted, size: 40),
-              const SizedBox(height: 12),
-              Text(
-                'खोज में समस्या आई',
-                style: GoogleFonts.hind(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                apiErrorMessage(e, fallback: ''),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.hind(fontSize: 13, color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 14),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(searchTemplatesProvider(_query)),
-                style: ElevatedButton.styleFrom(minimumSize: const Size(140, 44)),
-                child: const Text('पुनः प्रयास करें'),
-              ),
-            ],
-          ),
-        ),
-      ),
-      data: (paged) {
-        final templates = paged.items;
-        if (templates.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      backgroundColor: p.bg,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.xxs, AppSpacing.xs, AppSpacing.page, AppSpacing.xs),
+              child: Row(
                 children: [
-                  const Icon(Icons.search_off_rounded, size: 48, color: AppColors.textHint),
-                  const SizedBox(height: 14),
-                  Text(
-                    '"$_query" के लिए कोई स्टेटस नहीं मिला',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.hind(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 17,
-                      color: AppColors.textPrimary,
-                    ),
+                  AppIconButton(
+                    icon: Icons.arrow_back_rounded,
+                    semanticLabel: 'वापस जाएं',
+                    onPressed: _back,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'कृपया किसी अन्य नाम या विषय से खोजें',
-                    style: GoogleFonts.hind(color: AppColors.textMuted, fontSize: 14),
+                  Expanded(
+                    child: AppSearchField(
+                      controller: _searchController,
+                      focusNode: _focusNode,
+                      hint: 'स्टेटस खोजें (जैसे सुप्रभात)...',
+                      onChanged: _onSearchChanged,
+                      onSubmitted: _submit,
+                      onClear: _searchController.text.isNotEmpty ? _clearQuery : null,
+                    ),
                   ),
                 ],
               ),
             ),
-          );
+            Expanded(child: _query.length < 2 ? _buildIdleState() : _buildSearchResults()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Idle: recent, trending, suggestions ────────────────────────────────────
+
+  Widget _buildIdleState() {
+    final trendingAsync = ref.watch(trendingTermsProvider);
+    final p = context.palette;
+
+    return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.only(bottom: AppSpacing.xxl),
+      children: [
+        if (_recent.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.sm, AppSpacing.xs, AppSpacing.xxs),
+            child: Row(
+              children: [
+                Expanded(child: Text('हाल की खोजें', style: AppText.heading(size: 17, color: p.textPrimary))),
+                TextButton(
+                  onPressed: _clearRecent,
+                  child: const Text('सब हटाएं'),
+                ),
+              ],
+            ),
+          ),
+          for (final term in _recent)
+            _TermRow(
+              icon: Icons.history_rounded,
+              label: term,
+              onTap: () => _useTerm(term),
+              trailing: AppIconButton(
+                icon: Icons.close_rounded,
+                semanticLabel: '$term हटाएं',
+                onPressed: () => _removeRecent(term),
+              ),
+            ),
+        ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.lg, AppSpacing.page, AppSpacing.xs),
+          child: Row(
+            children: [
+              Icon(Icons.trending_up_rounded, color: p.primary, size: 22),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(child: Text('ट्रेंडिंग खोजें', style: AppText.heading(size: 17, color: p.textPrimary))),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
+          child: trendingAsync.when(
+            loading: () => Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: List.generate(6, (_) => const ShimmerBox(width: 92, height: 40, radius: AppRadius.pill)),
+            ),
+            // Trending is optional — fall back to static suggestions.
+            error: (_, __) => _pills(_suggestions),
+            data: (terms) => _pills(terms.isEmpty ? _suggestions : terms),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.lg, AppSpacing.page, AppSpacing.xxs),
+          child: Text('सुझाव', style: AppText.heading(size: 17, color: p.textPrimary)),
+        ),
+        for (final s in _suggestions.take(5))
+          _TermRow(
+            icon: Icons.search_rounded,
+            label: s,
+            onTap: () => _useTerm(s),
+            trailing: Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: Icon(Icons.north_west_rounded, size: 18, color: p.textMuted),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _pills(List<String> terms) {
+    return Wrap(
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      children: [
+        for (final t in terms) CategoryChip(label: t, icon: Icons.local_fire_department_rounded, onTap: () => _useTerm(t)),
+      ],
+    );
+  }
+
+  // ── Results ────────────────────────────────────────────────────────────────
+
+  Widget _buildSearchResults() {
+    final searchAsync = ref.watch(searchTemplatesProvider(_query));
+    final p = context.palette;
+
+    return searchAsync.when(
+      loading: () => ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        children: const [
+          SizedBox(height: AppSpacing.xs),
+          ShimmerGrid(itemCount: 6),
+        ],
+      ),
+      error: (e, _) => ErrorState(
+        title: 'खोज में समस्या आई',
+        message: apiErrorMessage(e, fallback: 'कृपया इंटरनेट जांचें और दोबारा कोशिश करें।'),
+        onRetry: () => ref.invalidate(searchTemplatesProvider(_query)),
+      ),
+      data: (paged) {
+        if (paged.items.isEmpty) return _buildNoResults();
+
+        final templates = _type == null
+            ? paged.items
+            : paged.items.where((t) => t.type.toString().toUpperCase() == _type).toList();
+
+        if (templates.isEmpty && paged.hasMore && paged.loadMoreError == null) {
+          // Nothing of this type on the loaded pages yet — keep fetching.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) ref.read(searchTemplatesProvider(_query).notifier).loadMore();
+          });
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              color: AppColors.surface,
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
-              child: Text(
-                paged.hasMore
-                    ? '"$_query" के लिए ${templates.length}+ स्टेटस मिले'
-                    : '"$_query" के लिए ${templates.length} स्टेटस मिले',
-                style: GoogleFonts.hind(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                  fontSize: 14,
+        return NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (n.metrics.extentAfter < 600) {
+              ref.read(searchTemplatesProvider(_query).notifier).loadMore();
+            }
+            return false;
+          },
+          child: CustomScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                  child: TemplateTypeSegment(
+                    value: _type,
+                    onChanged: (v) => setState(() => _type = v),
+                  ),
                 ),
               ),
-            ),
-            const Divider(height: 1, color: AppColors.surfaceBorder),
-            Expanded(
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (n) {
-                  // Infinite scroll: fetch the next page near the bottom.
-                  if (n.metrics.extentAfter < 600) {
-                    ref.read(searchTemplatesProvider(_query).notifier).loadMore();
-                  }
-                  return false;
-                },
-                child: CustomScrollView(
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      sliver: SliverGrid(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 14,
-                          childAspectRatio: 0.68,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) => AppTemplateCard(template: templates[index]),
-                          childCount: templates.length,
-                        ),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: PagingFooter(
-                        isLoading: paged.isLoadingMore,
-                        hasError: paged.loadMoreError != null,
-                        onRetry: () => ref.read(searchTemplatesProvider(_query).notifier).loadMore(force: true),
-                      ),
-                    ),
-                  ],
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.sm, AppSpacing.page, AppSpacing.sm),
+                  child: Text(
+                    '"$_query" के लिए ${templates.length}${paged.hasMore ? '+' : ''} स्टेटस मिले',
+                    style: AppText.body(size: 15, weight: FontWeight.w700, color: p.primary, height: 1.3),
+                  ),
                 ),
               ),
-            ),
-          ],
+              if (templates.isEmpty)
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 320,
+                    child: paged.hasMore
+                        ? const Center(child: CircularProgressIndicator())
+                        : const EmptyState(
+                            icon: Icons.filter_alt_off_rounded,
+                            title: 'इस प्रकार के स्टेटस नहीं मिले',
+                            message: 'ऊपर से "सभी" चुनकर देखें।',
+                            compact: true,
+                          ),
+                  ),
+                )
+              else
+                SliverTemplateGrid(
+                  templates: templates,
+                  onTapTemplate: _openTemplate,
+                ),
+              SliverToBoxAdapter(
+                child: PagingFooter(
+                  isLoading: paged.isLoadingMore,
+                  hasError: paged.loadMoreError != null,
+                  onRetry: () => ref.read(searchTemplatesProvider(_query).notifier).loadMore(force: true),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.xl)),
+            ],
+          ),
         );
       },
+    );
+  }
+
+  void _openTemplate(TemplateModel t) {
+    _saveRecent(_query);
+    context.push(t.isLocked ? '/premium' : '/template/${t.id}');
+  }
+
+  Widget _buildNoResults() {
+    final p = context.palette;
+    return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      children: [
+        SizedBox(
+          height: 300,
+          child: EmptyState(
+            icon: Icons.search_off_rounded,
+            title: '"$_query" के लिए कोई स्टेटस नहीं मिला',
+            message: 'कृपया किसी अन्य नाम या विषय से खोजें',
+            compact: true,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSpacing.page, 0, AppSpacing.page, AppSpacing.xs),
+          child: Text('ये खोजकर देखें', style: AppText.heading(size: 17, color: p.textPrimary)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
+          child: _pills(_suggestions.take(6).toList()),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+      ],
+    );
+  }
+}
+
+class _TermRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  const _TermRow({required this.icon, required this.label, required this.onTap, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return InkWell(
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: AppSpacing.minTouch),
+        child: Padding(
+          padding: const EdgeInsets.only(left: AppSpacing.page),
+          child: Row(
+            children: [
+              Icon(icon, size: 22, color: p.textMuted),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.body(size: 16, weight: FontWeight.w500, color: p.textPrimary, height: 1.3),
+                  ),
+                ),
+              ),
+              trailing ?? const SizedBox(width: AppSpacing.page),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

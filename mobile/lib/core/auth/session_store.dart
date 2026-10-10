@@ -70,6 +70,20 @@ class SessionStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes personalisation that survives a normal logout (name, photo,
+  /// language). Used after account deletion.
+  Future<void> clearPersonalData() async {
+    await _box.deleteAll([
+      AppConstants.keyDisplayName,
+      keyLocalPhotoPath,
+      AppConstants.keyLanguage,
+      AppConstants.keyOneSignalPlayerId,
+    ]);
+    try {
+      await Hive.box(AppConstants.hiveBoxUser).clear();
+    } catch (_) {}
+  }
+
   // ─── User ─────────────────────────────────────────────────────────────────
 
   /// Reads the cached user. Hive returns `Map<dynamic, dynamic>` after a restart,

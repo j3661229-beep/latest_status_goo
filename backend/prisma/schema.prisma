@@ -127,6 +127,10 @@ model User {
   totalSaves        Int       @default(0)
   appVersion        String?
   deviceModel       String?
+  /// Set when the ₹1 intro subscription is first authenticated. Prevents re-claiming the offer.
+  introOfferClaimedAt DateTime?
+  /// Current active Razorpay subscription ID (sub_XXXX) for recurring billing. Null if none.
+  activeRzpSubId    String?   @db.VarChar(100)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -368,6 +372,10 @@ model Subscription {
   razorpayPaymentId String?   @unique
   razorpaySignature String?
   razorpayMethod    String?
+  /// Razorpay Subscription ID for recurring billing (sub_XXXX). Null for one-time orders.
+  razorpaySubId     String?   @unique
+  /// true = managed by Razorpay Subscriptions API (auto-renewal), false = one-time order
+  isRecurring       Boolean   @default(false)
   invoiceUrl        String?
   startsAt          DateTime
   expiresAt         DateTime
@@ -381,6 +389,7 @@ model Subscription {
   @@index([expiresAt])
   @@index([status, createdAt])
   @@index([razorpayOrderId])
+  @@index([razorpaySubId])
 }
 
 // ════════════════════════════════════════════════

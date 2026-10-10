@@ -15,9 +15,17 @@ import '../../features/user/presentation/screens/saved_screen.dart';
 import '../../features/premium/presentation/screens/premium_screen.dart';
 import '../../features/search/presentation/screens/search_screen.dart';
 import '../../features/home/presentation/screens/notifications_screen.dart';
+import '../../features/auth/presentation/screens/intro_screen.dart';
+import '../../features/legal/presentation/screens/legal_screens.dart';
+import '../../features/settings/presentation/screens/settings_screen.dart';
+import '../../features/settings/presentation/screens/edit_profile_screen.dart';
+import '../../features/premium/presentation/screens/my_plan_screen.dart';
+import '../../features/support/presentation/screens/help_screen.dart';
+import '../../features/support/presentation/screens/about_screen.dart';
+import '../../features/support/presentation/screens/not_found_screen.dart';
+import 'app_shell.dart';
 import '../../core/auth/session_store.dart';
 import '../../core/services/notification_service.dart';
-import '../../core/theme/app_theme.dart';
 
 part 'app_router.g.dart';
 
@@ -25,7 +33,11 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Routes reachable without a session.
-const _publicRoutes = {'/splash', '/login'};
+const _publicRoutes = {'/splash', '/login', '/intro'};
+
+/// Informational pages that must always be viewable (logged out, or logged in
+/// but not yet onboarded) — required for Play Store / Razorpay compliance.
+const _infoRoutes = {'/privacy-policy', '/terms', '/refund-policy', '/about', '/help'};
 
 /// Auth guard. Splash decides the first destination itself; afterwards the
 /// session store drives redirects (login, logout, refresh-token failure).
@@ -33,14 +45,17 @@ String? _authRedirect(GoRouterState state) {
   final session = SessionStore.instance;
   final path = state.uri.path;
   if (path == '/splash') return null;
+  if (_infoRoutes.contains(path)) return null;
 
   final loggedIn = session.isLoggedIn;
   if (!loggedIn) {
+    // Fresh install: show the intro slides once, before login.
+    if (path == '/login' && !introSeen) return '/intro';
     return _publicRoutes.contains(path) ? null : '/login';
   }
 
   final onboarded = session.onboardingCompleted;
-  if (path == '/login') {
+  if (path == '/login' || path == '/intro') {
     return onboarded ? '/home' : '/profile-setup';
   }
   if (!onboarded && path != '/profile-setup') {
@@ -57,9 +72,11 @@ GoRouter appRouter(AppRouterRef ref) {
     debugLogDiagnostics: false,
     refreshListenable: SessionStore.instance,
     redirect: (context, state) => _authRedirect(state),
+    errorBuilder: (ctx, state) => NotFoundScreen(path: state.uri.path),
     routes: [
       // ── Auth / full-screen routes ────────────────────────────
       GoRoute(path: '/splash', builder: (ctx, state) => const SplashScreen()),
+      GoRoute(path: '/intro', builder: (ctx, state) => const IntroScreen()),
       GoRoute(path: '/login', builder: (ctx, state) => const LoginScreen()),
       GoRoute(path: '/profile-setup', builder: (ctx, state) => const ProfileSetupScreen()),
       GoRoute(path: '/premium', builder: (ctx, state) => const PremiumScreen()),
@@ -68,6 +85,15 @@ GoRouter appRouter(AppRouterRef ref) {
         builder: (ctx, state) => SearchScreen(initialQuery: state.uri.queryParameters['q']),
       ),
       GoRoute(path: '/notifications', builder: (ctx, state) => const NotificationsScreen()),
+      GoRoute(path: '/settings', builder: (ctx, state) => const SettingsScreen()),
+      GoRoute(path: '/edit-profile', builder: (ctx, state) => const EditProfileScreen()),
+      GoRoute(path: '/my-plan', builder: (ctx, state) => const MyPlanScreen()),
+      // Public informational pages
+      GoRoute(path: '/privacy-policy', builder: (ctx, state) => const PrivacyPolicyScreen()),
+      GoRoute(path: '/terms', builder: (ctx, state) => const TermsScreen()),
+      GoRoute(path: '/refund-policy', builder: (ctx, state) => const RefundPolicyScreen()),
+      GoRoute(path: '/about', builder: (ctx, state) => const AboutScreen()),
+      GoRoute(path: '/help', builder: (ctx, state) => const HelpScreen()),
       GoRoute(
         path: '/template/:id',
         builder: (ctx, state) => TemplatePreviewScreen(
@@ -78,7 +104,7 @@ GoRouter appRouter(AppRouterRef ref) {
       // ── Shell with bottom nav ────────────────────────────────
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
-        builder: (ctx, state, child) => _MainShell(child: child),
+        builder: (ctx, state, child) => MainShell(child: child),
         routes: [
           GoRoute(path: '/home', builder: (ctx, state) => const HomeScreen()),
           GoRoute(path: '/discover', builder: (ctx, state) => const DiscoverScreen()),
@@ -108,73 +134,4 @@ GoRouter appRouter(AppRouterRef ref) {
   ref.onDispose(NotificationService.instance.clearNavigationHandler);
 
   return router;
-}
-
-// ── Main Shell ─────────────────────────────────────────────────────────────────
-
-class _MainShell extends StatelessWidget {
-  final Widget child;
-  const _MainShell({required this.child});
-
-  static const _destinations = [
-    _Dest(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'होम', path: '/home'),
-    _Dest(icon: Icons.explore_outlined, activeIcon: Icons.explore_rounded, label: 'खोजें', path: '/discover'),
-    _Dest(icon: Icons.bookmark_outline_rounded, activeIcon: Icons.bookmark_rounded, label: 'सहेजें', path: '/saved'),
-    _Dest(icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'प्रोफ़ाइल', path: '/profile'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.path;
-
-    // The bottom nav is shown on every tab — including the full-screen Home feed —
-    // so the rest of the app stays reachable.
-    int selectedIndex = 0;
-    for (int i = 0; i < _destinations.length; i++) {
-      if (location.startsWith(_destinations[i].path)) {
-        selectedIndex = i;
-        break;
-      }
-    }
-
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(
-            top: BorderSide(color: AppColors.surfaceBorder, width: 0.8),
-          ),
-        ),
-        child: NavigationBar(
-          selectedIndex: selectedIndex,
-          onDestinationSelected: (i) => context.go(_destinations[i].path),
-          backgroundColor: AppColors.surface,
-          elevation: 0,
-          height: 62,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: _destinations
-              .map((d) => NavigationDestination(
-                    icon: Icon(d.icon, size: 22),
-                    selectedIcon: Icon(d.activeIcon, color: AppColors.primary, size: 23),
-                    label: d.label,
-                  ))
-              .toList(),
-        ),
-      ),
-    );
-  }
-}
-
-class _Dest {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-  final String path;
-  const _Dest({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-    required this.path,
-  });
 }

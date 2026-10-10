@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { CacheService } from '../../lib/cache/cache.service';
 import { CK, TTL } from '../../lib/cache/keys';
 import { invalidateUserCaches, safeUserSelect } from '../../lib/auth/auth-state';
+import { RefreshTokenStore } from '../../lib/auth/token.store';
 import { httpsUrl, parsePagination, sendValidationError } from '../../lib/http/validation';
 
 /** Optional, nullable text field with a max length ('' clears the value). */
@@ -134,6 +135,70 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     await invalidateUserCaches(fastify.redis, userId);
     return reply.send({ user });
+  });
+
+  // DELETE /user/me — in-app account deletion (Google Play policy).
+  // Anonymises PII, revokes sessions, removes personal content. Subscription and
+  // ShareHistory rows are retained (userId kept) for accounting.
+  fastify.delete('/me', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+    const { userId } = req.user as any;
+
+    const existing = await fastify.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, isActive: true, plan: true },
+    });
+    if (!existing) return reply.status(404).send({ error: 'User not found' });
+    if (existing.role !== 'USER') {
+      return reply.status(403).send({
+        error: 'Creator and admin accounts cannot be deleted in the app. Please contact support.',
+      });
+    }
+
+    await new RefreshTokenStore(fastify.redis).invalidate(userId).catch(() => {});
+
+    await fastify.prisma.$transaction([
+      fastify.prisma.savedStatus.deleteMany({ where: { userId } }),
+      fastify.prisma.notificationLog.deleteMany({ where: { userId } }),
+      fastify.prisma.analyticsEvent.updateMany({ where: { userId }, data: { userId: null } }),
+      fastify.prisma.user.update({
+        where: { id: userId },
+        data: {
+          isActive: false,
+          name: 'Deleted User',
+          displayName: null,
+          email: null,
+          phoneNumber: null,
+          googleId: null,
+          password: null,
+          profilePhoto: null,
+          customPhotoUrl: null,
+          businessName: null,
+          businessPhone: null,
+          businessAddress: null,
+          businessDesignation: null,
+          businessLogo: null,
+          oneSignalPlayerId: null,
+          deviceModel: null,
+          state: null,
+          region: null,
+          updatedAt: new Date(),
+        },
+      }),
+      fastify.prisma.auditLog.create({
+        data: {
+          adminId: userId,
+          action: 'USER_SELF_DELETE',
+          entityType: 'User',
+          entityId: userId,
+          ip: req.ip,
+          userAgent: (req.headers['user-agent'] ?? '').slice(0, 500) || null,
+        },
+      }),
+    ]);
+
+    await invalidateUserCaches(fastify.redis, userId);
+    await cache.invalidatePattern(CK.userSavedPattern(userId)).catch(() => 0);
+    return reply.send({ success: true });
   });
 
   // PUT /user/player-id

@@ -1,14 +1,24 @@
 // lib/core/theme/app_ui_components.dart
+//
+// LEGACY component names kept so existing screens compile. They now delegate to
+// the new design system (lib/core/widgets/app_ui.dart). New code should use:
+//   AppSectionHeader   -> SectionHeader
+//   AppTemplateCard    -> TemplateCard / TemplateGrid
+//   AppWhatsAppButton  -> GradientButton(variant: GradientButtonVariant.whatsapp)
+//   AppSearchBarTrigger-> keep (still valid) or AppSearchField for real input
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 
+import '../widgets/ui/buttons.dart';
+import '../widgets/ui/cards.dart';
+import '../widgets/ui/feedback.dart';
+import '../widgets/ui/layout.dart';
+import '../widgets/ui/motion.dart';
 import 'app_theme.dart';
 import '../../features/templates/domain/models/template_model.dart';
-import '../../features/templates/presentation/widgets/template_composition.dart' show TemplateLockOverlay;
 
-// ─── Section Header ───────────────────────────────────────────────────────────
+// ─── Section Header (legacy → SectionHeader) ──────────────────────────────────
 
 class AppSectionHeader extends StatelessWidget {
   final String title;
@@ -25,76 +35,17 @@ class AppSectionHeader extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.lg, AppSpacing.md, AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.hind(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                if (subtitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    style: GoogleFonts.hind(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (onSeeAll != null)
-            InkWell(
-              onTap: onSeeAll,
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      seeAllText,
-                      style: GoogleFonts.hind(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppColors.primary),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      SectionHeader(title: title, subtitle: subtitle, onAction: onSeeAll, actionLabel: seeAllText);
 }
 
-// ─── Visual-First Template Card ───────────────────────────────────────────────
+// ─── Template Card (legacy; needs bounded height — prefer TemplateCard) ───────
 
 class AppTemplateCard extends StatelessWidget {
   final TemplateModel template;
   final double? width;
   final double? height;
   final VoidCallback? onTap;
-
   final Widget? actionOverlay;
 
   const AppTemplateCard({
@@ -108,13 +59,13 @@ class AppTemplateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final imgUrl = template.imageThumbUrl ?? template.imageUrl ?? template.videoThumbUrl;
     final name = template.nameHi ?? template.nameEn ?? '';
     final isPremium = template.isPremium == true;
     final isLocked = template.isLocked;
 
-    return GestureDetector(
-      // Locked premium templates lead to the upgrade screen.
+    return PressableScale(
       onTap: onTap ?? () => context.push(isLocked ? '/premium' : '/template/${template.id}'),
       child: SizedBox(
         width: width,
@@ -122,14 +73,12 @@ class AppTemplateCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Artwork Container (Image is Hero)
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(AppRadius.lg),
-                  border: Border.all(color: AppColors.surfaceBorder, width: 0.8),
-                  boxShadow: AppShadows.subtle,
-                  color: AppColors.surfaceMuted,
+                  boxShadow: AppShadows.card,
+                  color: p.surfaceMuted,
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Stack(
@@ -139,73 +88,26 @@ class AppTemplateCard extends StatelessWidget {
                       CachedNetworkImage(
                         imageUrl: imgUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: AppColors.shimmer),
+                        placeholder: (_, __) => const ShimmerBox(radius: 0),
                         errorWidget: (_, __, ___) => _FallbackGradient(template),
                       )
                     else
                       _FallbackGradient(template),
-
-                    // Subtle Dark Scrim on Bottom of image for contrast
                     const Positioned(
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      height: 40,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [Color(0x3D000000), Colors.transparent],
-                          ),
-                        ),
-                      ),
+                      height: 48,
+                      child: DecoratedBox(decoration: BoxDecoration(gradient: AppColors.scrimBottom)),
                     ),
-
-                    // Subtle Premium Indicator
                     if (isPremium)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.65),
-                            borderRadius: BorderRadius.circular(AppRadius.sm),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.star_rounded, size: 12, color: Color(0xFFFBBF24)),
-                              const SizedBox(width: 3),
-                              Text(
-                                'प्रीमियम',
-                                style: GoogleFonts.hind(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                    if (isLocked) const TemplateLockOverlay(compact: true),
-
-                    // Top Right Action Overlay (e.g. remove bookmark)
-                    if (actionOverlay != null)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: actionOverlay!,
-                      ),
+                      const Positioned(top: 8, left: 8, child: PremiumBadge(compact: true)),
+                    if (isLocked) const TemplateLock(),
+                    if (actionOverlay != null) Positioned(top: 8, right: 8, child: actionOverlay!),
                   ],
                 ),
               ),
             ),
-
-            // Minimal Metadata (Clean, compact caption)
             if (name.isNotEmpty) ...[
               const SizedBox(height: 6),
               Padding(
@@ -214,12 +116,7 @@ class AppTemplateCard extends StatelessWidget {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.hind(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                    height: 1.2,
-                  ),
+                  style: AppText.body(size: 14, weight: FontWeight.w700, color: p.textPrimary, height: 1.2),
                 ),
               ),
             ],
@@ -239,15 +136,13 @@ class _FallbackGradient extends StatelessWidget {
     final colors = AppColors.parseGradient(template.gradient);
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors ?? [const Color(0xFF1E3A8A), const Color(0xFF3B82F6)],
-        ),
+        gradient: colors != null
+            ? LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors)
+            : AppColors.brandGradient,
       ),
       alignment: Alignment.center,
       child: Text(
-        template.nameHi?.isNotEmpty == true ? template.nameHi!.substring(0, 1) : '🙏',
+        template.nameHi?.isNotEmpty == true ? template.nameHi!.characters.first : '🙏',
         style: const TextStyle(fontSize: 32),
       ),
     );
@@ -268,28 +163,27 @@ class AppSearchBarTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final p = context.palette;
+    return PressableScale(
       onTap: onTap,
+      semanticLabel: 'खोजें',
       child: Container(
-        height: 46,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 18),
         decoration: BoxDecoration(
-          color: AppColors.surfaceMuted,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.surfaceBorder, width: 0.8),
+          color: p.surface,
+          borderRadius: AppRadius.pillAll,
+          border: Border.all(color: p.border, width: 1),
+          boxShadow: AppShadows.subtle,
         ),
         child: Row(
           children: [
-            const Icon(Icons.search_rounded, size: 20, color: AppColors.textMuted),
+            Icon(Icons.search_rounded, size: 24, color: p.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 hintText,
-                style: GoogleFonts.hind(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textHint,
-                ),
+                style: AppText.body(size: 15, color: p.textMuted),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -301,7 +195,7 @@ class AppSearchBarTrigger extends StatelessWidget {
   }
 }
 
-// ─── WhatsApp Action Button ───────────────────────────────────────────────────
+// ─── WhatsApp Action Button (legacy → GradientButton) ─────────────────────────
 
 class AppWhatsAppButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -316,39 +210,13 @@ class AppWhatsAppButton extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: isLoading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.whatsapp,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        minimumSize: const Size(double.infinity, 50),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
-      ),
-      child: isLoading
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-            )
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.share_rounded, size: 20, color: Colors.white),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: GoogleFonts.hind(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
+  Widget build(BuildContext context) => GradientButton(
+        label: label,
+        icon: Icons.share_rounded,
+        variant: GradientButtonVariant.whatsapp,
+        isLoading: isLoading,
+        onPressed: onPressed,
+      );
 }
 
 // ─── Infinite Scroll Footer ───────────────────────────────────────────────────
@@ -371,11 +239,7 @@ class PagingFooter extends StatelessWidget {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 20),
         child: Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.primary),
-          ),
+          child: SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.8)),
         ),
       );
     }
@@ -385,11 +249,8 @@ class PagingFooter extends StatelessWidget {
         child: Center(
           child: TextButton.icon(
             onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: Text(
-              'और स्टेटस लोड नहीं हो सके — पुनः प्रयास करें',
-              style: GoogleFonts.hind(fontWeight: FontWeight.w600),
-            ),
+            icon: const Icon(Icons.refresh_rounded, size: 20),
+            label: const Text('और स्टेटस लोड नहीं हो सके — पुनः प्रयास करें'),
           ),
         ),
       );

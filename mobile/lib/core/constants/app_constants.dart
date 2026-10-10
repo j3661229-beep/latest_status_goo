@@ -30,7 +30,7 @@ class AppConstants {
   // returns keyId from /subscribe/create, which takes precedence)
   static const String razorpayKeyId = String.fromEnvironment(
     'FLUTTER_RAZORPAY_KEY_ID',
-    defaultValue: '',
+    defaultValue: 'rzp_test_TmJlbSe2oDPij0',
   );
 
   // Google Sign-In: the WEB OAuth client id the backend verifies id tokens against
@@ -41,7 +41,23 @@ class AppConstants {
   // Store / support
   static const String playStoreUrl =
       'https://play.google.com/store/apps/details?id=com.statusgo.status_go';
-  static const String supportEmail = 'support@statusgo.app';
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TODO(owner): fill in ALL values below before publishing to the Play Store.
+  // They are rendered in Privacy Policy / Terms / Refund / About / Help pages.
+  // ──────────────────────────────────────────────────────────────────────────
+  static const String supportEmail = 'support@statusgo.app'; // TODO(owner)
+  static const String supportPhone = '+91 00000 00000'; // TODO(owner): support call number
+  static const String supportWhatsappNumber = '910000000000'; // TODO(owner): digits only, with country code
+  static const String companyName = 'Status Go (TODO: registered company name)'; // TODO(owner)
+  static const String companyAddress = 'TODO: registered office address, City, State, PIN, India'; // TODO(owner)
+  static const String grievanceOfficerName = 'TODO: Grievance Officer name'; // TODO(owner)
+  static const String grievanceOfficerEmail = 'grievance@statusgo.app'; // TODO(owner)
+  static const String websiteUrl = 'https://statusgo.app'; // TODO(owner)
+  static const String privacyUrl = 'https://statusgo.app/privacy'; // TODO(owner): hosted copy (Play Console needs one)
+  static const String termsUrl = 'https://statusgo.app/terms'; // TODO(owner)
+  static const String refundUrl = 'https://statusgo.app/refund'; // TODO(owner)
+  static const String policyLastUpdated = '1 October 2026'; // update when policy text changes
 
   // Push Notifications (OneSignal)
   static const String oneSignalAppId = String.fromEnvironment(
@@ -71,6 +87,11 @@ class AppConstants {
   static const String keyState = 'user_state';
   static const String keyRegion = 'user_region';
   static const String keyOneSignalPlayerId = 'onesignal_player_id';
+  static const String keyThemeMode = 'theme_mode'; // 'system' | 'light' | 'dark'
+  static const String keyIntroSeen = 'intro_seen';
+  static const String keyPushEnabled = 'push_enabled';
+  static const String keyDailyReminder = 'daily_reminder_enabled';
+  static const String keyFestivalAlerts = 'festival_alerts_enabled';
 
   // Plan limits (FREE) — informational only. NOT enforced client-side on purpose:
   // the server must own download limits (a client check is trivially bypassed).

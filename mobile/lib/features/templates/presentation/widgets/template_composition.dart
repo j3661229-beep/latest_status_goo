@@ -31,6 +31,10 @@ class TemplateComposition extends StatelessWidget {
   /// Optional big title at the top (Home feed style).
   final String? headerTitle;
   final bool showVideoBadge;
+
+  /// Editor toggles: hide the name / photo zones entirely.
+  final bool showName;
+  final bool showPhoto;
   final double borderRadius;
   final List<BoxShadow>? boxShadow;
 
@@ -46,6 +50,8 @@ class TemplateComposition extends StatelessWidget {
     this.onNameTap,
     this.headerTitle,
     this.showVideoBadge = false,
+    this.showName = true,
+    this.showPhoto = true,
     this.borderRadius = AppRadius.lg,
     this.boxShadow,
   });
@@ -111,12 +117,12 @@ class TemplateComposition extends StatelessWidget {
                     placeholder: (_, __) => DecoratedBox(
                       decoration: BoxDecoration(gradient: gradient),
                       child: const Center(
-                        child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2),
+                        child: CircularProgressIndicator(color: AppColors.onDarkMuted, strokeWidth: 2),
                       ),
                     ),
                     errorWidget: (_, __, ___) => DecoratedBox(
                       decoration: BoxDecoration(gradient: gradient),
-                      child: const Icon(Icons.image_not_supported_rounded, color: Colors.white54, size: 48),
+                      child: const Icon(Icons.image_not_supported_rounded, color: AppColors.onDarkMuted, size: 48),
                     ),
                   ),
 
@@ -126,7 +132,7 @@ class TemplateComposition extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Colors.black.withOpacity(0.45), Colors.transparent],
+                          colors: [AppColors.ink.withValues(alpha: 0.45), AppColors.transparent],
                           stops: const [0.0, 0.25],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
@@ -144,11 +150,11 @@ class TemplateComposition extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.hind(
-                        color: const Color(0xFFFF6B6B),
+                        color: AppColors.saffron,
                         fontSize: (w * 0.085).clamp(18.0, 32.0),
                         fontWeight: FontWeight.w900,
                         shadows: [
-                          Shadow(color: Colors.black.withOpacity(0.8), offset: const Offset(1, 2), blurRadius: 4),
+                          Shadow(color: AppColors.ink.withValues(alpha: 0.8), offset: const Offset(1, 2), blurRadius: 4),
                         ],
                       ),
                     ),
@@ -164,18 +170,18 @@ class TemplateComposition extends StatelessWidget {
                     child: Text(
                       quote,
                       style: GoogleFonts.hind(
-                        color: Colors.white,
+                        color: AppColors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                         height: 1.35,
-                        shadows: const [Shadow(blurRadius: 8, color: Colors.black87)],
+                        shadows: const [Shadow(blurRadius: 8, color: AppColors.ink)],
                       ),
                       textAlign: TextAlign.center,
                     ),
                   ),
 
                 // 4. Creator-defined photo zone
-                if (template.photoZoneEnabled && (userPhoto != null || editable))
+                if (showPhoto && template.photoZoneEnabled && (userPhoto != null || editable))
                   Positioned(
                     top: pTop,
                     left: pLeft,
@@ -185,24 +191,24 @@ class TemplateComposition extends StatelessWidget {
                       onTap: onPhotoTap,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.black26,
+                          color: AppColors.scrim,
                           shape: isRect ? BoxShape.rectangle : BoxShape.circle,
                           borderRadius: isRect ? BorderRadius.circular(AppRadius.md) : null,
-                          border: Border.all(color: Colors.white, width: 2),
-                          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 6)],
+                          border: Border.all(color: AppColors.white, width: 2),
+                          boxShadow: const [BoxShadow(color: AppColors.scrim, blurRadius: 6)],
                           image: userPhoto != null
                               ? DecorationImage(image: userPhoto!, fit: BoxFit.cover, onError: (_, __) {})
                               : null,
                         ),
                         child: userPhoto == null
-                            ? const Center(child: Icon(Icons.add_a_photo_rounded, size: 24, color: Colors.white))
+                            ? const Center(child: Icon(Icons.add_a_photo_rounded, size: 24, color: AppColors.white))
                             : null,
                       ),
                     ),
                   ),
 
                 // 5. Creator-defined name zone
-                if (template.nameZoneEnabled && (displayName.isNotEmpty || editable))
+                if (showName && template.nameZoneEnabled && (displayName.isNotEmpty || editable))
                   Positioned(
                     top: nTop,
                     left: nLeft,
@@ -214,19 +220,19 @@ class TemplateComposition extends StatelessWidget {
                           constraints: BoxConstraints(maxWidth: w * 0.9),
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                           decoration: BoxDecoration(
-                            color: displayName.isEmpty ? Colors.black54 : Colors.transparent,
+                            color: displayName.isEmpty ? AppColors.scrim : AppColors.transparent,
                             borderRadius: BorderRadius.circular(AppRadius.pill),
-                            border: displayName.isEmpty ? Border.all(color: Colors.white54) : null,
+                            border: displayName.isEmpty ? Border.all(color: AppColors.onDarkMuted) : null,
                           ),
                           child: Text(
                             displayName.isNotEmpty ? displayName : 'नाम जोड़ें ✏️',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.hind(
-                              color: template.nameColor != null ? ColorUtils.fromHex(template.nameColor!) : Colors.white,
+                              color: template.nameColor != null ? ColorUtils.fromHex(template.nameColor!) : AppColors.white,
                               fontSize: (template.nameFontSize?.toDouble() ?? 16.0).clamp(12.0, 24.0),
                               fontWeight: FontWeight.w700,
-                              shadows: const [Shadow(blurRadius: 6, color: Colors.black)],
+                              shadows: const [Shadow(blurRadius: 6, color: AppColors.ink)],
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -241,11 +247,11 @@ class TemplateComposition extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.55),
+                        color: AppColors.ink.withValues(alpha: 0.55),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
+                        border: Border.all(color: AppColors.white, width: 2),
                       ),
-                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
+                      child: const Icon(Icons.play_arrow_rounded, color: AppColors.white, size: 36),
                     ),
                   ),
 
@@ -279,21 +285,25 @@ class TemplateLockOverlay extends StatelessWidget {
     return Semantics(
       label: 'प्रीमियम स्टेटस — अनलॉक करने के लिए प्रीमियम लें',
       child: Container(
-        color: Colors.black.withOpacity(0.45),
+        color: AppColors.scrim,
         alignment: Alignment.center,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: EdgeInsets.all(compact ? 8 : 14),
-              decoration: const BoxDecoration(color: Color(0xFFF59E0B), shape: BoxShape.circle),
-              child: Icon(Icons.lock_rounded, color: Colors.white, size: compact ? 18 : 30),
+              decoration: const BoxDecoration(
+                gradient: AppColors.premiumGradient,
+                shape: BoxShape.circle,
+                boxShadow: AppShadows.premiumGlow,
+              ),
+              child: Icon(Icons.lock_rounded, color: AppColors.ink, size: compact ? 18 : 30),
             ),
             if (!compact) ...[
               const SizedBox(height: 10),
               Text(
                 'प्रीमियम स्टेटस',
-                style: GoogleFonts.hind(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                style: AppText.body(color: AppColors.white, size: 16, weight: FontWeight.w800),
               ),
             ],
           ],

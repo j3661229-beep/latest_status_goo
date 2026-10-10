@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'core/auth/session_store.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_mode_provider.dart';
 import 'core/constants/app_constants.dart';
 import 'core/services/notification_service.dart';
 import 'features/auth/presentation/providers/current_user_provider.dart';
@@ -72,6 +73,7 @@ class StatusGoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     // Drop per-account cached data when the session ends (logout or refresh
     // failure) so the next account never sees stale feed / bookmarks.
@@ -86,14 +88,16 @@ class StatusGoApp extends ConsumerWidget {
       title: 'Status Go',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: themeMode,
       routerConfig: router,
       builder: (context, child) {
-        // Respect system text scale but cap at 1.2x for UI consistency
+        // Respect system text scale but cap at 1.3x for UI consistency
         final mediaQuery = MediaQuery.of(context);
         return MediaQuery(
           data: mediaQuery.copyWith(
             textScaler: TextScaler.linear(
-              mediaQuery.textScaler.scale(1.0).clamp(0.8, 1.2),
+              mediaQuery.textScaler.scale(1.0).clamp(0.9, 1.3),
             ),
           ),
           child: child ?? const SizedBox.shrink(),

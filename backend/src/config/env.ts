@@ -46,6 +46,9 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional().default('rzp_test_placeholder'),
   RAZORPAY_KEY_SECRET: z.string().optional().default('placeholder'),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().default('placeholder'),
+  // Razorpay plan_XXXX for the ₹99/month recurring plan.
+  // Populated once via POST /api/v1/subscribe/intro/setup-plan (SUPER_ADMIN only).
+  RZP_MONTHLY_PLAN_ID: z.string().optional(),
 
   // Google Cloud Storage (file uploads)
   GCP_PROJECT_NAME: z.string().optional().default('My First Project'),

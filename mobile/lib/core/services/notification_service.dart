@@ -7,6 +7,7 @@ import 'package:onesignal_flutter/onesignal_flutter.dart';
 import '../api/api_client.dart';
 import '../constants/app_constants.dart';
 import '../models/notification_model.dart';
+import '../widgets/app_ui.dart';
 import '../../features/auth/domain/models/user_model.dart';
 
 /// Returns true if the route was handled, false if the app isn't ready yet
@@ -132,81 +133,82 @@ class NotificationService {
     final prompted = box.get('notif_permission_prompted', defaultValue: false) as bool;
     if (prompted) return;
 
-    await showDialog(
+    if (!context.mounted) return;
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.all(24),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEBF5FF),
-                borderRadius: BorderRadius.circular(12),
+      builder: (ctx) {
+        final p = ctx.palette;
+        Widget bullet(String text) => Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: AppText.body(size: 15, weight: FontWeight.w600, color: p.textPrimary, height: 1.35),
+                    ),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF1A56DB), size: 28),
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'स्टेटस सूचना पाएं',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'रोज़ सुबह नए भक्ति व सुविचार स्टेटस और त्योहारों की विशेष शुभकामनाएं सबसे पहले पाने के लिए नोटिफिकेशन ऑन करें।',
-              style: TextStyle(fontSize: 15, height: 1.5, color: Color(0xFF475569)),
-            ),
-            SizedBox(height: 12),
-            Row(
+            );
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
-                SizedBox(width: 8),
-                Text('रोज़ सुबह 7 बजे नया स्टेटस', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                Center(
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(shape: BoxShape.circle, gradient: AppColors.brandGradient),
+                    child: const Icon(Icons.notifications_active_rounded, color: AppColors.white, size: 36),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'स्टेटस सूचना पाएं',
+                  textAlign: TextAlign.center,
+                  style: AppText.heading(size: 21, color: p.textPrimary),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'रोज़ सुबह नए भक्ति व सुविचार स्टेटस और त्योहारों की विशेष शुभकामनाएं सबसे पहले पाने के लिए नोटिफिकेशन ऑन करें।',
+                  textAlign: TextAlign.center,
+                  style: AppText.body(size: 15, color: p.textSecondary, height: 1.5),
+                ),
+                const SizedBox(height: 8),
+                bullet('रोज़ सुबह 7 बजे नया स्टेटस'),
+                bullet('सण व उत्सव की याद दिलाना'),
+                const SizedBox(height: 24),
+                GradientButton(
+                  label: 'हाँ, शुरू करें',
+                  icon: Icons.notifications_active_rounded,
+                  onPressed: () async {
+                    box.put('notif_permission_prompted', true);
+                    Navigator.pop(ctx);
+                    await requestPermission();
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () {
+                    box.put('notif_permission_prompted', true);
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('बाद में'),
+                ),
               ],
             ),
-            SizedBox(height: 6),
-            Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
-                SizedBox(width: 8),
-                Text('सण व उत्सव की याद दिलाना', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              box.put('notif_permission_prompted', true);
-              Navigator.pop(ctx);
-            },
-            child: const Text('बाद में', style: TextStyle(fontSize: 15, color: Colors.grey, fontWeight: FontWeight.w600)),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A56DB),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () async {
-              box.put('notif_permission_prompted', true);
-              Navigator.pop(ctx);
-              await requestPermission();
-            },
-            child: const Text('हाँ, शुरू करें', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -242,6 +244,48 @@ class NotificationService {
       }
     } catch (e) {
       debugPrint('Error syncing user with OneSignal: $e');
+    }
+  }
+
+  // ─── Preferences (Settings screen) ────────────────────────────────────────
+
+  /// Whether the device is currently opted in to push (false if OneSignal is
+  /// not configured or the SDK call fails).
+  bool get isPushOptedIn {
+    if (AppConstants.oneSignalAppId.isEmpty) return false;
+    try {
+      return OneSignal.User.pushSubscription.optedIn ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opts the device in/out of push. Opting in asks for the OS permission first.
+  /// Returns the resulting state.
+  Future<bool> setPushEnabled(bool enabled) async {
+    if (AppConstants.oneSignalAppId.isEmpty) return false;
+    try {
+      if (enabled) {
+        final granted = await requestPermission();
+        if (!granted) return false;
+        await OneSignal.User.pushSubscription.optIn();
+      } else {
+        await OneSignal.User.pushSubscription.optOut();
+      }
+      return enabled;
+    } catch (e) {
+      debugPrint('Error changing push preference: $e');
+      return isPushOptedIn;
+    }
+  }
+
+  /// Syncs a boolean preference as a OneSignal tag ("1" / "0") for segment targeting.
+  Future<void> setPreferenceTag(String key, bool enabled) async {
+    if (AppConstants.oneSignalAppId.isEmpty) return;
+    try {
+      await OneSignal.User.addTags({key: enabled ? '1' : '0'});
+    } catch (e) {
+      debugPrint('Error setting OneSignal tag $key: $e');
     }
   }
 

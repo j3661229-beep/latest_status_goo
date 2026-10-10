@@ -2,13 +2,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/data/daily_suvichar_data.dart';
+import '../../../../core/widgets/app_ui.dart';
 import '../../../auth/presentation/providers/current_user_provider.dart';
 
+/// "आज का सुविचार" gradient card with next / language / share / copy actions.
 class DailySuvicharBanner extends ConsumerStatefulWidget {
   final VoidCallback? onCustomizePoster;
 
@@ -26,6 +27,7 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
   bool _showEn = false;
 
   void _nextQuote(int total) {
+    HapticFeedback.selectionClick();
     setState(() {
       _currentIndex = (_currentIndex + 1) % total;
     });
@@ -52,24 +54,8 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
 
   void _copyToClipboard(DailySuvichar suvichar) {
     Clipboard.setData(ClipboardData(text: '${suvichar.emoji} ${suvichar.textHi}'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'सुविचार कॉपी हो गया!',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF1A1A2E),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    if (!mounted) return;
+    AppSnack.success(context, 'सुविचार कॉपी हो गया!');
   }
 
   @override
@@ -79,236 +65,185 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
     final quotes = DailySuvicharData.getForCurrentTime();
     final suvichar = quotes[_currentIndex % quotes.length];
     final title = DailySuvicharData.getSlotTitle(slot);
-    final gradient = suvichar.gradientColors;
+    final showEn = _showEn && suvichar.textEn != null;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.page, vertical: AppSpacing.xs),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: gradient,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: gradient.first.withOpacity(0.35),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        gradient: AppColors.brandGradient,
+        borderRadius: AppRadius.xlAll,
+        boxShadow: AppShadows.primaryGlow,
       ),
-      child: Stack(
-        children: [
-          // Background subtle pattern watermark
-          Positioned(
-            right: -15,
-            bottom: -20,
-            child: Text(
-              suvichar.emoji,
-              style: TextStyle(
-                fontSize: 100,
-                color: Colors.white.withOpacity(0.12),
+      child: ClipRRect(
+        borderRadius: AppRadius.xlAll,
+        child: Stack(
+          children: [
+            Positioned(
+              right: -14,
+              bottom: -22,
+              child: ExcludeSemantics(
+                child: Text(
+                  suvichar.emoji,
+                  style: TextStyle(fontSize: 120, color: AppColors.white.withValues(alpha: 0.14)),
+                ),
               ),
             ),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Slot Header + Shuffle Button ──
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.25),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.glassStrong,
+                            borderRadius: AppRadius.pillAll,
+                            border: Border.all(color: AppColors.glassBorder),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(suvichar.emoji, style: const TextStyle(fontSize: 15)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'आज का सुविचार',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppText.body(
+                                      size: 13.5, weight: FontWeight.w800, color: AppColors.white, height: 1.2),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(suvichar.emoji, style: const TextStyle(fontSize: 14)),
-                          const SizedBox(width: 6),
-                          Text(
-                            title,
-                            style: GoogleFonts.outfit(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
+                      const Spacer(),
+                      Semantics(
+                        button: true,
+                        label: 'अगला सुविचार',
+                        excludeSemantics: true,
+                        child: InkWell(
+                          onTap: () => _nextQuote(quotes.length),
+                          borderRadius: AppRadius.pillAll,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minHeight: AppSpacing.minTouch, minWidth: 48),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.refresh_rounded, color: AppColors.white, size: 20),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${(_currentIndex % quotes.length) + 1}/${quotes.length}',
+                                  style: AppText.body(
+                                      size: 13.5, weight: FontWeight.w700, color: AppColors.white, height: 1.2),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-
-                    // Next / Shuffle quote
-                    InkWell(
-                      onTap: () => _nextQuote(quotes.length),
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.refresh_rounded, color: Colors.white, size: 14),
-                            const SizedBox(width: 4),
-                            Text(
-                              'अगला (${(_currentIndex % quotes.length) + 1}/${quotes.length})',
-                              style: GoogleFonts.outfit(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 14),
-
-                // ── Suvichar Quote Text ──
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: Text(
-                    _showEn && suvichar.textEn != null
-                        ? '"${suvichar.textEn}"'
-                        : '"${suvichar.textHi}"',
-                    key: ValueKey('${suvichar.id}_$_showEn'),
-                    style: GoogleFonts.rozhaOne(
-                      fontSize: 18,
-                      color: Colors.white,
-                      height: 1.45,
-                      letterSpacing: 0.2,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black.withOpacity(0.4),
-                          offset: const Offset(0, 1),
-                          blurRadius: 3,
-                        ),
-                      ],
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 2, bottom: 2),
+                    child: Text(
+                      title,
+                      style: AppText.body(
+                          size: 13, weight: FontWeight.w600, color: AppColors.white.withValues(alpha: 0.85)),
                     ),
                   ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // Author & Lang Toggle
-                Row(
-                  children: [
-                    Text(
-                      '— ${suvichar.author}',
-                      style: GoogleFonts.outfit(
-                        color: Colors.white.withOpacity(0.85),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AnimatedSwitcher(
+                    duration: AppMotion.normal,
+                    child: Text(
+                      showEn ? '"${suvichar.textEn}"' : '"${suvichar.textHi}"',
+                      key: ValueKey('${suvichar.id}_$_showEn'),
+                      style: AppText.heading(size: 19, weight: FontWeight.w600, color: AppColors.white, height: 1.5),
                     ),
-                    const Spacer(),
-                    if (suvichar.textEn != null)
-                      GestureDetector(
-                        onTap: () => setState(() => _showEn = !_showEn),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    children: [
+                      Expanded(
                         child: Text(
-                          _showEn ? '🇮🇳 हिंदी में पढ़ें' : '🌐 Read in English',
-                          style: GoogleFonts.outfit(
-                            color: Colors.white.withOpacity(0.8),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                          ),
+                          '— ${suvichar.author}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.body(
+                              size: 13.5,
+                              weight: FontWeight.w600,
+                              color: AppColors.white.withValues(alpha: 0.9),
+                              height: 1.3),
                         ),
                       ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                // ── Action Buttons Row ──
-                Row(
-                  children: [
-                    // 1-Tap WhatsApp Share
-                    Expanded(
-                      flex: 3,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _shareOnWhatsApp(suvichar, user?.name ?? user?.displayName),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF25D366),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                      if (suvichar.textEn != null)
+                        Semantics(
+                          button: true,
+                          label: _showEn ? 'हिंदी में पढ़ें' : 'Read in English',
+                          excludeSemantics: true,
+                          child: InkWell(
+                            onTap: () => setState(() => _showEn = !_showEn),
+                            borderRadius: AppRadius.pillAll,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: AppSpacing.minTouch),
+                              child: Center(
+                                widthFactor: 1,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  child: Text(
+                                    _showEn ? 'हिंदी में पढ़ें' : 'Read in English',
+                                    style: AppText.body(
+                                      size: 13,
+                                      weight: FontWeight.w700,
+                                      color: AppColors.white,
+                                      height: 1.2,
+                                    ).copyWith(decoration: TextDecoration.underline),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                          elevation: 3,
                         ),
-                        icon: const Icon(Icons.share_rounded, size: 18),
-                        label: Text(
-                          'WhatsApp शेयर',
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13,
-                          ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GradientButton(
+                          label: 'WhatsApp शेयर',
+                          icon: Icons.share_rounded,
+                          variant: GradientButtonVariant.whatsapp,
+                          height: 50,
+                          onPressed: () => _shareOnWhatsApp(suvichar, user?.name ?? user?.displayName),
                         ),
                       ),
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    // Copy Button
-                    IconButton(
-                      onPressed: () => _copyToClipboard(suvichar),
-                      tooltip: 'कॉपी करें',
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        padding: const EdgeInsets.all(10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                      const SizedBox(width: AppSpacing.xs),
+                      AppIconButton(
+                        icon: Icons.copy_rounded,
+                        semanticLabel: 'सुविचार कॉपी करें',
+                        glass: true,
+                        onPressed: () => _copyToClipboard(suvichar),
                       ),
-                      icon: const Icon(Icons.copy_rounded, color: Colors.white, size: 19),
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    // Create Status Poster Button
-                    Expanded(
-                      flex: 3,
-                      child: OutlinedButton.icon(
-                        onPressed: widget.onCustomizePoster,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white, width: 1.5),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                      if (widget.onCustomizePoster != null)
+                        AppIconButton(
+                          icon: Icons.palette_rounded,
+                          semanticLabel: 'पोस्टर बनाएं',
+                          glass: true,
+                          onPressed: widget.onCustomizePoster,
                         ),
-                        icon: const Icon(Icons.palette_rounded, size: 17),
-                        label: Text(
-                          'पोस्टर बनाएं',
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
