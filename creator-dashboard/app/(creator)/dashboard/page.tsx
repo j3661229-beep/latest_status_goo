@@ -68,7 +68,7 @@ export default function CreatorDashboardPage() {
       {isError && <QueryError error={error} onRetry={() => refetch()} title="Could not load your stats" />}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (

@@ -99,6 +99,36 @@ const FestivalUpdateSchema = z.object({
   isRecurring: z.boolean().optional(),
 });
 
+const CategoryCreateSchema = z.object({
+  nameEn: z.string().trim().min(1).max(100),
+  nameHi: z.string().trim().min(1).max(100),
+  nameMr: z.string().trim().min(1).max(100),
+  nameGu: z.string().trim().max(100).optional().nullable(),
+  namePa: z.string().trim().max(100).optional().nullable(),
+  slug: z.string().trim().min(1).max(100).optional(),
+  emoji: z.string().min(1).max(16).default('✨'),
+  gradient: z.string().max(100).default('from-indigo-500 to-purple-600'),
+  coverImage: z.string().url().max(2048).nullable().optional(),
+  description: z.string().max(500).nullable().optional(),
+  sortOrder: z.number().int().default(0),
+  isActive: z.boolean().default(true),
+});
+
+const CategoryUpdateSchema = z.object({
+  nameEn: z.string().trim().min(1).max(100).optional(),
+  nameHi: z.string().trim().min(1).max(100).optional(),
+  nameMr: z.string().trim().min(1).max(100).optional(),
+  nameGu: z.string().trim().max(100).nullable().optional(),
+  namePa: z.string().trim().max(100).nullable().optional(),
+  slug: z.string().trim().min(1).max(100).optional(),
+  emoji: z.string().min(1).max(16).optional(),
+  gradient: z.string().max(100).optional(),
+  coverImage: z.string().url().max(2048).nullable().optional(),
+  description: z.string().max(500).nullable().optional(),
+  sortOrder: z.number().int().optional(),
+  isActive: z.boolean().optional(),
+});
+
 const CAMPAIGN_SEGMENTS = [
   'all', 'hindi', 'marathi', 'hindi_free', 'free', 'premium', 'inactive_7d', 'premium_expiring',
 ] as const;
@@ -745,6 +775,117 @@ export async function adminRoutes(fastify: FastifyInstance) {
     await cache.invalidatePattern('festivals:upcoming:*').catch(() => 0);
     await audit(req, 'update_festival', 'Festival', id, undefined, body);
     return reply.send({ festival });
+  });
+
+  // ── CATEGORY MANAGEMENT ───────────────────────────────────
+  fastify.get('/categories', { preHandler: [requireAdmin] }, async (_req, reply) => {
+    const data = await fastify.prisma.category.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+      include: {
+        _count: {
+          select: { templates: true, festivals: true },
+        },
+      },
+    });
+    return reply.send({ data });
+  });
+
+  fastify.post('/categories', { preHandler: [requireAdmin] }, async (req, reply) => {
+    const parsed = CategoryCreateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid category data');
+    const body = parsed.data;
+
+    const baseSlug = (body.slug || body.nameEn).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') || 'category';
+    let slug = baseSlug;
+    let suffix = 1;
+    while (await fastify.prisma.category.findUnique({ where: { slug } })) {
+      slug = `${baseSlug}-${suffix++}`;
+    }
+
+    const category = await fastify.prisma.category.create({
+      data: {
+        slug,
+        nameEn: body.nameEn,
+        nameHi: body.nameHi,
+        nameMr: body.nameMr,
+        nameGu: body.nameGu,
+        namePa: body.namePa,
+        emoji: body.emoji || '✨',
+        gradient: body.gradient || 'from-indigo-500 to-purple-600',
+        coverImage: body.coverImage,
+        description: body.description,
+        sortOrder: body.sortOrder ?? 0,
+        isActive: body.isActive ?? true,
+      },
+      include: {
+        _count: {
+          select: { templates: true, festivals: true },
+        },
+      },
+    });
+
+    await cache.invalidatePattern('categories:*').catch(() => 0);
+    await audit(req, 'create_category', 'Category', category.id, undefined, body);
+    return reply.status(201).send({ category });
+  });
+
+  fastify.put('/categories/:id', { preHandler: [requireAdmin] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = CategoryUpdateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid category update');
+    const body = parsed.data;
+
+    if (body.slug) {
+      const existing = await fastify.prisma.category.findFirst({
+        where: { slug: body.slug, NOT: { id } },
+      });
+      if (existing) {
+        return reply.status(409).send({ error: `Another category already has slug "${body.slug}".` });
+      }
+    }
+
+    const category = await fastify.prisma.category.update({
+      where: { id },
+      data: {
+        ...(body.nameEn !== undefined && { nameEn: body.nameEn }),
+        ...(body.nameHi !== undefined && { nameHi: body.nameHi }),
+        ...(body.nameMr !== undefined && { nameMr: body.nameMr }),
+        ...(body.nameGu !== undefined && { nameGu: body.nameGu }),
+        ...(body.namePa !== undefined && { namePa: body.namePa }),
+        ...(body.slug !== undefined && { slug: body.slug }),
+        ...(body.emoji !== undefined && { emoji: body.emoji }),
+        ...(body.gradient !== undefined && { gradient: body.gradient }),
+        ...(body.coverImage !== undefined && { coverImage: body.coverImage }),
+        ...(body.description !== undefined && { description: body.description }),
+        ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
+        ...(body.isActive !== undefined && { isActive: body.isActive }),
+      },
+      include: {
+        _count: {
+          select: { templates: true, festivals: true },
+        },
+      },
+    });
+
+    await cache.invalidatePattern('categories:*').catch(() => 0);
+    await audit(req, 'update_category', 'Category', id, undefined, body);
+    return reply.send({ category });
+  });
+
+  fastify.delete('/categories/:id', { preHandler: [requireAdmin] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+
+    const count = await fastify.prisma.template.count({ where: { categoryId: id } });
+    if (count > 0) {
+      return reply.status(400).send({
+        error: `Cannot delete category: ${count} templates are linked to it. Toggle "Inactive" instead.`,
+      });
+    }
+
+    await fastify.prisma.category.delete({ where: { id } });
+    await cache.invalidatePattern('categories:*').catch(() => 0);
+    await audit(req, 'delete_category', 'Category', id);
+    return reply.send({ success: true, message: 'Category deleted successfully' });
   });
 
   // ── PUSH CAMPAIGNS ─────────────────────────────────────────

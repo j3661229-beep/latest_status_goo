@@ -85,7 +85,7 @@ export default function DashboardPage() {
           <div className="h-7 w-36 bg-slate-200 rounded animate-pulse mb-2" />
           <div className="h-4 w-60 bg-slate-100 rounded animate-pulse" />
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       </div>
@@ -136,7 +136,7 @@ export default function DashboardPage() {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <KpiCard
           title="Total Users"
           value={formatNumber(s?.users?.total || 0)}

@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, ClipboardList, Image, Users, User,
   CalendarDays, Bell, BarChart2, DollarSign, Settings, FileText,
-  Sparkles, LogOut, Menu, X, Pin,
+  Sparkles, LogOut, Menu, X, Pin, Layers,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { adminApi } from '../lib/api';
@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/review-queue', label: 'Review Queue', icon: ClipboardList, badge: true },
   { href: '/coordinator', label: 'Coordinator Picks', icon: Pin },
+  { href: '/categories', label: 'Categories', icon: Layers },
   { href: '/templates', label: 'Templates', icon: Image },
   { href: '/creators', label: 'Creators', icon: Users },
   { href: '/users', label: 'Users', icon: User },
@@ -135,19 +136,33 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile hamburger button */}
-      <button
-        className="lg:hidden fixed top-3 left-3 z-[60] w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-700 shadow-sm"
-        onClick={() => setMobileOpen(!mobileOpen)}
-        aria-label="Toggle menu"
-      >
-        {mobileOpen ? <X size={18} /> : <Menu size={18} />}
-      </button>
+      {/* Mobile Top App Bar */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white/95 backdrop-blur-md border-b border-slate-200/80 z-[50] flex items-center justify-between px-3 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <button
+            className="w-9 h-9 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-95 flex items-center justify-center text-slate-700 transition-all"
+            onClick={() => setMobileOpen(!mobileOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-blue-600 flex items-center justify-center shrink-0">
+              <Sparkles className="text-white" size={13} />
+            </div>
+            <span className="font-bold text-slate-900 text-sm">Status Go</span>
+            <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase">Admin</span>
+          </div>
+        </div>
+        <div className="w-8 h-8 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center shadow-xs">
+          {initial}
+        </div>
+      </header>
 
-      {/* Mobile overlay */}
+      {/* Mobile Backdrop Overlay */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-slate-900/30 z-[55] backdrop-blur-xs transition-opacity"
+          className="lg:hidden fixed inset-0 bg-slate-900/40 z-[55] backdrop-blur-xs transition-opacity duration-200"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -155,8 +170,7 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          'w-60 min-h-screen bg-white flex flex-col fixed left-0 top-0 bottom-0 z-[58] border-r border-slate-200/80 transition-transform duration-200',
-          'lg:translate-x-0',
+          'w-64 min-h-screen bg-white flex flex-col fixed left-0 top-0 bottom-0 z-[60] border-r border-slate-200/80 transition-transform duration-200 shadow-xl lg:shadow-none',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
       >

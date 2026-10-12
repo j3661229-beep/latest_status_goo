@@ -103,6 +103,15 @@ export const adminApi = {
   inviteCreator: (data: { email: string; name: string; displayName?: string; bio?: string }) =>
     api.post('/admin/creators/invite', data).then(r => r.data),
 
+  // Categories
+  getCategories: () => api.get('/admin/categories').then(r => r.data),
+  createCategory: (data: Record<string, any>) =>
+    api.post('/admin/categories', data).then(r => r.data),
+  updateCategory: (id: string, data: Record<string, any>) =>
+    api.put(`/admin/categories/${id}`, data).then(r => r.data),
+  deleteCategory: (id: string) =>
+    api.delete(`/admin/categories/${id}`).then(r => r.data),
+
   // Festivals
   getFestivals: () => api.get('/admin/festivals').then(r => r.data),
   createFestival: (data: Record<string, any>) =>
