@@ -21,14 +21,6 @@ subprojects {
             project.dependencies.add("implementation", project(":flutter_plugin_android_lifecycle"))
         }
     }
-    afterEvaluate {
-        project.extensions.findByName("android")?.let { androidExt ->
-            try {
-                val setBuildTools = androidExt.javaClass.getMethod("buildToolsVersion", String::class.java)
-                setBuildTools.invoke(androidExt, "35.0.0")
-            } catch (_: Exception) {}
-        }
-    }
 }
 
 

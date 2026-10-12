@@ -1,106 +1,117 @@
-// main.js — Status Go website
+// main.js — Status Go (statusgo.in)
 
-// ── Nav scroll state ──────────────────────────────────────────
-const nav = document.getElementById('main-nav');
-if (nav) {
-  const onScroll = () => {
-    nav.classList.toggle('scrolled', window.scrollY > 40);
-  };
-  window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
-}
+// ── Mobile Navigation Toggle ──────────────────────────────────
+const navToggle = document.getElementById('nav-toggle');
+const navMenu = document.getElementById('nav-menu') || document.getElementById('nav-links');
 
-// ── Mobile nav toggle ─────────────────────────────────────────
-const toggle = document.getElementById('nav-toggle');
-const links  = document.getElementById('nav-links');
-if (toggle && links) {
-  toggle.addEventListener('click', () => {
-    const open = links.classList.toggle('open');
-    toggle.setAttribute('aria-expanded', open);
-    document.body.style.overflow = open ? 'hidden' : '';
+if (navToggle && navMenu) {
+  navToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = navMenu.classList.toggle('open');
+    navToggle.classList.toggle('open', isOpen);
+    navToggle.setAttribute('aria-expanded', isOpen);
   });
-  // Close on link click
-  links.querySelectorAll('a').forEach(a => {
-    a.addEventListener('click', () => {
-      links.classList.remove('open');
-      toggle.setAttribute('aria-expanded', 'false');
-      document.body.style.overflow = '';
+
+  // Close when clicking any nav link
+  navMenu.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => {
+      navMenu.classList.remove('open');
+      navToggle.classList.remove('open');
+      navToggle.setAttribute('aria-expanded', 'false');
     });
   });
+
+  // Close when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!navMenu.contains(e.target) && !navToggle.contains(e.target) && navMenu.classList.contains('open')) {
+      navMenu.classList.remove('open');
+      navToggle.classList.remove('open');
+      navToggle.setAttribute('aria-expanded', 'false');
+    }
+  });
 }
 
-// ── Smooth anchor scroll ──────────────────────────────────────
-document.querySelectorAll('a[href^="#"]').forEach(a => {
-  a.addEventListener('click', e => {
-    const target = document.querySelector(a.getAttribute('href'));
-    if (target) {
-      e.preventDefault();
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// ── Toast Notification Helper ─────────────────────────────────
+function showToast(message, isSuccess = true) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `
+    <span style="font-size: 1.1rem;">${isSuccess ? '✅' : 'ℹ️'}</span>
+    <span>${message}</span>
+  `;
+
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 350);
+  }, 4000);
+}
+
+// ── Early Access / Pre-Register Form ──────────────────────────
+const earlyForm = document.getElementById('early-access-form');
+if (earlyForm) {
+  earlyForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('early-access-contact');
+    const val = input ? input.value.trim() : '';
+
+    if (!val) return;
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('statusgo_waitlist') || '[]');
+      existing.push({ contact: val, date: new Date().toISOString() });
+      localStorage.setItem('statusgo_waitlist', JSON.stringify(existing));
+    } catch (_) {}
+
+    showToast("🎉 Thank you! You will be notified the moment we launch on Google Play.");
+    earlyForm.reset();
+  });
+}
+
+// ── Contact Form Handler ──────────────────────────────────────
+const contactForm = document.getElementById('contact-form');
+if (contactForm) {
+  contactForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const btn = contactForm.querySelector('button[type="submit"]');
+    const origText = btn ? btn.textContent : 'Send';
+
+    if (btn) {
+      btn.textContent = 'Sending...';
+      btn.disabled = true;
+    }
+
+    setTimeout(() => {
+      showToast("Message sent! Our support team will get back to you within 24 hours.");
+      contactForm.reset();
+      if (btn) {
+        btn.textContent = origText;
+        btn.disabled = false;
+      }
+    }, 800);
+  });
+}
+
+// ── Smooth Scroll for Anchor Links ────────────────────────────
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+  anchor.addEventListener('click', function(e) {
+    const targetId = this.getAttribute('href');
+    if (targetId && targetId !== '#') {
+      const targetEl = document.querySelector(targetId);
+      if (targetEl) {
+        e.preventDefault();
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
   });
 });
-
-// ── Intersection observer: fade-in on scroll ──────────────────
-const fadeEls = document.querySelectorAll(
-  '.feature-card, .step, .pricing-card, .cat-card, .contact-channel, .value-card, .legal-section, .about-card'
-);
-if ('IntersectionObserver' in window && fadeEls.length) {
-  fadeEls.forEach(el => {
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(24px)';
-    el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-  });
-  const obs = new IntersectionObserver((entries) => {
-    entries.forEach((entry, i) => {
-      if (entry.isIntersecting) {
-        setTimeout(() => {
-          entry.target.style.opacity = '1';
-          entry.target.style.transform = 'none';
-        }, 60);
-        obs.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
-  fadeEls.forEach(el => obs.observe(el));
-}
-
-// ── Contact form (demo handler) ───────────────────────────────
-const form = document.getElementById('contact-form');
-if (form) {
-  form.addEventListener('submit', e => {
-    e.preventDefault();
-    const btn = form.querySelector('button[type="submit"]');
-    const original = btn.textContent;
-    btn.textContent = '✓ Message sent!';
-    btn.style.background = 'linear-gradient(135deg,#15803D,#16a34a)';
-    btn.disabled = true;
-    setTimeout(() => {
-      btn.textContent = original;
-      btn.style.background = '';
-      btn.disabled = false;
-      form.reset();
-    }, 3500);
-  });
-}
-
-// ── TOC active link ───────────────────────────────────────────
-const tocLinks = document.querySelectorAll('.toc-link');
-if (tocLinks.length) {
-  const headings = Array.from(document.querySelectorAll('.legal-section'));
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        const id = entry.target.id;
-        tocLinks.forEach(l => l.classList.remove('active'));
-        const active = document.querySelector(`.toc-link[href="#${id}"]`);
-        if (active) active.classList.add('active');
-      }
-    });
-  }, { rootMargin: '-30% 0px -60% 0px' });
-  headings.forEach(h => io.observe(h));
-}
-
-// ── Active toc link styling ───────────────────────────────────
-const style = document.createElement('style');
-style.textContent = `.toc-link.active { color: var(--primary) !important; background: rgba(91,61,245,.08) !important; font-weight: 700; }`;
-document.head.appendChild(style);

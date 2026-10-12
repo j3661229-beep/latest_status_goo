@@ -3,365 +3,437 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Status Go — भारत का #1 WhatsApp Status ऐप</title>
-  <meta name="description" content="Status Go: India's #1 WhatsApp Status template app. Festival wishes, quotes, morning greetings — personalised with your name and photo. Free download on Google Play." />
-  <meta property="og:title" content="Status Go — WhatsApp Status Templates" />
-  <meta property="og:description" content="India's #1 WhatsApp Status template app. Download free on Google Play." />
+  <title>Status Go — Daily WhatsApp Status Maker (Launching Soon)</title>
+  <meta name="description" content="Personalized Indian festival wishes, morning quotes, and daily greetings with your name and photo. Launching soon on Google Play Store." />
+  <meta property="og:title" content="Status Go — WhatsApp Status & Festival Maker" />
+  <meta property="og:description" content="Personalized status posters for WhatsApp in Hindi, Marathi & English. Launching soon." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://statusgo.app" />
-  <link rel="canonical" href="https://statusgo.app" />
+  <meta property="og:url" content="https://statusgo.in" />
+  <link rel="canonical" href="https://statusgo.in" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
 
-  <!-- ══ NAV ══ -->
-  <nav class="nav" id="main-nav">
-    <div class="container nav-inner">
-      <a href="index.html" class="logo" aria-label="Status Go Home">
-        <div class="logo-icon">S</div>
-        <span class="logo-text">Status Go</span>
-      </a>
-      <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false">
-        <span></span><span></span><span></span>
-      </button>
-      <ul class="nav-links" id="nav-links">
-        <li><a href="index.html" class="nav-link active">Home</a></li>
-        <li><a href="index.html#features" class="nav-link">Features</a></li>
-        <li><a href="index.html#pricing" class="nav-link">Pricing</a></li>
-        <li><a href="contact.html" class="nav-link">Contact</a></li>
-        <li>
-          <a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go"
-             target="_blank" rel="noopener" class="btn btn-primary nav-cta" id="nav-download-btn">
-            Download Free
-          </a>
-        </li>
-      </ul>
-    </div>
-  </nav>
-
-  <!-- ══ HERO ══ -->
-  <section class="hero" id="hero">
-    <div class="hero-bg">
-      <div class="hero-orb hero-orb-1"></div>
-      <div class="hero-orb hero-orb-2"></div>
-      <div class="hero-orb hero-orb-3"></div>
-    </div>
-    <div class="container hero-content">
-      <div class="hero-text">
-        <div class="badge" id="hero-badge">🇮🇳 India's #1 Status App</div>
-        <h1>Your <span class="gradient-text">Daily Status</span><br />Made Personal</h1>
-        <p class="hero-sub">
-          Festival wishes, morning greetings, motivational quotes — all personalised with <strong>your name &amp; photo</strong>. 
-          Share in one tap on WhatsApp. <span class="hindi">हर दिन, हर त्योहार।</span>
-        </p>
-        <div class="hero-actions">
-          <a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go"
-             target="_blank" rel="noopener" class="btn btn-primary btn-lg" id="hero-play-btn">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.18 23.76a2 2 0 0 0 2.1-.22l13.5-7.8-2.88-2.88L3.18 23.76ZM.5 1.63A2 2 0 0 0 0 3v18a2 2 0 0 0 .5 1.37l.07.07 10.08-10.07v-.24L.57 1.56l-.07.07ZM22.56 10.35l-2.88-1.66-3.21 3.2 3.21 3.2 2.9-1.67a2 2 0 0 0 0-3.07ZM5.28.46l13.5 7.8-2.88 2.88L5.28.46Z"/></svg>
-            Get it on Google Play
-          </a>
-          <a href="#features" class="btn btn-outline btn-lg" id="hero-learn-btn">See Features</a>
+  <!-- ══ NAVIGATION ══ -->
+  <header class="nav-header">
+    <div class="container nav-container">
+      <a href="index.html" class="nav-brand" aria-label="Status Go Home">
+        <div class="brand-icon">S</div>
+        <div>
+          <span class="brand-title">Status Go</span>
+          <span class="brand-subtitle">स्टेटस गो</span>
         </div>
-        <div class="hero-stats">
-          <div class="stat"><span class="stat-num">10L+</span><span class="stat-label">Downloads</span></div>
-          <div class="stat-divider"></div>
-          <div class="stat"><span class="stat-num">500+</span><span class="stat-label">Templates</span></div>
-          <div class="stat-divider"></div>
-          <div class="stat"><span class="stat-num">4.8★</span><span class="stat-label">Play Store</span></div>
+      </a>
+
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav>
+        <ul class="nav-menu" id="nav-menu">
+          <li><a href="index.html" class="nav-link active">Home</a></li>
+          <li><a href="#features" class="nav-link">Features</a></li>
+          <li><a href="#roadmap" class="nav-link">Launch Status</a></li>
+          <li><a href="#categories" class="nav-link">Categories</a></li>
+          <li><a href="#pricing" class="nav-link">Plans</a></li>
+          <li><a href="contact.html" class="nav-link">Contact</a></li>
+          <li>
+            <a href="#early-access" class="btn btn-primary btn-sm">Get Early Access</a>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="#early-access" class="btn btn-primary btn-sm">Pre-Register</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══ HERO SECTION ══ -->
+  <section class="hero" id="early-access">
+    <div class="hero-glow"></div>
+    <div class="container hero-grid">
+      <div class="hero-text">
+        <div class="hero-badge-wrap">
+          <span class="badge-tag">Coming Soon</span>
+          <span class="badge-text">🚀 Android App Launching Soon on Google Play</span>
+        </div>
+
+        <h1 class="hero-title">
+          Your Daily Status &amp; Festival Wishes, <span class="gradient-text">Made Personal</span>
+        </h1>
+
+        <p class="hero-description">
+          Create beautiful personalized festival posters, morning greetings, and motivational quotes with <strong>your name and photo</strong> overlaid automatically. Share in one tap on WhatsApp. <span class="devanagari">हर दिन, हर त्योहार।</span>
+        </p>
+
+        <!-- Early Access Card -->
+        <div class="early-access-box">
+          <div class="early-access-header">
+            <span class="live-dot"></span>
+            <span class="early-access-title">Be the First to Download on Launch Day</span>
+          </div>
+          <form class="early-access-form" id="early-access-form">
+            <input 
+              type="text" 
+              class="early-access-input" 
+              id="early-access-contact" 
+              placeholder="Enter your WhatsApp number or email" 
+              required 
+            />
+            <button type="submit" class="btn btn-primary">Notify Me</button>
+          </form>
+          <div class="early-access-note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            No spam. We will only notify you once when the app goes live on Google Play.
+          </div>
+        </div>
+
+        <!-- Honest Value Highlights -->
+        <div class="hero-highlights">
+          <div class="highlight-pill">
+            <span>🪔</span> Festivals &amp; Suprabhat
+          </div>
+          <div class="highlight-pill">
+            <span>🖼️</span> Custom Name &amp; Photo
+          </div>
+          <div class="highlight-pill">
+            <span>🇮🇳</span> Hindi, Marathi, English
+          </div>
+          <div class="highlight-pill">
+            <span>⚡</span> 1-Tap WhatsApp Share
+          </div>
         </div>
       </div>
-      <div class="hero-visual">
-        <div class="phone-mockup">
-          <div class="phone-frame">
-            <div class="phone-screen">
-              <div class="app-header-mock">
-                <div class="mock-greeting">नमस्ते, Rahul 🙏</div>
-                <div class="mock-date">12 Oct 2026</div>
+
+      <!-- App Preview Graphic -->
+      <div class="hero-visual-wrap">
+        <div class="phone-card">
+          <div class="phone-speaker"></div>
+          <div class="phone-screen">
+            <div class="mock-topbar">
+              <span class="mock-app-name">Status Go</span>
+              <span class="mock-date">Today's Festival</span>
+            </div>
+
+            <div class="mock-categories">
+              <span class="mock-cat-chip active">त्योहार</span>
+              <span class="mock-cat-chip">सुप्रभात</span>
+              <span class="mock-cat-chip">धार्मिक</span>
+              <span class="mock-cat-chip">प्रेरणा</span>
+            </div>
+
+            <div class="mock-poster-card">
+              <div class="poster-header">
+                <span class="poster-tag">Festival Special</span>
+                <div class="poster-headline devanagari">शुभ दीपावली</div>
+                <div class="poster-sub">May this festival bring joy and prosperity</div>
               </div>
-              <div class="mock-pills">
-                <span class="pill active">सभी</span>
-                <span class="pill">दीपावली</span>
-                <span class="pill">सुप्रभात</span>
-              </div>
-              <div class="mock-card diwali-card">
-                <div class="mock-card-content">
-                  <div class="mock-card-icon">🪔</div>
-                  <div class="mock-card-title">शुभ दीपावली</div>
-                  <div class="mock-card-subtitle">HAPPY DIWALI</div>
+
+              <div class="poster-overlay-user">
+                <div class="mock-user-avatar">JS</div>
+                <div class="mock-user-meta">
+                  <div class="mock-user-name">Jayesh Sharma</div>
+                  <div class="mock-user-title">शुभकामनाएं सहित</div>
                 </div>
-                <div class="mock-card-user">
-                  <div class="mock-avatar"></div>
-                  <span>Rahul Sharma</span>
-                </div>
-              </div>
-              <div class="mock-actions">
-                <div class="mock-action" style="color:#ef4444">♥</div>
-                <div class="mock-action whatsapp-action">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
-                </div>
-                <div class="mock-action">⬇</div>
-                <div class="mock-action">🔖</div>
               </div>
             </div>
+
+            <div class="mock-share-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+              Share to WhatsApp
+            </div>
           </div>
-          <div class="phone-glow"></div>
         </div>
       </div>
     </div>
-    <div class="hero-scroll-hint">
-      <span>Scroll to explore</span>
-      <div class="scroll-arrow"></div>
+  </section>
+
+  <!-- ══ HOW IT WORKS (3 SIMPLE STEPS) ══ -->
+  <section class="section" id="how-it-works">
+    <div class="container">
+      <div class="section-title-wrap">
+        <span class="section-badge">Simple Process</span>
+        <h2 class="section-title">Ready in <span class="gradient-text">3 Simple Steps</span></h2>
+        <p class="section-lead">Designed for everyone. No editing skills or graphic design knowledge needed.</p>
+      </div>
+
+      <div class="steps-container">
+        <div class="step-card">
+          <div class="step-number">01</div>
+          <h3>Pick a Occasion</h3>
+          <p>Choose from daily morning greetings, quotes, or upcoming festivals on the calendar.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">02</div>
+          <h3>Automatic Personalization</h3>
+          <p>Your name and profile photo are neatly framed into the design automatically in real-time.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">03</div>
+          <h3>1-Tap WhatsApp Share</h3>
+          <p>Instantly send to WhatsApp Status, family groups, or save high-resolution copies to your gallery.</p>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- ══ MARQUEE ══ -->
-  <div class="marquee-wrap" aria-hidden="true">
-    <div class="marquee-track">
-      <span>🪔 दीपावली</span><span>☀️ सुप्रभात</span><span>🙏 धार्मिक</span><span>❤️ प्रेम</span>
-      <span>💼 व्यवसाय</span><span>🌙 शुभरात्रि</span><span>🎉 त्योहार</span><span>🌺 वसंत</span>
-      <span>🎂 जन्मदिन</span><span>💍 शादी</span><span>🏆 सफलता</span><span>🌟 प्रेरणा</span>
-      <!-- duplicate for seamless loop -->
-      <span>🪔 दीपावली</span><span>☀️ सुप्रभात</span><span>🙏 धार्मिक</span><span>❤️ प्रेम</span>
-      <span>💼 व्यवसाय</span><span>🌙 शुभरात्रि</span><span>🎉 त्योहार</span><span>🌺 वसंत</span>
-      <span>🎂 जन्मदिन</span><span>💍 शादी</span><span>🏆 सफलता</span><span>🌟 प्रेरणा</span>
-    </div>
-  </div>
-
-  <!-- ══ FEATURES ══ -->
-  <section class="section features" id="features">
+  <!-- ══ FEATURES SECTION ══ -->
+  <section class="section section-dark" id="features">
     <div class="container">
-      <div class="section-header">
-        <div class="section-badge">✨ Features</div>
-        <h2>Everything you need for<br /><span class="gradient-text">perfect daily statuses</span></h2>
-        <p>Beautiful templates. Your personalisation. One tap to WhatsApp.</p>
+      <div class="section-title-wrap">
+        <span class="section-badge">Core Features</span>
+        <h2 class="section-title">Built Specially for <span class="gradient-text">Indian Celebrations</span></h2>
+        <p class="section-lead">Everything crafted with care to help you stay connected with family, friends, and customers.</p>
       </div>
+
       <div class="features-grid">
-        <div class="feature-card feature-card--large">
-          <div class="feature-icon">🖼️</div>
-          <h3>500+ Premium Templates</h3>
-          <p>Curated designs for every festival, mood and occasion — updated every day. Free &amp; Premium.</p>
-          <div class="feature-tags">
-            <span>Diwali</span><span>Holi</span><span>Eid</span><span>Christmas</span><span>+40 more</span>
+        <div class="feature-card" style="background: var(--bg-dark-card); border-color: var(--bg-dark-border);">
+          <div class="feature-icon-box">🪔</div>
+          <h3 style="color: var(--text-on-dark);">Festival Calendar Alerts</h3>
+          <p style="color: var(--text-on-dark-muted);">Receive advance alerts 2 days before major festivals (Diwali, Eid, Holi, Chhath, Navratri, Ganesh Chaturthi) so your wishes are ready on time.</p>
+        </div>
+
+        <div class="feature-card" style="background: var(--bg-dark-card); border-color: var(--bg-dark-border);">
+          <div class="feature-icon-box">👤</div>
+          <h3 style="color: var(--text-on-dark);">Canvas Name &amp; Photo Frame</h3>
+          <p style="color: var(--text-on-dark-muted);">Add your photo, full name, or optional business details. The layout adjusts automatically for clean visual balance.</p>
+        </div>
+
+        <div class="feature-card" style="background: var(--bg-dark-card); border-color: var(--bg-dark-border);">
+          <div class="feature-icon-box">🗣️</div>
+          <h3 style="color: var(--text-on-dark);">Hindi &amp; Regional Languages</h3>
+          <p style="color: var(--text-on-dark-muted);">Beautiful fonts and quotes in Hindi, Marathi, and English. No awkward machine translations—authentic festive language.</p>
+        </div>
+
+        <div class="feature-card" style="background: var(--bg-dark-card); border-color: var(--bg-dark-border);">
+          <div class="feature-icon-box">📲</div>
+          <h3 style="color: var(--text-on-dark);">Direct WhatsApp Sharing</h3>
+          <p style="color: var(--text-on-dark-muted);">1-tap sharing direct to WhatsApp Status without saving clutter into your phone gallery unless you want to.</p>
+        </div>
+
+        <div class="feature-card" style="background: var(--bg-dark-card); border-color: var(--bg-dark-border);">
+          <div class="feature-icon-box">🛡️</div>
+          <h3 style="color: var(--text-on-dark);">Privacy &amp; DPDP Compliant</h3>
+          <p style="color: var(--text-on-dark-muted);">We never read your phone contacts or scrape your personal gallery. Fully compliant with India's Digital Personal Data Protection Act.</p>
+        </div>
+
+        <div class="feature-card" style="background: var(--bg-dark-card); border-color: var(--bg-dark-border);">
+          <div class="feature-icon-box">💎</div>
+          <h3 style="color: var(--text-on-dark);">Clean &amp; Watermark-Free</h3>
+          <p style="color: var(--text-on-dark-muted);">Enjoy clean daily posters without obstructive watermarks. Free tier covers daily essential greetings.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ LAUNCH ROADMAP SECTION ══ -->
+  <section class="section" id="roadmap">
+    <div class="container">
+      <div class="section-title-wrap">
+        <span class="section-badge">Development Status</span>
+        <h2 class="section-title">Where We Are in <span class="gradient-text">Launch Timeline</span></h2>
+        <p class="section-lead">We believe in complete transparency with our early supporters.</p>
+      </div>
+
+      <div class="roadmap-box">
+        <div class="roadmap-grid">
+          <div class="roadmap-item completed">
+            <span class="roadmap-status">Completed ✅</span>
+            <div class="roadmap-title">Core App Architecture</div>
+            <p class="roadmap-desc">Flutter 3 mobile app engine, template rendering, and Fastify cloud API deployed on Google Cloud.</p>
+          </div>
+
+          <div class="roadmap-item completed">
+            <span class="roadmap-status">Completed ✅</span>
+            <div class="roadmap-title">Templates &amp; Fonts</div>
+            <p class="roadmap-desc">Curated festive templates, regional quotes, and automated name/photo overlay zones ready.</p>
+          </div>
+
+          <div class="roadmap-item">
+            <span class="roadmap-status">In Progress 🟡</span>
+            <div class="roadmap-title">Play Store Review</div>
+            <p class="roadmap-desc">Closed internal testing and Google Play Console policy compliance verification underway.</p>
+          </div>
+
+          <div class="roadmap-item">
+            <span class="roadmap-status">Upcoming 🚀</span>
+            <div class="roadmap-title">Public Play Store Release</div>
+            <p class="roadmap-desc">Official launch for all Android users. Early access members get notified first.</p>
           </div>
         </div>
-        <div class="feature-card">
-          <div class="feature-icon">👤</div>
-          <h3>Personalised with You</h3>
-          <p>Your name, photo and business brand — added automatically to every poster.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">📲</div>
-          <h3>Share in One Tap</h3>
-          <p>Download or share directly to WhatsApp Status, Instagram, Facebook and more.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">🌐</div>
-          <h3>Multi-Language</h3>
-          <p>Hindi, Marathi, Gujarati, English — statuses in your own language.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">🔔</div>
-          <h3>Daily Reminders</h3>
-          <p>Never miss a festival or greeting opportunity with smart daily notifications.</p>
-        </div>
-        <div class="feature-card feature-card--accent">
-          <div class="feature-icon">⭐</div>
-          <h3>Status Go Pro</h3>
-          <p>Unlimited downloads. All premium templates. All festival packs. Priority support.</p>
-          <a href="#pricing" class="btn btn-small btn-primary" id="feature-pro-btn">See Plans →</a>
-        </div>
       </div>
     </div>
   </section>
 
-  <!-- ══ HOW IT WORKS ══ -->
-  <section class="section how" id="how-it-works">
+  <!-- ══ CATEGORIES SECTION ══ -->
+  <section class="section" id="categories" style="background: var(--bg-subtle);">
     <div class="container">
-      <div class="section-header">
-        <div class="section-badge">🚀 How It Works</div>
-        <h2>Ready in <span class="gradient-text">3 simple steps</span></h2>
+      <div class="section-title-wrap">
+        <span class="section-badge">Festive Categories</span>
+        <h2 class="section-title">Designs for <span class="gradient-text">Every Celebration</span></h2>
+        <p class="section-lead">Updated continually with upcoming Indian festivals and daily morning inspiration.</p>
       </div>
-      <div class="steps">
-        <div class="step">
-          <div class="step-num">01</div>
-          <h3>Download &amp; Sign Up</h3>
-          <p>Install from Google Play. Log in with your mobile number — quick OTP, no password needed.</p>
-        </div>
-        <div class="step-arrow">→</div>
-        <div class="step">
-          <div class="step-num">02</div>
-          <h3>Pick a Template</h3>
-          <p>Browse hundreds of festival, quote and greeting templates. Tap one you like.</p>
-        </div>
-        <div class="step-arrow">→</div>
-        <div class="step">
-          <div class="step-num">03</div>
-          <h3>Share &amp; Wow</h3>
-          <p>Your name and photo are added automatically. Download or share to WhatsApp in one tap.</p>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ══ PRICING ══ -->
-  <section class="section pricing" id="pricing">
-    <div class="container">
-      <div class="section-header">
-        <div class="section-badge">💎 Pricing</div>
-        <h2>Simple, <span class="gradient-text">honest pricing</span></h2>
-        <p>No hidden fees. No auto-renewals. Pay once, enjoy fully.</p>
-      </div>
-      <div class="pricing-grid">
-        <div class="pricing-card">
-          <div class="pricing-tier">Free</div>
-          <div class="pricing-price">₹0</div>
-          <div class="pricing-desc">Forever free</div>
-          <ul class="pricing-features">
-            <li>✓ 10 image downloads/day</li>
-            <li>✓ 3 video downloads/day</li>
-            <li>✓ 100+ free templates</li>
-            <li>✓ Personalised with your name</li>
-            <li>✓ WhatsApp sharing</li>
-            <li class="muted">✗ Premium templates</li>
-            <li class="muted">✗ Unlimited downloads</li>
-          </ul>
-          <a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go"
-             target="_blank" rel="noopener" class="btn btn-outline btn-full" id="pricing-free-btn">
-            Download Free
-          </a>
-        </div>
-        <div class="pricing-card pricing-card--featured">
-          <div class="pricing-badge-popular">BEST VALUE</div>
-          <div class="pricing-tier">Annual Pro</div>
-          <div class="pricing-price">₹799<span>/year</span></div>
-          <div class="pricing-desc">Just ₹67/month · Save 33%</div>
-          <ul class="pricing-features">
-            <li>✓ <strong>Unlimited</strong> downloads</li>
-            <li>✓ All 500+ premium templates</li>
-            <li>✓ All festival packs</li>
-            <li>✓ Priority support</li>
-            <li>✓ Business branding</li>
-            <li>✓ New templates daily</li>
-            <li>✓ 365 days access</li>
-          </ul>
-          <a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go"
-             target="_blank" rel="noopener" class="btn btn-primary btn-full" id="pricing-annual-btn">
-            Get Annual Pro
-          </a>
-        </div>
-        <div class="pricing-card">
-          <div class="pricing-tier">Monthly Pro</div>
-          <div class="pricing-price">₹99<span>/month</span></div>
-          <div class="pricing-desc">Try for a month</div>
-          <ul class="pricing-features">
-            <li>✓ <strong>Unlimited</strong> downloads</li>
-            <li>✓ All 500+ premium templates</li>
-            <li>✓ All festival packs</li>
-            <li>✓ Priority support</li>
-            <li>✓ Business branding</li>
-            <li>✓ New templates daily</li>
-            <li>✓ 30 days access</li>
-          </ul>
-          <a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go"
-             target="_blank" rel="noopener" class="btn btn-outline btn-full" id="pricing-monthly-btn">
-            Get Monthly Pro
-          </a>
-        </div>
-      </div>
-      <p class="pricing-note">
-        All plans are <strong>prepaid one-time payments</strong> — no auto-renewal, no credit card stored. 
-        Payments powered by <strong>Razorpay</strong> (UPI, cards, net banking, wallets).
-        <a href="refund.html">Refund policy →</a>
-      </p>
-    </div>
-  </section>
-
-  <!-- ══ CATEGORIES ══ -->
-  <section class="section categories" id="categories">
-    <div class="container">
-      <div class="section-header">
-        <div class="section-badge">🎨 Categories</div>
-        <h2>A template for <span class="gradient-text">every moment</span></h2>
-      </div>
       <div class="cat-grid">
-        <div class="cat-card cat-diwali"><span class="cat-emoji">🪔</span><span>दीपावली</span></div>
-        <div class="cat-card cat-morning"><span class="cat-emoji">☀️</span><span>सुप्रभात</span></div>
-        <div class="cat-card cat-religious"><span class="cat-emoji">🙏</span><span>धार्मिक</span></div>
-        <div class="cat-card cat-love"><span class="cat-emoji">❤️</span><span>प्रेम</span></div>
-        <div class="cat-card cat-business"><span class="cat-emoji">💼</span><span>व्यवसाय</span></div>
-        <div class="cat-card cat-night"><span class="cat-emoji">🌙</span><span>शुभरात्रि</span></div>
-        <div class="cat-card cat-festival"><span class="cat-emoji">🎉</span><span>त्योहार</span></div>
-        <div class="cat-card cat-birthday"><span class="cat-emoji">🎂</span><span>जन्मदिन</span></div>
+        <div class="cat-chip">
+          <span class="cat-icon">🪔</span>
+          <span class="cat-name devanagari">दीपावली</span>
+          <span class="cat-count">Diwali</span>
+        </div>
+        <div class="cat-chip">
+          <span class="cat-icon">☀️</span>
+          <span class="cat-name devanagari">सुप्रभात</span>
+          <span class="cat-count">Good Morning</span>
+        </div>
+        <div class="cat-chip">
+          <span class="cat-icon">🙏</span>
+          <span class="cat-name devanagari">धार्मिक</span>
+          <span class="cat-count">Devotional</span>
+        </div>
+        <div class="cat-chip">
+          <span class="cat-icon">🌙</span>
+          <span class="cat-name devanagari">शुभरात्रि</span>
+          <span class="cat-count">Good Night</span>
+        </div>
+        <div class="cat-chip">
+          <span class="cat-icon">🎉</span>
+          <span class="cat-name devanagari">त्योहार</span>
+          <span class="cat-count">Festivals</span>
+        </div>
+        <div class="cat-chip">
+          <span class="cat-icon">🎂</span>
+          <span class="cat-name devanagari">जन्मदिन</span>
+          <span class="cat-count">Birthday</span>
+        </div>
+        <div class="cat-chip">
+          <span class="cat-icon">💪</span>
+          <span class="cat-name devanagari">प्रेरणा</span>
+          <span class="cat-count">Motivation</span>
+        </div>
+        <div class="cat-chip">
+          <span class="cat-icon">💐</span>
+          <span class="cat-name devanagari">हार्दिक बधाई</span>
+          <span class="cat-count">Congratulations</span>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ══ CTA BAND ══ -->
-  <section class="cta-band">
-    <div class="container cta-band-inner">
-      <div>
-        <h2>Start sharing beautiful statuses today</h2>
-        <p>Free forever. No sign-up required to browse.</p>
+  <!-- ══ PRICING TRANSPARENCY SECTION ══ -->
+  <section class="section" id="pricing">
+    <div class="container">
+      <div class="section-title-wrap">
+        <span class="section-badge">Transparent Plans</span>
+        <h2 class="section-title">Free to Start, <span class="gradient-text">Fair When You Upgrade</span></h2>
+        <p class="section-lead">Prepaid plans with Razorpay. No auto-debit traps, no recurring credit card charges.</p>
       </div>
-      <a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go"
-         target="_blank" rel="noopener" class="btn btn-white btn-lg" id="cta-band-btn">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.18 23.76a2 2 0 0 0 2.1-.22l13.5-7.8-2.88-2.88L3.18 23.76ZM.5 1.63A2 2 0 0 0 0 3v18a2 2 0 0 0 .5 1.37l.07.07 10.08-10.07v-.24L.57 1.56l-.07.07ZM22.56 10.35l-2.88-1.66-3.21 3.2 3.21 3.2 2.9-1.67a2 2 0 0 0 0-3.07ZM5.28.46l13.5 7.8-2.88 2.88L5.28.46Z"/></svg>
-        Download on Google Play
-      </a>
+
+      <div class="features-grid" style="max-width: 900px; margin: 0 auto;">
+        <div class="feature-card">
+          <span class="section-badge" style="background: var(--bg-subtle); color: var(--text-subtle);">Free Forever</span>
+          <h3 style="font-size: 1.8rem; margin: 8px 0;">₹0</h3>
+          <p style="margin-bottom: 20px;">Great for daily family greetings</p>
+          <ul style="list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 0.95rem; color: var(--text-muted); margin-bottom: 24px;">
+            <li>✓ Daily free image exports</li>
+            <li>✓ Access to core festival templates</li>
+            <li>✓ Your name &amp; photo overlay</li>
+            <li>✓ 1-Tap WhatsApp share</li>
+          </ul>
+          <a href="#early-access" class="btn btn-secondary btn-full">Pre-Register Free</a>
+        </div>
+
+        <div class="feature-card" style="border-color: var(--primary); box-shadow: var(--shadow-lg); position: relative;">
+          <div style="position: absolute; top: -12px; right: 24px; background: var(--primary); color: #fff; font-size: 0.72rem; font-weight: 700; padding: 4px 12px; border-radius: var(--radius-pill); text-transform: uppercase;">Optional Pro</div>
+          <span class="section-badge" style="background: var(--primary-light); color: var(--primary);">Annual Pass</span>
+          <h3 style="font-size: 1.8rem; margin: 8px 0;">₹799 <span style="font-size: 0.95rem; font-weight: 500; color: var(--text-subtle);">/ year</span></h3>
+          <p style="margin-bottom: 20px;">For festive enthusiasts &amp; small business owners</p>
+          <ul style="list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 0.95rem; color: var(--text-muted); margin-bottom: 24px;">
+            <li>✓ Unlimited downloads all year</li>
+            <li>✓ All premium festival &amp; VIP packs</li>
+            <li>✓ Optional business branding &amp; phone line</li>
+            <li>✓ Priority new template releases</li>
+          </ul>
+          <a href="#early-access" class="btn btn-primary btn-full">Get Early Access Discount</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ CTA BANNER ══ -->
+  <section class="section" style="padding-top: 0;">
+    <div class="container">
+      <div class="cta-banner">
+        <h2>Ready for the Launch?</h2>
+        <p>Join our early access list to get notified the exact minute Status Go is approved and live on Google Play Store.</p>
+        <a href="#early-access" class="btn btn-secondary btn-lg" style="background: #FFFFFF; color: var(--primary); border: none;">Pre-Register Now</a>
+      </div>
     </div>
   </section>
 
   <!-- ══ FOOTER ══ -->
   <footer class="footer">
     <div class="container">
-      <div class="footer-top">
+      <div class="footer-grid">
         <div class="footer-brand">
-          <a href="index.html" class="logo">
-            <div class="logo-icon">S</div>
-            <span class="logo-text">Status Go</span>
+          <a href="index.html" class="nav-brand" style="margin-bottom: 12px;">
+            <div class="brand-icon" style="box-shadow: none;">S</div>
+            <div>
+              <span class="brand-title" style="color: #FFFFFF;">Status Go</span>
+              <span class="brand-subtitle" style="color: #A5B4FC;">स्टेटस गो</span>
+            </div>
           </a>
-          <p class="footer-tagline">भारत का #1 WhatsApp Status ऐप<br/>Made with ❤️ in India 🇮🇳</p>
-          <a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go"
-             target="_blank" rel="noopener" class="play-badge" id="footer-play-btn" aria-label="Get it on Google Play">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Google_Play_Store_badge_EN.svg/200px-Google_Play_Store_badge_EN.svg.png" alt="Get it on Google Play" width="160" height="48" />
-          </a>
+          <p>Indian daily status &amp; festival poster maker. Personalized in seconds for WhatsApp. Made with ❤️ in India.</p>
         </div>
-        <nav class="footer-links" aria-label="Footer navigation">
-          <div class="footer-col">
-            <h4>App</h4>
-            <a href="index.html#features">Features</a>
-            <a href="index.html#pricing">Pricing</a>
-            <a href="index.html#categories">Categories</a>
-          </div>
-          <div class="footer-col">
-            <h4>Legal</h4>
-            <a href="privacy.html">Privacy Policy</a>
-            <a href="terms.html">Terms &amp; Conditions</a>
-            <a href="refund.html">Refund Policy</a>
-          </div>
-          <div class="footer-col">
-            <h4>Support</h4>
-            <a href="contact.html">Contact Us</a>
-            <a href="about.html">About</a>
-            <a href="mailto:support@statusgo.app">support@statusgo.app</a>
-          </div>
-        </nav>
+
+        <div class="footer-col">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="#features">Features</a></li>
+            <li><a href="#roadmap">Launch Status</a></li>
+            <li><a href="#pricing">Pricing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal &amp; Policy</h4>
+          <ul>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="terms.html">Terms of Service</a></li>
+            <li><a href="refund.html">Refund &amp; Cancellation</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Support &amp; Company</h4>
+          <ul>
+            <li><a href="about.html">About Us</a></li>
+            <li><a href="contact.html">Contact Us</a></li>
+            <li><a href="mailto:support@statusgo.in">support@statusgo.in</a></li>
+          </ul>
+        </div>
       </div>
+
       <div class="footer-bottom">
-        <p>© 2026 Status Go. All rights reserved.</p>
+        <div>© 2026 Status Go (statusgo.in). All rights reserved.</div>
         <div class="footer-legal-links">
           <a href="privacy.html">Privacy</a>
-          <span>·</span>
           <a href="terms.html">Terms</a>
-          <span>·</span>
           <a href="refund.html">Refund</a>
+          <a href="contact.html">Contact</a>
         </div>
       </div>
     </div>
   </footer>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
 
   <script src="js/main.js"></script>
 </body>

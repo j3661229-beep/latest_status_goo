@@ -3,168 +3,178 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Contact Us — Status Go</title>
-  <meta name="description" content="Get in touch with Status Go support — email, WhatsApp, or fill out our contact form. We respond within 48 hours." />
-  <link rel="canonical" href="https://statusgo.app/contact" />
+  <title>Contact Us — Status Go Support</title>
+  <meta name="description" content="Get in touch with Status Go team for inquiries, early access feedback, or grievance redressing. support@statusgo.in." />
+  <link rel="canonical" href="https://statusgo.in/contact.html" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
 
-  <nav class="nav page-nav" id="main-nav">
-    <div class="container nav-inner">
-      <a href="index.html" class="logo"><div class="logo-icon">S</div><span class="logo-text">Status Go</span></a>
-      <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false"><span></span><span></span><span></span></button>
-      <ul class="nav-links" id="nav-links">
-        <li><a href="index.html" class="nav-link">Home</a></li>
-        <li><a href="index.html#features" class="nav-link">Features</a></li>
-        <li><a href="index.html#pricing" class="nav-link">Pricing</a></li>
-        <li><a href="contact.html" class="nav-link active">Contact</a></li>
-        <li><a href="https://play.google.com/store/apps/details?id=com.statusgo.status_go" target="_blank" rel="noopener" class="btn btn-primary nav-cta">Download</a></li>
-      </ul>
-    </div>
-  </nav>
+  <!-- ══ NAVIGATION ══ -->
+  <header class="nav-header">
+    <div class="container nav-container">
+      <a href="index.html" class="nav-brand" aria-label="Status Go Home">
+        <div class="brand-icon">S</div>
+        <div>
+          <span class="brand-title">Status Go</span>
+          <span class="brand-subtitle">स्टेटस गो</span>
+        </div>
+      </a>
 
-  <!-- Hero -->
-  <div style="background:var(--grad-brand);padding:120px 0 70px">
-    <div class="container">
-      <div class="badge" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3)">💬 Support</div>
-      <h1 style="color:#fff;font-size:clamp(28px,5vw,48px);margin-bottom:12px">We're here to help</h1>
-      <p style="color:rgba(255,255,255,.8);font-size:18px;max-width:500px;line-height:1.65">
-        We respond to every message within 48 hours. For payment issues, please include your Razorpay payment ID.
-      </p>
-    </div>
-  </div>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
 
-  <!-- Contact Section -->
-  <section class="contact-section">
+      <nav>
+        <ul class="nav-menu" id="nav-menu">
+          <li><a href="index.html" class="nav-link">Home</a></li>
+          <li><a href="index.html#features" class="nav-link">Features</a></li>
+          <li><a href="index.html#roadmap" class="nav-link">Launch Status</a></li>
+          <li><a href="about.html" class="nav-link">About Us</a></li>
+          <li><a href="contact.html" class="nav-link active">Contact</a></li>
+          <li><a href="index.html#early-access" class="btn btn-primary btn-sm">Get Early Access</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="index.html#early-access" class="btn btn-primary btn-sm">Pre-Register</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══ CONTACT CONTENT ══ -->
+  <section class="section">
     <div class="container">
+      <div class="section-title-wrap">
+        <span class="section-badge">Support &amp; Inquiries</span>
+        <h1 class="section-title">We'd Love to <span class="gradient-text">Hear From You</span></h1>
+        <p class="section-lead">Have questions regarding our upcoming release, creator onboarding, or business partnerships? Send us a message.</p>
+      </div>
+
       <div class="contact-grid">
-        <!-- Left: Channels -->
-        <div class="contact-info">
-          <h2>Get in touch</h2>
-          <p>Choose the channel that works best for you. Our support team is available Monday–Saturday, 10 AM – 6 PM IST.</p>
-          <div class="contact-channels">
-            <a href="mailto:support@statusgo.app" class="contact-channel" id="contact-email-link">
-              <div class="contact-icon" style="background:var(--grad-soft)">📧</div>
-              <div class="contact-channel-info">
-                <strong>Email Support</strong>
-                <span>support@statusgo.app</span>
-              </div>
-            </a>
-            <a href="https://wa.me/910000000000?text=Hello%2C%20I%20need%20help%20with%20Status%20Go%20app"
-               target="_blank" rel="noopener" class="contact-channel" id="contact-whatsapp-link">
-              <div class="contact-icon" style="background:rgba(37,211,102,.12)">💬</div>
-              <div class="contact-channel-info">
-                <strong>WhatsApp Support</strong>
-                <span>Chat with us on WhatsApp</span>
-              </div>
-            </a>
-            <a href="mailto:grievance@statusgo.app" class="contact-channel" id="contact-grievance-link">
-              <div class="contact-icon" style="background:rgba(220,38,38,.08)">⚖️</div>
-              <div class="contact-channel-info">
-                <strong>Grievance Officer</strong>
-                <span>grievance@statusgo.app</span>
-              </div>
-            </a>
+        <!-- Left: Details -->
+        <div class="contact-info-card">
+          <h3>Direct Channels</h3>
+          <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 8px;">
+            Our support desk is based in India and responds to all inquiries within 24–48 hours.
+          </p>
+
+          <div class="contact-item">
+            <div class="contact-icon">📧</div>
+            <div>
+              <span class="contact-label">Official Support Email</span>
+              <a href="mailto:support@statusgo.in" class="contact-value">support@statusgo.in</a>
+            </div>
           </div>
 
-          <div style="margin-top:32px;padding:24px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg)">
-            <h3 style="font-size:16px;margin-bottom:16px">Frequently asked topics</h3>
-            <div style="display:flex;flex-direction:column;gap:10px">
-              <a href="refund.html" style="color:var(--primary);font-weight:600;font-size:14px">→ How to get a refund</a>
-              <a href="terms.html#plans" style="color:var(--primary);font-weight:600;font-size:14px">→ Premium plans &amp; billing</a>
-              <a href="privacy.html#rights" style="color:var(--primary);font-weight:600;font-size:14px">→ Your privacy rights &amp; data deletion</a>
-              <a href="terms.html#ip" style="color:var(--primary);font-weight:600;font-size:14px">→ Template usage rights</a>
+          <div class="contact-item">
+            <div class="contact-icon">🛡️</div>
+            <div>
+              <span class="contact-label">DPDP Grievance Officer</span>
+              <div class="contact-value" style="font-size: 0.95rem;">Grievance Redressal Cell</div>
+              <span style="font-size: 0.85rem; color: var(--text-muted);">Email: grievance@statusgo.in</span>
+            </div>
+          </div>
+
+          <div class="contact-item">
+            <div class="contact-icon">⏰</div>
+            <div>
+              <span class="contact-label">Operating Hours</span>
+              <div class="contact-value" style="font-size: 0.95rem;">Mon – Sat: 10:00 AM – 6:30 PM IST</div>
             </div>
           </div>
         </div>
 
-        <!-- Right: Form -->
-        <div class="contact-form-card">
-          <h3>Send us a message</h3>
-          <form id="contact-form" novalidate>
+        <!-- Right: Interactive Form -->
+        <div class="contact-info-card" style="box-shadow: var(--shadow-md);">
+          <h3 style="margin-bottom: 20px;">Send a Direct Message</h3>
+          <form id="contact-form">
             <div class="form-group">
-              <label for="contact-name">Your name</label>
-              <input type="text" id="contact-name" name="name" placeholder="Rahul Sharma" required />
+              <label class="form-label" for="contact-name">Your Full Name</label>
+              <input type="text" id="contact-name" class="form-control" placeholder="e.g. Rahul Sharma" required />
             </div>
+
             <div class="form-group">
-              <label for="contact-email">Email address</label>
-              <input type="email" id="contact-email" name="email" placeholder="rahul@example.com" required />
+              <label class="form-label" for="contact-email">Email or WhatsApp Number</label>
+              <input type="text" id="contact-email" class="form-control" placeholder="e.g. rahul@gmail.com or 9876543210" required />
             </div>
+
             <div class="form-group">
-              <label for="contact-phone">Mobile number (optional)</label>
-              <input type="tel" id="contact-phone" name="phone" placeholder="+91 98765 43210" />
+              <label class="form-label" for="contact-subject">Topic</label>
+              <input type="text" id="contact-subject" class="form-control" placeholder="e.g. Early access question, Creator inquiry" required />
             </div>
+
             <div class="form-group">
-              <label for="contact-subject">Topic</label>
-              <select id="contact-subject" name="subject">
-                <option value="">Select a topic…</option>
-                <option value="payment">Payment / Refund issue</option>
-                <option value="account">Account / Login problem</option>
-                <option value="template">Template request</option>
-                <option value="bug">App bug report</option>
-                <option value="privacy">Privacy / Data request</option>
-                <option value="other">Other</option>
-              </select>
+              <label class="form-label" for="contact-message">Your Message</label>
+              <textarea id="contact-message" class="form-control" placeholder="How can we help you?" required></textarea>
             </div>
-            <div class="form-group">
-              <label for="contact-message">Message</label>
-              <textarea id="contact-message" name="message" placeholder="Describe your issue in detail. For payment issues, include your Razorpay Payment ID." required></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary btn-full" id="contact-submit-btn" style="font-size:16px;padding:16px">
-              Send Message
-            </button>
-            <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-top:12px">
-              We typically respond within 48 hours. By sending a message you agree to our <a href="privacy.html" style="color:var(--primary)">Privacy Policy</a>.
-            </p>
+
+            <button type="submit" class="btn btn-primary btn-full btn-lg">Send Message</button>
           </form>
         </div>
       </div>
     </div>
   </section>
 
+  <!-- ══ FOOTER ══ -->
   <footer class="footer">
     <div class="container">
-      <div class="footer-top">
+      <div class="footer-grid">
         <div class="footer-brand">
-          <a href="index.html" class="logo"><div class="logo-icon">S</div><span class="logo-text">Status Go</span></a>
-          <p class="footer-tagline">भारत का #1 WhatsApp Status ऐप<br/>Made with ❤️ in India 🇮🇳</p>
+          <a href="index.html" class="nav-brand" style="margin-bottom: 12px;">
+            <div class="brand-icon" style="box-shadow: none;">S</div>
+            <div>
+              <span class="brand-title" style="color: #FFFFFF;">Status Go</span>
+              <span class="brand-subtitle" style="color: #A5B4FC;">स्टेटस गो</span>
+            </div>
+          </a>
+          <p>Indian daily status &amp; festival poster maker. Personalized in seconds for WhatsApp. Made with ❤️ in India.</p>
         </div>
-        <nav class="footer-links">
-          <div class="footer-col">
-            <h4>App</h4>
-            <a href="index.html#features">Features</a>
-            <a href="index.html#pricing">Pricing</a>
-            <a href="index.html#categories">Categories</a>
-          </div>
-          <div class="footer-col">
-            <h4>Legal</h4>
-            <a href="privacy.html">Privacy Policy</a>
-            <a href="terms.html">Terms &amp; Conditions</a>
-            <a href="refund.html">Refund Policy</a>
-          </div>
-          <div class="footer-col">
-            <h4>Support</h4>
-            <a href="contact.html">Contact Us</a>
-            <a href="about.html">About</a>
-            <a href="mailto:support@statusgo.app">support@statusgo.app</a>
-          </div>
-        </nav>
+
+        <div class="footer-col">
+          <h4>Navigation</h4>
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#features">Features</a></li>
+            <li><a href="index.html#roadmap">Launch Status</a></li>
+            <li><a href="about.html">About Us</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal &amp; Policy</h4>
+          <ul>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="terms.html">Terms of Service</a></li>
+            <li><a href="refund.html">Refund &amp; Cancellation</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Support &amp; Company</h4>
+          <ul>
+            <li><a href="contact.html">Contact Us</a></li>
+            <li><a href="mailto:support@statusgo.in">support@statusgo.in</a></li>
+          </ul>
+        </div>
       </div>
+
       <div class="footer-bottom">
-        <p>© 2026 Status Go. All rights reserved.</p>
+        <div>© 2026 Status Go (statusgo.in). All rights reserved.</div>
         <div class="footer-legal-links">
-          <a href="privacy.html">Privacy</a><span>·</span>
-          <a href="terms.html">Terms</a><span>·</span>
+          <a href="privacy.html">Privacy</a>
+          <a href="terms.html">Terms</a>
           <a href="refund.html">Refund</a>
+          <a href="contact.html">Contact</a>
         </div>
       </div>
     </div>
   </footer>
 
+  <div class="toast-container" id="toast-container"></div>
   <script src="js/main.js"></script>
 </body>
 </html>
