@@ -59,3 +59,6 @@ mobile/ios/Runner.xcworkspace/xcuserdata/
 
 # Docker volumes (local data — don't commit)
 .docker-data/
+
+# Local Netlify folder
+.netlify
