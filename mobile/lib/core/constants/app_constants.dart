@@ -13,7 +13,7 @@ class AppConstants {
   // Pass --dart-define=FLUTTER_API_BASE_URL=https://api.example.com/api/v1 for
   // profile/release builds. The plain-http LAN default only applies to debug builds.
   static const String _apiBaseUrlDefine = String.fromEnvironment('FLUTTER_API_BASE_URL');
-  static const String _debugApiBaseUrl = 'http://10.129.58.178:3000/api/v1';
+  static const String _debugApiBaseUrl = 'http://10.45.253.178:3000/api/v1';
   static const String _releasePlaceholderApiBaseUrl = 'https://api.statusgo.invalid/api/v1';
 
   static String get apiBaseUrl {

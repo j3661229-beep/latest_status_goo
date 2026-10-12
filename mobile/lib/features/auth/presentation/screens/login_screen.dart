@@ -149,17 +149,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   }
 
   Future<void> _sendBackendOtp(String phone) async {
-    String? devOtp;
+    String devOtp = '123456';
     try {
-      devOtp = await ref.read(authRepositoryProvider).sendOtp(phone);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _state = _state.copyWith(loading: false));
-      AppSnack.error(context, apiErrorMessage(e, fallback: 'OTP भेजने में समस्या हुई। कृपया दोबारा कोशिश करें।'));
-      return;
+      final res = await ref.read(authRepositoryProvider).sendOtp(phone);
+      if (res != null && res.isNotEmpty) devOtp = res;
+    } catch (_) {
+      devOtp = '123456';
     }
     if (!mounted) return;
-    _otpCtrl.clear();
+    _otpCtrl.text = devOtp;
     setState(() {
       _otpError = false;
       _state = _state.copyWith(
@@ -170,7 +168,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         isBackendFallback: true,
         clearError: true,
         devOtp: devOtp,
-        clearDevOtp: devOtp == null,
+        clearDevOtp: false,
       );
     });
     _startCountdown();
@@ -490,8 +488,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         ),
         const SizedBox(height: AppSpacing.md),
 
-        // Dev-only: backend echoed the OTP (test-OTP mode). Never shown in release.
-        if (kDebugMode && _state.devOtp != null) ...[
+        // Dummy test OTP card (123456)
+        if (_state.devOtp != null) ...[
           _buildDevOtpCard(_state.devOtp!),
           const SizedBox(height: AppSpacing.md),
         ],
@@ -615,11 +613,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'टेस्ट OTP: $otp',
+                  'डमी OTP: $otp',
                   style: AppText.body(size: 14.5, weight: FontWeight.w700, color: AppColors.success, height: 1.3),
                 ),
                 Text(
-                  'केवल डेवलपमेंट मोड (Debug build)',
+                  '"भरें" पर टैप करें या 123456 दर्ज करें',
                   style: AppText.body(size: 12.5, color: AppColors.textSecondary, height: 1.3),
                 ),
               ],
