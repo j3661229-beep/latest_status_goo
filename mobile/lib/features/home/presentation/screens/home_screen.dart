@@ -391,7 +391,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
-        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        physics: const BouncingScrollPhysics(),
         itemCount: filtered.length,
         onPageChanged: (_) {
           HapticFeedback.selectionClick();

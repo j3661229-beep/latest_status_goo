@@ -214,6 +214,10 @@ class NotificationService {
 
   /// Sync user details with OneSignal on login/restore
   Future<void> syncUser(UserModel user) async {
+    if (AppConstants.oneSignalAppId.isEmpty) {
+      debugPrint('ℹ️ OneSignal not configured. Skipping user sync.');
+      return;
+    }
     try {
       // 1. OneSignal external user id login
       await OneSignal.login(user.id);
@@ -291,6 +295,7 @@ class NotificationService {
 
   /// Logout from OneSignal on app sign-out
   Future<void> onSignOut() async {
+    if (AppConstants.oneSignalAppId.isEmpty) return;
     try {
       await OneSignal.logout();
       debugPrint('👋 OneSignal logged out');

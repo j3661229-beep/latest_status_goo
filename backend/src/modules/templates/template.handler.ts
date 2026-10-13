@@ -142,7 +142,32 @@ export class TemplateHandler {
       }),
     ]);
 
-    const result = { featured, trending, coordinatorPicks, festivalToday, categories };
+    let featuredList = featured;
+    let trendingList = trending;
+
+    // Fallback: If no templates are explicitly tagged featured or trending, show recent approved templates
+    if (featuredList.length === 0 && trendingList.length === 0) {
+      const recentApproved = await this.prisma.template.findMany({
+        where: { status: 'APPROVED' },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        take: 20,
+        select: templateSelect,
+      });
+      featuredList = recentApproved;
+      trendingList = recentApproved;
+    } else if (featuredList.length === 0) {
+      featuredList = trendingList;
+    } else if (trendingList.length === 0) {
+      trendingList = featuredList;
+    }
+
+    const result = {
+      featured: featuredList,
+      trending: trendingList,
+      coordinatorPicks,
+      festivalToday,
+      categories,
+    };
     await this.cache.set(cacheKey, result, TTL.homeFeed);
     return reply.send(result);
   }

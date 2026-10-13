@@ -13,6 +13,7 @@ import '../../../../core/api/api_error.dart';
 import '../../../../core/widgets/app_ui.dart';
 import '../../../legal/presentation/widgets/legal_consent_text.dart';
 import '../../data/auth_repository.dart';
+import '../../data/sms_otp_retriever.dart';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   final _otpCtrl = TextEditingController();
   final _phoneFocus = FocusNode();
   final _otpFocus = FocusNode();
+  final _smsRetriever = SmsOtpRetriever();
   late final AnimationController _float;
   late final AnimationController _shake;
   var _state = const _State();
@@ -148,16 +150,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
     await _sendBackendOtp(phone);
   }
 
+  Future<void> _resendOtp() async {
+    if (_state.loading || _state.phone.isEmpty) return;
+    setState(() => _state = _state.copyWith(loading: true, clearError: true));
+    await _sendBackendOtp(_state.phone);
+  }
+
   Future<void> _sendBackendOtp(String phone) async {
-    String devOtp = '123456';
     try {
-      final res = await ref.read(authRepositoryProvider).sendOtp(phone);
-      if (res != null && res.isNotEmpty) devOtp = res;
-    } catch (_) {
-      devOtp = '123456';
+      await ref.read(authRepositoryProvider).sendOtp(phone);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _state = _state.copyWith(loading: false));
+      AppSnack.error(context, apiErrorMessage(e, fallback: 'OTP भेजा नहीं जा सका। कृपया पुनः प्रयास करें।'));
+      return;
     }
     if (!mounted) return;
-    _otpCtrl.text = devOtp;
+    _otpCtrl.clear();
     setState(() {
       _otpError = false;
       _state = _state.copyWith(
@@ -167,8 +176,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         verificationId: 'BACKEND_OTP',
         isBackendFallback: true,
         clearError: true,
-        devOtp: devOtp,
-        clearDevOtp: false,
+        clearDevOtp: true,
       );
     });
     _startCountdown();
@@ -196,6 +204,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         _otpError = true;
         _state = _state.copyWith(loading: false);
       });
+      _otpCtrl.clear();
+      _otpFocus.requestFocus();
       _shake.forward(from: 0);
       HapticFeedback.mediumImpact();
       AppSnack.error(context, apiErrorMessage(e, fallback: 'OTP अमान्य है। कृपया सही 6 अंकों का OTP दर्ज करें।'));
@@ -488,12 +498,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         ),
         const SizedBox(height: AppSpacing.md),
 
-        // Dummy test OTP card (123456)
-        if (_state.devOtp != null) ...[
-          _buildDevOtpCard(_state.devOtp!),
-          const SizedBox(height: AppSpacing.md),
-        ],
-
         LayoutBuilder(
           builder: (context, c) {
             const gap = 8.0;
@@ -545,6 +549,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
                   mainAxisAlignment: MainAxisAlignment.center,
                   keyboardType: TextInputType.number,
                   autofillHints: const [AutofillHints.oneTimeCode],
+                  // Android: SMS User Consent API (no READ_SMS permission; system prompt asks once).
+                  // iOS: oneTimeCode autofill hint surfaces the code above the keyboard.
+                  smsRetriever: defaultTargetPlatform == TargetPlatform.android ? _smsRetriever : null,
                   hapticFeedbackType: HapticFeedbackType.lightImpact,
                   onChanged: (_) {
                     if (_otpError) setState(() => _otpError = false);
@@ -587,7 +594,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
                   ),
                 )
               : TextButton.icon(
-                  onPressed: _state.loading ? null : _sendOtp,
+                  onPressed: _state.loading ? null : _resendOtp,
                   icon: const Icon(Icons.refresh_rounded, size: 20),
                   label: const Text('OTP दोबारा भेजें'),
                 ),
@@ -596,49 +603,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildDevOtpCard(String otp) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.successSurface,
-        borderRadius: AppRadius.mdAll,
-        border: Border.all(color: AppColors.success.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.key_rounded, color: AppColors.success, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'डमी OTP: $otp',
-                  style: AppText.body(size: 14.5, weight: FontWeight.w700, color: AppColors.success, height: 1.3),
-                ),
-                Text(
-                  '"भरें" पर टैप करें या 123456 दर्ज करें',
-                  style: AppText.body(size: 12.5, color: AppColors.textSecondary, height: 1.3),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          TextButton.icon(
-            onPressed: _state.loading
-                ? null
-                : () {
-                    _otpCtrl.text = otp;
-                    _verifyOtp(otp);
-                  },
-            style: TextButton.styleFrom(foregroundColor: AppColors.success),
-            icon: const Icon(Icons.bolt_rounded, size: 18),
-            label: Text('भरें', style: AppText.body(size: 14, weight: FontWeight.w800)),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ─── Hero ─────────────────────────────────────────────────────────────────────

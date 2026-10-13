@@ -21,10 +21,11 @@ const OTP_SEND_WINDOW_SECONDS = 600;  // per-phone send limit window (10 min)
 const OTP_SEND_MAX_PER_WINDOW = 3;    // sends per phone per window
 const TEST_OTP = '123456';
 
-/** Test OTP mode — allows dummy OTP '123456' to issue real valid JWTs. */
-const testOtpEnabled = () => true;
+/** Test OTP mode — dev only; hard-disabled in production regardless of ALLOW_TEST_OTP. */
+const testOtpEnabled = () => env.NODE_ENV !== 'production' && !!env.ALLOW_TEST_OTP;
 
 const otpKey = (phone: string) => `otp:${phone}`;
+const otp2faSessionKey = (phone: string) => `otp:2fa:${phone}`;
 const otpAttemptsKey = (phone: string) => `otp:attempts:${phone}`;
 const otpSendCountKey = (phone: string) => `otp:sends:${phone}`;
 const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
@@ -470,22 +471,33 @@ export class AuthHandler {
       return reply.status(503).send({ error: 'SMS service not configured' });
     }
 
-    const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    await this.redis.set(otpKey(phone), sha256(otp), 'EX', OTP_TTL_SECONDS);
-    await this.redis.del(otpAttemptsKey(phone));
+    let devOtp: string | undefined;
 
     if (apiKey) {
       try {
+        const rawTenDigit = localIndianNumber(phone);
         // NOTE: 2Factor's API takes the key in the path — never log this URL.
-        const res = await fetch(`https://2factor.in/API/V1/${apiKey}/SMS/${localIndianNumber(phone)}/${otp}`);
+        const res = await fetch(`https://2factor.in/API/V1/${apiKey}/SMS/${rawTenDigit}/AUTOGEN/OTP1`);
         if (!res.ok) throw new Error(`2Factor responded with HTTP ${res.status}`);
+        const body = (await res.json().catch(() => null)) as { Status?: string; Details?: string } | null;
+        if (body?.Status !== 'Success') throw new Error(`2Factor rejected request: ${body?.Details ?? 'unknown'}`);
+        
+        const sessionId = body.Details;
+        if (!sessionId) throw new Error('2Factor returned success without session ID Details');
+        await this.redis.set(otp2faSessionKey(phone), sessionId, 'EX', OTP_TTL_SECONDS);
+        await this.redis.del(otpAttemptsKey(phone));
       } catch (err) {
         req.log.warn({ err: (err as Error).message }, '2Factor SMS dispatch failed');
         if (!testMode) {
-          await this.redis.del(otpKey(phone));
-          return reply.status(502).send({ error: 'Failed to send OTP. Please try again.' });
+          return reply.status(502).send({ error: 'Failed to send OTP SMS. Please check mobile number and try again.' });
         }
       }
+    }
+
+    // When test mode is active (development only): generate local fallback OTP
+    if (testMode) {
+      devOtp = String(randomInt(0, 1_000_000)).padStart(6, '0');
+      await this.redis.set(otpKey(phone), sha256(devOtp), 'EX', OTP_TTL_SECONDS);
     }
 
     return reply.status(200).send({
@@ -493,7 +505,7 @@ export class AuthHandler {
       message: `OTP sent to ${phone}`,
       expiresIn: OTP_TTL_SECONDS,
       ...(testMode && {
-        otp,
+        otp: devOtp,
         devNote: `Test OTP mode enabled (ALLOW_TEST_OTP) — ${TEST_OTP} is also accepted`,
       }),
     });
@@ -507,36 +519,59 @@ export class AuthHandler {
       return reply.status(400).send({ error: 'Enter a valid 10-digit Indian mobile number' });
     }
 
-    const acceptedTestOtp = otp === TEST_OTP || otp === '123456' || otp === '000000' || testOtpEnabled();
+    const testMode = testOtpEnabled();
+    const acceptedTestOtp = testMode && (otp === TEST_OTP || otp === '000000');
+    let verified = acceptedTestOtp;
 
-    if (!acceptedTestOtp) {
-      const storedHash = await this.redis.get(otpKey(phone));
-      if (!storedHash) {
+    if (!verified) {
+      const apiKey = env.TWO_FACTOR_API_KEY;
+      const sessionId = await this.redis.get(otp2faSessionKey(phone));
+
+      if (sessionId && apiKey) {
+        try {
+          const verifyRes = await fetch(`https://2factor.in/API/V1/${apiKey}/SMS/VERIFY/${sessionId}/${otp.trim()}`);
+          const verifyBody = (await verifyRes.json().catch(() => null)) as { Status?: string; Details?: string } | null;
+          if (verifyBody?.Status === 'Success' && (verifyBody.Details === 'OTP Matched' || verifyBody.Details?.toLowerCase().includes('match'))) {
+            verified = true;
+            await this.redis.del(otp2faSessionKey(phone));
+          } else {
+            req.log.warn({ phone, details: verifyBody?.Details }, '2Factor OTP mismatch');
+          }
+        } catch (err) {
+          req.log.error({ err: (err as Error).message }, '2Factor verify request failed');
+        }
+      }
+
+      // Check local Redis fallback (for testMode or local generation)
+      if (!verified) {
+        const storedHash = await this.redis.get(otpKey(phone));
+        if (storedHash) {
+          const attempts = await this.redis.incr(otpAttemptsKey(phone));
+          if (attempts === 1) await this.redis.expire(otpAttemptsKey(phone), OTP_TTL_SECONDS);
+          if (attempts > OTP_MAX_ATTEMPTS) {
+            await this.redis.del(otpKey(phone), otpAttemptsKey(phone));
+            return reply.status(429).send({
+              statusCode: 429,
+              error: 'Too Many Requests',
+              message: 'Too many incorrect attempts. Please request a new OTP.',
+            });
+          }
+
+          const matches = timingSafeEqual(Buffer.from(storedHash, 'hex'), Buffer.from(sha256(otp), 'hex'));
+          if (matches) {
+            verified = true;
+            await this.redis.del(otpKey(phone), otpAttemptsKey(phone));
+          }
+        }
+      }
+
+      if (!verified) {
         return reply.status(400).send({ error: 'Invalid or expired OTP' });
-      }
-
-      const attempts = await this.redis.incr(otpAttemptsKey(phone));
-      if (attempts === 1) await this.redis.expire(otpAttemptsKey(phone), OTP_TTL_SECONDS);
-      if (attempts > OTP_MAX_ATTEMPTS) {
-        await this.redis.del(otpKey(phone), otpAttemptsKey(phone));
-        return reply.status(429).send({
-          statusCode: 429,
-          error: 'Too Many Requests',
-          message: 'Too many incorrect attempts. Please request a new OTP.',
-        });
-      }
-
-      const matches = timingSafeEqual(Buffer.from(storedHash, 'hex'), Buffer.from(sha256(otp), 'hex'));
-      if (!matches) {
-        return reply.status(400).send({
-          error: 'Invalid or expired OTP',
-          attemptsRemaining: Math.max(0, OTP_MAX_ATTEMPTS - attempts),
-        });
       }
     }
 
-    // OTP is single-use
-    await this.redis.del(otpKey(phone), otpAttemptsKey(phone));
+    // OTP is single-use: clean up all OTP keys for this phone
+    await this.redis.del(otpKey(phone), otp2faSessionKey(phone), otpAttemptsKey(phone));
 
     const user = await this.findOrCreatePhoneUser(phone);
     if (!user.isActive) return this.inactive(reply);
