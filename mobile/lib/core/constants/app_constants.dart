@@ -34,7 +34,10 @@ class AppConstants {
   );
 
   // Google Sign-In: the WEB OAuth client id the backend verifies id tokens against
-  static const String googleServerClientId = String.fromEnvironment('FLUTTER_GOOGLE_SERVER_CLIENT_ID');
+  static const String googleServerClientId = String.fromEnvironment(
+    'FLUTTER_GOOGLE_SERVER_CLIENT_ID',
+    defaultValue: '354916174677-p0acdj2te14ff54u02hjve8hdpbf7c2c.apps.googleusercontent.com',
+  );
   // iOS OAuth client id (only used on iOS)
   static const String googleIosClientId = String.fromEnvironment('FLUTTER_GOOGLE_CLIENT_ID_IOS');
 

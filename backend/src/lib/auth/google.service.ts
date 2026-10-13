@@ -34,8 +34,13 @@ export class GoogleAuthService {
       throw new GoogleAuthError('Google token verification failed');
     }
 
-    // Validate audience (must match our client ID)
-    if (payload.aud !== env.GOOGLE_CLIENT_ID) {
+    // Validate audience (allow configured env client ID or Firebase mobile client ID)
+    const allowedClientIds = [
+      env.GOOGLE_CLIENT_ID,
+      '354916174677-p0acdj2te14ff54u02hjve8hdpbf7c2c.apps.googleusercontent.com',
+    ].filter(Boolean);
+
+    if (!allowedClientIds.includes(payload.aud)) {
       throw new GoogleAuthError('Invalid Google token audience');
     }
 
