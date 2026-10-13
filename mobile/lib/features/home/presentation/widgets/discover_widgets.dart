@@ -156,14 +156,15 @@ class TemplateCarouselSection extends StatelessWidget {
         children: [
           SectionHeader(title: title, subtitle: subtitle),
           SizedBox(
-            height: 300,
+            height: (MediaQuery.sizeOf(context).width * 0.42).clamp(140.0, 200.0) / 0.74 +
+                92 * MediaQuery.textScalerOf(context).scale(1.0),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
               itemCount: templates.length,
               separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.sm),
               itemBuilder: (_, i) => SizedBox(
-                width: 158,
+                width: (MediaQuery.sizeOf(context).width * 0.42).clamp(140.0, 200.0),
                 child: TemplateCard(template: templates[i], aspectRatio: 0.74),
               ),
             ),

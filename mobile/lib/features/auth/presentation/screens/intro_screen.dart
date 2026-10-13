@@ -8,10 +8,14 @@ import '../../../../core/widgets/app_ui.dart';
 
 /// Marks the intro as seen (settings_box) so it is only shown once.
 Future<void> markIntroSeen() async {
-  await Hive.box(AppConstants.hiveBoxSettings).put(AppConstants.keyIntroSeen, true);
+  await Hive.box(AppConstants.hiveBoxSettings)
+      .put(AppConstants.keyIntroSeen, true);
 }
 
-bool get introSeen => Hive.box(AppConstants.hiveBoxSettings).get(AppConstants.keyIntroSeen, defaultValue: false) == true;
+bool get introSeen =>
+    Hive.box(AppConstants.hiveBoxSettings)
+        .get(AppConstants.keyIntroSeen, defaultValue: false) ==
+    true;
 
 class _Slide {
   final String title;
@@ -99,17 +103,23 @@ class _IntroScreenState extends State<IntroScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.xs, AppSpacing.xs, 0),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.page, AppSpacing.xs, AppSpacing.xs, 0),
               child: Row(
                 children: [
-                  const AppLogo(size: 40, showWordmark: true, horizontal: true, wordmarkColor: AppColors.onDark),
+                  const AppLogo(
+                      size: 40,
+                      showWordmark: true,
+                      horizontal: true,
+                      wordmarkColor: AppColors.onDark),
                   const Spacer(),
                   AnimatedOpacity(
                     opacity: _last ? 0 : 1,
                     duration: AppMotion.fast,
                     child: TextButton(
                       onPressed: _last ? null : _finish,
-                      style: TextButton.styleFrom(foregroundColor: AppColors.onDark),
+                      style: TextButton.styleFrom(
+                          foregroundColor: AppColors.onDark),
                       child: const Text('छोड़ें'),
                     ),
                   ),
@@ -125,7 +135,8 @@ class _IntroScreenState extends State<IntroScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.lg),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.lg),
               child: Column(
                 children: [
                   PageIndicator(
@@ -137,7 +148,9 @@ class _IntroScreenState extends State<IntroScreen> {
                   const SizedBox(height: AppSpacing.lg),
                   GradientButton(
                     label: _last ? 'शुरू करें (Get Started)' : 'आगे (Next)',
-                    icon: _last ? Icons.rocket_launch_rounded : Icons.arrow_forward_rounded,
+                    icon: _last
+                        ? Icons.rocket_launch_rounded
+                        : Icons.arrow_forward_rounded,
                     onPressed: _next,
                   ),
                 ],
@@ -172,13 +185,18 @@ class _SlideView extends StatelessWidget {
           Text(
             slide.title,
             textAlign: TextAlign.center,
-            style: AppText.heading(size: 28, weight: FontWeight.w800, color: AppColors.onDark, height: 1.25),
+            style: AppText.heading(
+                size: 28,
+                weight: FontWeight.w800,
+                color: AppColors.onDark,
+                height: 1.25),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
             slide.subtitle,
             textAlign: TextAlign.center,
-            style: AppText.body(size: 16.5, color: AppColors.onDarkMuted, height: 1.55),
+            style: AppText.body(
+                size: 16.5, color: AppColors.onDarkMuted, height: 1.55),
           ),
         ],
       ),
@@ -193,82 +211,97 @@ class _Illustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 300,
-      height: 340,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 300,
-            height: 300,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(colors: [slide.glow.withValues(alpha: 0.45), AppColors.transparent]),
-            ),
-          ),
-          Transform.rotate(
-            angle: -0.06,
-            child: Container(
-              width: 190,
-              height: 290,
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: SizedBox(
+        width: 300,
+        height: 340,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 300,
+              height: 300,
               decoration: BoxDecoration(
-                gradient: slide.gradient,
-                borderRadius: BorderRadius.circular(AppRadius.xl),
-                boxShadow: AppShadows.floating,
-                border: Border.all(color: AppColors.glassBorder, width: 2),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.glassStrong),
-                    child: Icon(slide.icon, size: 54, color: AppColors.white),
-                  ),
-                  const SizedBox(height: 18),
-                  Container(
-                    width: 110,
-                    height: 12,
-                    decoration: BoxDecoration(color: AppColors.glassBorder, borderRadius: AppRadius.pillAll),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 74,
-                    height: 12,
-                    decoration: BoxDecoration(color: AppColors.glass, borderRadius: AppRadius.pillAll),
-                  ),
-                ],
+                shape: BoxShape.circle,
+                gradient: RadialGradient(colors: [
+                  slide.glow.withValues(alpha: 0.45),
+                  AppColors.transparent
+                ]),
               ),
             ),
-          ),
-          Positioned(
-            right: 8,
-            top: 24,
-            child: GlassContainer(
-              radius: AppRadius.pill,
-              padding: const EdgeInsets.all(14),
-              child: Icon(slide.badgeIcon, color: AppColors.gold, size: 30),
-            ),
-          ),
-          Positioned(
-            left: 4,
-            bottom: 40,
-            child: GlassContainer(
-              radius: AppRadius.pill,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.favorite_rounded, color: AppColors.rose, size: 20),
-                  const SizedBox(width: 6),
-                  Text('1.2K', style: AppText.heading(size: 14, color: AppColors.white, height: 1)),
-                ],
+            Transform.rotate(
+              angle: -0.06,
+              child: Container(
+                width: 190,
+                height: 290,
+                decoration: BoxDecoration(
+                  gradient: slide.gradient,
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
+                  boxShadow: AppShadows.floating,
+                  border: Border.all(color: AppColors.glassBorder, width: 2),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: const BoxDecoration(
+                          shape: BoxShape.circle, color: AppColors.glassStrong),
+                      child: Icon(slide.icon, size: 54, color: AppColors.white),
+                    ),
+                    const SizedBox(height: 18),
+                    Container(
+                      width: 110,
+                      height: 12,
+                      decoration: BoxDecoration(
+                          color: AppColors.glassBorder,
+                          borderRadius: AppRadius.pillAll),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 74,
+                      height: 12,
+                      decoration: BoxDecoration(
+                          color: AppColors.glass,
+                          borderRadius: AppRadius.pillAll),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+            Positioned(
+              right: 8,
+              top: 24,
+              child: GlassContainer(
+                radius: AppRadius.pill,
+                padding: const EdgeInsets.all(14),
+                child: Icon(slide.badgeIcon, color: AppColors.gold, size: 30),
+              ),
+            ),
+            Positioned(
+              left: 4,
+              bottom: 40,
+              child: GlassContainer(
+                radius: AppRadius.pill,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.favorite_rounded,
+                        color: AppColors.rose, size: 20),
+                    const SizedBox(width: 6),
+                    Text('1.2K',
+                        style: AppText.heading(
+                            size: 14, color: AppColors.white, height: 1)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

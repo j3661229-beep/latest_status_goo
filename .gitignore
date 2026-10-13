@@ -62,3 +62,7 @@ mobile/ios/Runner.xcworkspace/xcuserdata/
 
 # Local Netlify folder
 .netlify
+
+# Secrets
+backend/env.yaml
+*.env.yaml

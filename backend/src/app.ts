@@ -78,8 +78,7 @@ export async function buildApp() {
     origin: [
       'http://localhost:3001',
       'http://localhost:3002',
-      'https://admin.statusgo.app',
-      'https://creator.statusgo.app',
+      /^https:\/\/([a-z0-9-]+\.)*statusgo\.(in|app)$/,
       // Flutter app uses HTTP requests, not CORS
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

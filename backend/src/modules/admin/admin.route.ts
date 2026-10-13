@@ -8,7 +8,7 @@ import { OneSignalService } from '../../lib/notification/onesignal.service';
 import { RefreshTokenStore } from '../../lib/auth/token.store';
 import { invalidateUserCaches, safeUserSelect, userSummarySelect } from '../../lib/auth/auth-state';
 import {
-  clampInt, dateString, optionalBoolString, optionalEnum, optionalString,
+  clampInt, dateString, httpsUrl, optionalBoolString, optionalEnum, optionalString,
   parsePagination, sendValidationError,
 } from '../../lib/http/validation';
 
@@ -108,7 +108,7 @@ const CategoryCreateSchema = z.object({
   slug: z.string().trim().min(1).max(100).optional(),
   emoji: z.string().min(1).max(16).default('✨'),
   gradient: z.string().max(100).default('from-indigo-500 to-purple-600'),
-  coverImage: z.string().url().max(2048).nullable().optional(),
+  coverImage: httpsUrl.nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
@@ -123,7 +123,7 @@ const CategoryUpdateSchema = z.object({
   slug: z.string().trim().min(1).max(100).optional(),
   emoji: z.string().min(1).max(16).optional(),
   gradient: z.string().max(100).optional(),
-  coverImage: z.string().url().max(2048).nullable().optional(),
+  coverImage: httpsUrl.nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
@@ -137,7 +137,7 @@ type CampaignSegment = typeof CAMPAIGN_SEGMENTS[number];
 const CampaignSendSchema = z.object({
   title: z.string().trim().min(1).max(200),
   body: z.string().trim().min(1).max(2000),
-  imageUrl: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().max(2048).optional()),
+  imageUrl: z.preprocess((v) => (v === '' ? undefined : v), httpsUrl.optional()),
   deepLink: z.preprocess((v) => (v === '' ? undefined : v), z.string().max(500).optional()),
   targetSegment: z.preprocess((v) => (v === '' || v == null ? 'all' : v), z.enum(CAMPAIGN_SEGMENTS)),
   scheduledAt: z.preprocess((v) => (v === '' ? undefined : v), dateString.optional()),
@@ -620,6 +620,9 @@ export async function adminRoutes(fastify: FastifyInstance) {
     if (roleChange && !isSuperAdmin) {
       return reply.status(403).send({ error: 'Only a SUPER_ADMIN can change user roles' });
     }
+    if ((body.plan !== undefined || body.planExpiresAt !== undefined) && !isSuperAdmin) {
+      return reply.status(403).send({ error: 'Only a SUPER_ADMIN can grant or change subscription plans' });
+    }
     if (body.isActive === false && id === actor.userId) {
       return reply.status(403).send({ error: 'You cannot deactivate your own account' });
     }
@@ -996,7 +999,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
     const parsed = z.object({
       title: z.string().min(1).max(200),
       body: z.string().min(1).max(2000),
-      imageUrl: z.string().max(2048).optional(),
+      imageUrl: z.preprocess((v) => (v === '' ? undefined : v), httpsUrl.optional()),
       deepLink: z.string().max(500).optional(),
       testTarget: z.string().trim().min(1).max(200),
       targetType: z.enum(['phone', 'email', 'userId', 'playerId']).optional(),
@@ -1127,6 +1130,11 @@ export async function adminRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return sendValidationError(reply, parsed.error);
     const { key, value } = parsed.data;
 
+    // Payment-provider identifiers can redirect billing — SUPER_ADMIN only
+    if (key.startsWith('rzp_') && (req.user as any).role !== UserRole.SUPER_ADMIN) {
+      return reply.status(403).send({ error: 'Only a SUPER_ADMIN can change payment configuration' });
+    }
+
     const before = await fastify.prisma.appConfig.findUnique({ where: { key } });
     if (!before) return reply.status(404).send({ error: 'Config key not found' });
 
@@ -1219,6 +1227,10 @@ export async function adminRoutes(fastify: FastifyInstance) {
       // Never demote an admin account through the invite flow
       if (existing.role === 'MANAGER' || existing.role === 'SUPER_ADMIN') {
         return reply.status(409).send({ error: 'This email belongs to an admin account and cannot be invited as a Creator.' });
+      }
+      // Promoting an existing account is a role change — SUPER_ADMIN only
+      if ((req.user as any).role !== UserRole.SUPER_ADMIN) {
+        return reply.status(403).send({ error: 'Only a SUPER_ADMIN can upgrade an existing account to Creator' });
       }
       // Upgrade existing user to CREATOR
       const updated = await fastify.prisma.user.update({

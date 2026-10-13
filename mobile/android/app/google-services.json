@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "354916174677",
+    "project_id": "status-goo-app",
+    "storage_bucket": "status-goo-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:354916174677:android:f1c75bd3eb045a2bb1fddc",
+        "android_client_info": {
+          "package_name": "com.statusgoo.enpoi"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "354916174677-p0acdj2te14ff54u02hjve8hdpbf7c2c.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCaFTw9H3TpVvirEZKQNpWyWzGc6CISc7A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "354916174677-p0acdj2te14ff54u02hjve8hdpbf7c2c.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

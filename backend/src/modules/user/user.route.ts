@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { CacheService } from '../../lib/cache/cache.service';
 import { CK, TTL } from '../../lib/cache/keys';
 import { invalidateUserCaches, safeUserSelect } from '../../lib/auth/auth-state';
+import { RazorpayService } from '../../lib/payment/razorpay.service';
 import { RefreshTokenStore } from '../../lib/auth/token.store';
 import { httpsUrl, parsePagination, sendValidationError } from '../../lib/http/validation';
 
@@ -145,13 +146,27 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     const existing = await fastify.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, role: true, isActive: true, plan: true },
+      select: { id: true, role: true, isActive: true, plan: true, activeRzpSubId: true },
     });
     if (!existing) return reply.status(404).send({ error: 'User not found' });
     if (existing.role !== 'USER') {
       return reply.status(403).send({
         error: 'Creator and admin accounts cannot be deleted in the app. Please contact support.',
       });
+    }
+
+    // Stop AutoPay first — a deleted account must never be charged again
+    if (existing.activeRzpSubId) {
+      try {
+        await RazorpayService.cancelSubscription(existing.activeRzpSubId, false);
+      } catch (err: any) {
+        // Already cancelled / completed on Razorpay's side → nothing left to stop
+        const desc = String(err?.error?.description ?? err?.message ?? '');
+        if (!/cancel|complet|expired/i.test(desc)) {
+          req.log.error({ err, userId }, 'Razorpay cancel failed during account deletion');
+          return reply.status(502).send({ error: 'Could not cancel your active subscription. Please try again or contact support.' });
+        }
+      }
     }
 
     await new RefreshTokenStore(fastify.redis).invalidate(userId).catch(() => {});
@@ -178,6 +193,7 @@ export async function userRoutes(fastify: FastifyInstance) {
           businessDesignation: null,
           businessLogo: null,
           oneSignalPlayerId: null,
+          activeRzpSubId: null,
           deviceModel: null,
           state: null,
           region: null,

@@ -19,7 +19,7 @@ const tagsSchema = z.array(z.string().trim().min(1).max(50)).max(20);
 /** Optional nullable text ('' → null). */
 const text = (max: number) => z.preprocess((v) => (v === '' ? null : v), z.string().max(max).nullable().optional());
 /** Optional nullable media URL ('' → null). */
-const mediaUrl = z.preprocess((v) => (v === '' ? null : v), z.string().url().max(2048).nullable().optional());
+const mediaUrl = z.preprocess((v) => (v === '' ? null : v), httpsUrl.nullable().optional());
 const ratio = z.number().min(0).max(1).nullable().optional();
 
 const ListQuerySchema = z.object({
@@ -185,12 +185,15 @@ export async function creatorRoutes(fastify: FastifyInstance) {
     const isFirstSubmission = existing.status === 'DRAFT';
 
     // Default: send to the moderation queue. AUTO_APPROVE_TEMPLATES=true publishes immediately.
-    const template = await fastify.prisma.template.update({
-      where: { id },
+    // Conditional on the status we read, so concurrent double-submits can't both count
+    const { count: moved } = await fastify.prisma.template.updateMany({
+      where: { id, creatorId: userId, status: existing.status },
       data: autoApprove
         ? { status: TemplateStatus.APPROVED, submittedAt: new Date(), reviewedAt: new Date(), reviewNote: null }
         : { status: TemplateStatus.PENDING, submittedAt: new Date(), reviewedAt: null, reviewNote: null },
     });
+    if (moved === 0) return reply.status(409).send({ error: 'Template was already submitted' });
+    const template = await fastify.prisma.template.findUniqueOrThrow({ where: { id } });
 
     // Update creator stats
     await fastify.prisma.creatorProfile.updateMany({

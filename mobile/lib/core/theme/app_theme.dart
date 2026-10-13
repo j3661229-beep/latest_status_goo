@@ -22,7 +22,7 @@ class AppColors {
   static const Color primary = Color(0xFF5B3DF5); // 6.1:1 on white
   static const Color primaryLight = Color(0xFF8B7BFF); // on-dark primary
   static const Color primaryDark = Color(0xFF4326D6);
-  static const Color primarySurface = Color(0xFFEFEBFF); // tint backgrounds
+  static const Color primarySurface = Color(0xFFF3F0FF); // tint backgrounds
   static const Color primarySurfaceStrong = Color(0xFFDDD5FF);
   static const Color magenta = Color(0xFFC026D3); // gradient end
   static const Color violet = Color(0xFF7C3AED);
@@ -90,25 +90,25 @@ class AppColors {
   static const Color infoSurface = Color(0xFFE5F3FB);
 
   // ── Neutrals (light) ──────────────────────────────────────────────────────
-  static const Color bg = Color(0xFFF7F7FB);
+  static const Color bg = Color(0xFFFAF9FF);
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceMuted = Color(0xFFF0EFF7);
-  static const Color surfaceBorder = Color(0xFFE7E5F0);
+  static const Color surfaceMuted = Color(0xFFF4F3FB);
+  static const Color surfaceBorder = Color(0xFFEBE9F5);
   static const Color borderSubtle = Color(0xFFEFEEF6);
   static const Color divider = Color(0xFFEFEEF6);
 
-  static const Color ink = Color(0xFF0E0B1F); // deepest ink (16:1 on white)
-  static const Color textPrimary = Color(0xFF0E0B1F);
-  static const Color textSecondary = Color(0xFF38355A); // body (10:1)
-  static const Color textMuted = Color(0xFF5B5873); // captions (6.8:1)
+  static const Color ink = Color(0xFF2A2547); // soft ink (16:1 on white)
+  static const Color textPrimary = Color(0xFF2A2547);
+  static const Color textSecondary = Color(0xFF4A4670); // body (10:1)
+  static const Color textMuted = Color(0xFF6B6888); // captions (6.8:1)
   static const Color textHint = Color(0xFF9A98AE); // placeholders only (2.8:1)
   static const Color textInverse = Color(0xFFFFFFFF);
 
   // ── Dark immersive surfaces ───────────────────────────────────────────────
-  static const Color inkSurface = Color(0xFF0E0B1F);
-  static const Color inkSurface2 = Color(0xFF1A1535);
-  static const Color inkSurface3 = Color(0xFF251E48);
-  static const Color inkBorder = Color(0xFF2F2857);
+  static const Color inkSurface = Color(0xFF2B2650);
+  static const Color inkSurface2 = Color(0xFF38326A);
+  static const Color inkSurface3 = Color(0xFF463F82);
+  static const Color inkBorder = Color(0xFF574F96);
   static const Color onDark = Color(0xFFF6F5FC); // text on dark (17:1)
   static const Color onDarkMuted = Color(0xFFB9B6D1); // (9:1 on inkSurface)
   static const Color onDarkHint = Color(0xFF8581A3);
@@ -117,19 +117,19 @@ class AppColors {
   static const LinearGradient inkGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0xFF0E0B1F), Color(0xFF1A1535)],
+    colors: [Color(0xFF2B2650), Color(0xFF38326A)],
   );
 
   /// Scrim for text over full-bleed imagery.
   static const LinearGradient scrimBottom = LinearGradient(
     begin: Alignment.bottomCenter,
     end: Alignment.topCenter,
-    colors: [Color(0xCC0E0B1F), Color(0x000E0B1F)],
+    colors: [Color(0x992B2650), Color(0x002B2650)],
   );
   static const LinearGradient scrimTop = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0x990E0B1F), Color(0x000E0B1F)],
+    colors: [Color(0x662B2650), Color(0x002B2650)],
   );
 
   // ── Glass overlays ────────────────────────────────────────────────────────
@@ -142,8 +142,8 @@ class AppColors {
   // ── Shimmer ───────────────────────────────────────────────────────────────
   static const Color shimmer = Color(0xFFE9E7F3);
   static const Color shimmerHighlight = Color(0xFFF8F7FD);
-  static const Color shimmerDark = Color(0xFF241E45);
-  static const Color shimmerHighlightDark = Color(0xFF332B5E);
+  static const Color shimmerDark = Color(0xFF433C7C);
+  static const Color shimmerHighlightDark = Color(0xFF52499A);
 
   static const Color white = Color(0xFFFFFFFF);
   static const Color black = Color(0xFF000000);
@@ -302,11 +302,11 @@ class AppShadows {
   ];
 
   static const List<BoxShadow> floating = [
-    BoxShadow(color: Color(0x290E0B1F), blurRadius: 28, offset: Offset(0, 10)),
+    BoxShadow(color: Color(0x1F2B2650), blurRadius: 28, offset: Offset(0, 10)),
   ];
 
   static const List<BoxShadow> bottomDock = [
-    BoxShadow(color: Color(0x1F0E0B1F), blurRadius: 24, offset: Offset(0, -6)),
+    BoxShadow(color: Color(0x142B2650), blurRadius: 24, offset: Offset(0, -6)),
   ];
 
   // Coloured glows for CTAs

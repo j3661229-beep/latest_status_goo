@@ -100,7 +100,16 @@ class StatusGoApp extends ConsumerWidget {
               mediaQuery.textScaler.scale(1.0).clamp(0.9, 1.3),
             ),
           ),
-          child: child ?? const SizedBox.shrink(),
+          // Cap content width on tablets / foldables; phones are unaffected.
+          child: ColoredBox(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+          ),
         );
       },
     );

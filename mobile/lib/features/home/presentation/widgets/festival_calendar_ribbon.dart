@@ -43,7 +43,7 @@ class FestivalCalendarRibbon extends StatelessWidget {
             onDark: headerColor == AppColors.onDark || headerColor == AppColors.white,
           ),
         SizedBox(
-          height: 156,
+          height: 156 * MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.3),
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
             scrollDirection: Axis.horizontal,
