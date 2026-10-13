@@ -86,7 +86,6 @@ class TemplateTypeSegment extends StatelessWidget {
                   button: true,
                   selected: value == o.$1,
                   label: o.$2,
-                  excludeSemantics: true,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => onChanged(o.$1),

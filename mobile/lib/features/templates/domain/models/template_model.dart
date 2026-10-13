@@ -38,6 +38,9 @@ class TemplateModel {
   final double? photoZoneY;
   final double? photoZoneSize;
   final String? photoZoneShape;
+
+  /// 'contain' (full artwork, no crop) or 'cover' (fill 9:16, crops sides).
+  final String? fitMode;
   final bool nameZoneEnabled;
   final double? nameZoneX;
   final double? nameZoneY;
@@ -87,6 +90,7 @@ class TemplateModel {
     this.photoZoneY,
     this.photoZoneSize,
     this.photoZoneShape,
+    this.fitMode,
     this.nameZoneEnabled = true,
     this.nameZoneX,
     this.nameZoneY,
@@ -107,6 +111,9 @@ class TemplateModel {
     this.viewCount,
     this.primaryLanguage,
   });
+
+  /// Artwork is shown uncropped unless the creator explicitly chose 'cover'.
+  bool get fillsCanvas => fitMode == 'cover';
 
   bool get isVideo => type == 'VIDEO';
   bool get isImage => type == 'IMAGE';

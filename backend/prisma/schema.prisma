@@ -255,6 +255,9 @@ model Template {
   photoZoneSize    Float?
   photoZoneShape   String?
 
+  // How the artwork fills the 9:16 canvas: "contain" (full image, no crop) | "cover" (fill, crops sides)
+  fitMode          String   @default("contain")
+
   // Name overlay configuration
   nameZoneEnabled Boolean  @default(false)
   nameZoneX       Float?

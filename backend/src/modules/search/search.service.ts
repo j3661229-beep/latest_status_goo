@@ -138,7 +138,16 @@ export class SearchService {
       `;
     }
 
-    const result = { data: results, total: results.length, query, lang };
+    const formatted = results.map((r: any) => ({
+      ...r,
+      category: r.categorySlug ? {
+        id: r.categoryId,
+        slug: r.categorySlug,
+        nameHi: r.categoryNameHi,
+      } : null,
+    }));
+
+    const result = { data: formatted, total: formatted.length, query, lang };
     await this.cache.set(cacheKey, result, TTL.search);
 
     // Log search term async

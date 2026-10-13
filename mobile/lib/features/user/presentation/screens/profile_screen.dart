@@ -491,23 +491,21 @@ class _Stat extends StatelessWidget {
     return Expanded(
       child: Semantics(
         label: '$label: $value',
-        child: ExcludeSemantics(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: AppColors.gold),
-              const SizedBox(height: 2),
-              Text(
-                formatCount(value),
-                style: AppText.heading(size: 20, color: AppColors.white, height: 1.15),
-              ),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: AppText.body(size: 12.5, weight: FontWeight.w600, color: AppColors.white.withValues(alpha: 0.85), height: 1.2),
-              ),
-            ],
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: AppColors.gold),
+            const SizedBox(height: 2),
+            Text(
+              formatCount(value),
+              style: AppText.heading(size: 20, color: AppColors.white, height: 1.15),
+            ),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: AppText.body(size: 12.5, weight: FontWeight.w600, color: AppColors.white.withValues(alpha: 0.85), height: 1.2),
+            ),
+          ],
         ),
       ),
     );

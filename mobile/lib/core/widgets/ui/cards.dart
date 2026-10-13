@@ -268,7 +268,8 @@ class _FallbackArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.parseGradient(template.gradient);
-    final label = template.nameHi?.isNotEmpty == true ? template.nameHi!.characters.first : '🙏';
+    final trimmed = template.nameHi?.trim();
+    final label = (trimmed != null && trimmed.isNotEmpty) ? trimmed.characters.first : '🙏';
     return Container(
       decoration: BoxDecoration(
         gradient: colors != null
@@ -319,8 +320,10 @@ class TemplateGrid extends StatelessWidget {
       final ratio = ratios[i % ratios.length];
       final est = 1 / ratio + (showTitle ? 0.2 : 0);
       final item = Padding(
+        key: ValueKey(t.id),
         padding: EdgeInsets.only(bottom: spacing + 4),
         child: FadeSlideIn(
+          key: ValueKey('fade-${t.id}'),
           index: i % 6,
           child: TemplateCard(
             template: t,

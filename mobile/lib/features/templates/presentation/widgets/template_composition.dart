@@ -3,6 +3,8 @@
 // Shared status composition (template artwork + user's photo/name placed in the
 // creator-defined zones). Used by both the Home feed and the preview screen so
 // what users see in the feed matches what they export.
+import 'dart:ui' as ui;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,6 +14,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/color_utils.dart';
 import '../../domain/models/template_model.dart';
 import 'branding_frame_overlay.dart';
+import 'template_video_layer.dart';
 
 /// Export aspect ratio (matches AppConstants.frameWidth x frameHeight).
 const double kStatusAspectRatio = 9 / 16;
@@ -32,6 +35,9 @@ class TemplateComposition extends StatelessWidget {
   final String? headerTitle;
   final bool showVideoBadge;
 
+  /// Autoplay video templates (muted, looped) while the card is on screen.
+  final bool playVideo;
+
   /// Editor toggles: hide the name / photo zones entirely.
   final bool showName;
   final bool showPhoto;
@@ -50,6 +56,7 @@ class TemplateComposition extends StatelessWidget {
     this.onNameTap,
     this.headerTitle,
     this.showVideoBadge = false,
+    this.playVideo = false,
     this.showName = true,
     this.showPhoto = true,
     this.borderRadius = AppRadius.lg,
@@ -71,7 +78,7 @@ class TemplateComposition extends StatelessWidget {
     List<Color> gradientColors = [AppColors.primary, AppColors.primaryLight];
     if (template.gradient != null && template.gradient!.isNotEmpty) {
       gradientColors = ColorUtils.parseGradientString(template.gradient);
-    } else if (template.category?.gradient != null) {
+    } else if (template.category?.gradient != null && template.category!.gradient!.isNotEmpty) {
       gradientColors = ColorUtils.parseGradientString(template.category!.gradient);
     }
     final gradient = LinearGradient(
@@ -110,10 +117,18 @@ class TemplateComposition extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 // 1. Artwork
+                if (hasImage && !template.fillsCanvas)
+                  // "Fit (No Crop)": blurred copy fills the side bars, full artwork on top.
+                  ImageFiltered(
+                    key: const ValueKey('tc-blur'),
+                    imageFilter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                    child: CachedNetworkImage(imageUrl: imageUrl, fit: BoxFit.cover),
+                  ),
                 if (hasImage)
                   CachedNetworkImage(
+                    key: const ValueKey('tc-art'),
                     imageUrl: imageUrl,
-                    fit: BoxFit.cover,
+                    fit: template.fillsCanvas ? BoxFit.cover : BoxFit.contain,
                     placeholder: (_, __) => DecoratedBox(
                       decoration: BoxDecoration(gradient: gradient),
                       child: const Center(
@@ -126,9 +141,18 @@ class TemplateComposition extends StatelessWidget {
                     ),
                   ),
 
+                // 1b. Video artwork (autoplays while visible; poster above stays until ready)
+                if (playVideo && template.isVideo && !template.isLocked && (template.videoUrl ?? '').isNotEmpty)
+                  TemplateVideoLayer(
+                    key: const ValueKey('tc-video'),
+                    videoUrl: template.videoUrl!,
+                    fit: template.fillsCanvas ? BoxFit.cover : BoxFit.contain,
+                  ),
+
                 // 2. Optional header title (with contrast vignette)
                 if (title != null && title.isNotEmpty) ...[
                   IgnorePointer(
+                    key: const ValueKey('tc-vignette'),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -141,6 +165,7 @@ class TemplateComposition extends StatelessWidget {
                     ),
                   ),
                   Positioned(
+                    key: const ValueKey('tc-title'),
                     top: h * 0.03,
                     left: 12,
                     right: 12,
@@ -164,6 +189,7 @@ class TemplateComposition extends StatelessWidget {
                 // 3. Quote (only without artwork, or when the user picked one)
                 if (quote != null && quote.isNotEmpty)
                   Positioned(
+                    key: const ValueKey('tc-quote'),
                     left: 20,
                     right: 20,
                     top: h * 0.28,
@@ -183,6 +209,7 @@ class TemplateComposition extends StatelessWidget {
                 // 4. Creator-defined photo zone
                 if (showPhoto && template.photoZoneEnabled && (userPhoto != null || editable))
                   Positioned(
+                    key: const ValueKey('tc-photo'),
                     top: pTop,
                     left: pLeft,
                     width: pSize,
@@ -210,6 +237,7 @@ class TemplateComposition extends StatelessWidget {
                 // 5. Creator-defined name zone
                 if (showName && template.nameZoneEnabled && (displayName.isNotEmpty || editable))
                   Positioned(
+                    key: const ValueKey('tc-name'),
                     top: nTop,
                     left: nLeft,
                     child: FractionalTranslation(
@@ -229,7 +257,9 @@ class TemplateComposition extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.hind(
-                              color: template.nameColor != null ? ColorUtils.fromHex(template.nameColor!) : AppColors.white,
+                              color: template.nameColor != null && template.nameColor!.isNotEmpty
+                                  ? ColorUtils.fromHex(template.nameColor!)
+                                  : AppColors.white,
                               fontSize: (template.nameFontSize?.toDouble() ?? 16.0).clamp(12.0, 24.0),
                               fontWeight: FontWeight.w700,
                               shadows: const [Shadow(blurRadius: 6, color: AppColors.ink)],
@@ -241,9 +271,10 @@ class TemplateComposition extends StatelessWidget {
                     ),
                   ),
 
-                // 6. Video badge
-                if (showVideoBadge && template.isVideo)
+                // 6. Video badge (shown when video is NOT auto-playing)
+                if (showVideoBadge && template.isVideo && !playVideo)
                   Center(
+                    key: const ValueKey('tc-badge'),
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -258,6 +289,7 @@ class TemplateComposition extends StatelessWidget {
                 // 7. Branding frame
                 if (brandingFrame != null)
                   Positioned(
+                    key: const ValueKey('tc-branding'),
                     left: 0,
                     right: 0,
                     bottom: 0,
@@ -265,7 +297,7 @@ class TemplateComposition extends StatelessWidget {
                   ),
 
                 // 8. Locked premium template
-                if (template.isLocked) const TemplateLockOverlay(),
+                if (template.isLocked) const TemplateLockOverlay(key: ValueKey('tc-lock')),
               ],
             ),
           );

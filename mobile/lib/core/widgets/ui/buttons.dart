@@ -232,28 +232,23 @@ class AppIconButton extends StatelessWidget {
     final p = context.palette;
     final fg = color ?? (glass ? AppColors.white : p.textPrimary);
     final box = size < AppSpacing.minTouch ? AppSpacing.minTouch : size;
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      excludeSemantics: true,
+    return PressableScale(
+      semanticLabel: semanticLabel,
       onTap: onPressed,
-      child: PressableScale(
-        onTap: onPressed,
-        scale: 0.9,
-        child: SizedBox(
-          width: box,
-          height: box,
-          child: Center(
-            child: Container(
-              width: size - 4,
-              height: size - 4,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: glass ? AppColors.glassStrong : (filled ? p.surfaceMuted : null),
-                border: glass ? Border.all(color: AppColors.glassBorder) : null,
-              ),
-              child: Icon(icon, size: iconSize, color: onPressed == null ? p.textHint : fg),
+      scale: 0.9,
+      child: SizedBox(
+        width: box,
+        height: box,
+        child: Center(
+          child: Container(
+            width: size - 4,
+            height: size - 4,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: glass ? AppColors.glassStrong : (filled ? p.surfaceMuted : null),
+              border: glass ? Border.all(color: AppColors.glassBorder) : null,
             ),
+            child: Icon(icon, size: iconSize, color: onPressed == null ? p.textHint : fg),
           ),
         ),
       ),

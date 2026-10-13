@@ -302,6 +302,7 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
                       userPhoto: userPhoto,
                       customQuote: _customQuote,
                       brandingFrame: _brandingFrame,
+                      playVideo: !_exporting,
                       showName: _showName,
                       showPhoto: _showPhoto,
                       editable: !_exporting && !locked,

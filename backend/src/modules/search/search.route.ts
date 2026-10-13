@@ -7,7 +7,6 @@ export async function searchRoutes(fastify: FastifyInstance) {
   const service = new SearchService(fastify.prisma, fastify.redis);
 
   fastify.get('/', { 
-    preHandler: [fastify.authenticate],
     config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const { q, lang, type } = req.query as any;
@@ -23,7 +22,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
     return reply.send(result);
   });
 
-  fastify.get('/suggestions', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  fastify.get('/suggestions', async (req, reply) => {
     const { q } = req.query as { q?: string };
     if (typeof q !== 'string' || q.trim().length < 2) return reply.send({ suggestions: [] });
     if (q.length > 100) return reply.status(400).send({ error: 'Query too long (max 100 characters)' });
@@ -31,7 +30,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
     return reply.send({ suggestions });
   });
 
-  fastify.get('/trending', { preHandler: [fastify.authenticate] }, async (_req, reply) => {
+  fastify.get('/trending', async (_req, reply) => {
     const terms = await service.getTrendingTerms();
     return reply.send({ terms });
   });

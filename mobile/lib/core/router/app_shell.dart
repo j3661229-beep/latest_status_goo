@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme/app_theme.dart';
-import '../widgets/ui/layout.dart';
 import '../widgets/ui/motion.dart';
 
 /// Global switches a tab screen can flip to restyle the shell.
@@ -71,7 +70,13 @@ class MainShell extends StatelessWidget {
           body: child,
           bottomNavigationBar: bar,
         );
-        return immersive ? ImmersiveTheme(child: scaffold) : scaffold;
+        // Keep the widget structure constant: swapping a wrapper in/out would
+        // reparent the whole tab subtree (GlobalKeys, video, semantics) and
+        // trips '!semantics.parentDataDirty' on Flutter 3.32.
+        return Theme(
+          data: immersive ? AppTheme.dark : Theme.of(context),
+          child: scaffold,
+        );
       },
     );
   }
@@ -150,7 +155,6 @@ class _NavItem extends StatelessWidget {
       button: true,
       selected: selected,
       label: dest.label,
-      excludeSemantics: true,
       onTap: onTap,
       child: PressableScale(
         onTap: onTap,

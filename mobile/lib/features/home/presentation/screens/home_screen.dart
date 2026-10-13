@@ -45,6 +45,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _selectedCategory = 'all';
   late final PageController _pageController;
+  final ValueNotifier<int> _pageIndex = ValueNotifier<int>(0);
 
   // Busy flags live in notifiers so toggling them doesn't rebuild the pager.
   final ValueNotifier<bool> _sharing = ValueNotifier<bool>(false);
@@ -54,12 +55,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final Map<String, GlobalKey> _cardKeys = <String, GlobalKey>{};
 
   bool _showHint = false;
+  bool _refreshing = false;
   Timer? _hintTimer;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
+    _pageController.addListener(_syncPageIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       AppShell.immersive.value = true;
@@ -75,7 +78,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     AppShell.immersive.value = false;
     _hintTimer?.cancel();
+    _pageController.removeListener(_syncPageIndex);
     _pageController.dispose();
+    _pageIndex.dispose();
     _sharing.dispose();
     _downloading.dispose();
     super.dispose();
@@ -103,6 +108,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ImageProvider? get _userPhoto => currentUserPhotoProvider();
 
   GlobalKey _keyFor(String id) => _cardKeys.putIfAbsent(id, GlobalKey.new);
+
+  void _syncPageIndex() {
+    if (!_pageController.hasClients || !_pageController.position.haveDimensions) return;
+    final page = _pageController.page;
+    if (page == null) return;
+    final i = page.round();
+    if (_pageIndex.value != i) _pageIndex.value = i;
+  }
 
   String get _lang => (SessionStore.instance.language ?? 'HINDI').toUpperCase();
 
@@ -254,10 +267,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _selectCategory(String slug) {
     setState(() => _selectedCategory = slug);
+    _pageIndex.value = 0;
     if (_pageController.hasClients) _pageController.jumpToPage(0);
   }
 
-  Future<void> _refresh() => ref.read(homeDataProvider.notifier).refresh();
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      await ref.read(homeDataProvider.notifier).refresh();
+    } finally {
+      _refreshing = false;
+    }
+  }
 
   // ─── Build ─────────────────────────────────────────────────────────────────
 
@@ -383,49 +405,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      edgeOffset: topInset,
-      color: AppColors.primary,
-      backgroundColor: AppColors.inkSurface3,
+    // Do not wrap PageView in RefreshIndicator and do not Transform.scale
+    // pages during swipe — both produce invalid SliverGeometry (layoutExtent
+    // > paintExtent) and the Media3 crash cascade seen on device.
+    return NotificationListener<OverscrollNotification>(
+      onNotification: (n) {
+        if (_pageIndex.value == 0 && n.overscroll < -24 && n.metrics.axis == Axis.vertical) {
+          _refresh();
+        }
+        return false;
+      },
       child: PageView.builder(
         controller: _pageController,
         scrollDirection: Axis.vertical,
-        physics: const BouncingScrollPhysics(),
+        physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
+        allowImplicitScrolling: false,
         itemCount: filtered.length,
-        onPageChanged: (_) {
+        onPageChanged: (i) {
+          _pageIndex.value = i;
           HapticFeedback.selectionClick();
           if (_showHint) _dismissHint();
         },
         itemBuilder: (ctx, i) {
           final template = filtered[i];
-          // The page body is built once; only the cheap transform wrapper
-          // listens to the scroll position.
-          final page = _FeedPage(
-            key: ValueKey(template.id),
-            template: template,
-            topInset: topInset,
-            displayName: _userName,
-            userPhoto: _userPhoto,
-            captureKey: _keyFor(template.id),
-            sharing: _sharing,
-            downloading: _downloading,
-            onOpen: () => _openTemplate(template),
-            onShare: () => _handleShare(template),
-            onDownload: () => _handleDownload(template),
-            onSave: () => _toggleSaved(template),
-          );
-          return AnimatedBuilder(
-            animation: _pageController,
-            child: page,
-            builder: (context, child) {
-              double delta = 0;
-              if (_pageController.hasClients && _pageController.position.haveDimensions) {
-                delta = ((_pageController.page ?? i.toDouble()) - i).abs().clamp(0.0, 1.0);
-              }
-              return Opacity(
-                opacity: 1 - 0.5 * delta,
-                child: Transform.scale(scale: 1 - 0.06 * delta, child: child),
+          return ValueListenableBuilder<int>(
+            valueListenable: _pageIndex,
+            builder: (context, current, _) {
+              return _FeedPage(
+                key: ValueKey(template.id),
+                template: template,
+                topInset: topInset,
+                displayName: _userName,
+                userPhoto: _userPhoto,
+                captureKey: _keyFor(template.id),
+                sharing: _sharing,
+                downloading: _downloading,
+                playVideo: i == current,
+                onOpen: () => _openTemplate(template),
+                onShare: () => _handleShare(template),
+                onDownload: () => _handleDownload(template),
+                onSave: () => _toggleSaved(template),
               );
             },
           );
@@ -445,6 +464,7 @@ class _FeedPage extends ConsumerWidget {
   final GlobalKey captureKey;
   final ValueNotifier<bool> sharing;
   final ValueNotifier<bool> downloading;
+  final bool playVideo;
   final VoidCallback onOpen;
   final VoidCallback onShare;
   final VoidCallback onDownload;
@@ -459,6 +479,7 @@ class _FeedPage extends ConsumerWidget {
     required this.captureKey,
     required this.sharing,
     required this.downloading,
+    required this.playVideo,
     required this.onOpen,
     required this.onShare,
     required this.onDownload,
@@ -497,6 +518,7 @@ class _FeedPage extends ConsumerWidget {
                                 displayName: displayName,
                                 userPhoto: userPhoto,
                                 showVideoBadge: true,
+                                playVideo: playVideo,
                                 borderRadius: AppRadius.lg,
                                 boxShadow: [
                                   BoxShadow(

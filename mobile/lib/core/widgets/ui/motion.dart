@@ -43,29 +43,34 @@ class _PressableScaleState extends State<PressableScale> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null || widget.onLongPress != null;
-    return Semantics(
-      button: enabled,
-      label: widget.semanticLabel,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: enabled ? (_) => _set(true) : null,
-        onTapCancel: enabled ? () => _set(false) : null,
-        onTapUp: enabled ? (_) => _set(false) : null,
-        onTap: widget.onTap == null
-            ? null
-            : () {
-                if (widget.haptic) HapticFeedback.selectionClick();
-                widget.onTap!();
-              },
-        onLongPress: widget.onLongPress,
-        child: AnimatedScale(
-          scale: _down ? widget.scale : 1.0,
-          duration: AppMotion.instant,
-          curve: AppMotion.standard,
-          child: widget.child,
-        ),
+    final gesture = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: enabled ? (_) => _set(true) : null,
+      onTapCancel: enabled ? () => _set(false) : null,
+      onTapUp: enabled ? (_) => _set(false) : null,
+      onTap: widget.onTap == null
+          ? null
+          : () {
+              if (widget.haptic) HapticFeedback.selectionClick();
+              widget.onTap?.call();
+            },
+      onLongPress: widget.onLongPress,
+      child: AnimatedScale(
+        scale: _down ? widget.scale : 1.0,
+        duration: AppMotion.instant,
+        curve: AppMotion.standard,
+        child: widget.child,
       ),
     );
+
+    if (widget.semanticLabel != null && widget.semanticLabel!.isNotEmpty) {
+      return Semantics(
+        button: enabled,
+        label: widget.semanticLabel,
+        child: gesture,
+      );
+    }
+    return gesture;
   }
 }
 
@@ -124,12 +129,12 @@ class _FadeSlideInState extends State<FadeSlideIn> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _curve,
-      child: widget.child,
-      builder: (context, child) => Opacity(
-        opacity: _curve.value.clamp(0.0, 1.0),
-        child: Transform.translate(
+    return FadeTransition(
+      opacity: _curve,
+      child: AnimatedBuilder(
+        animation: _curve,
+        child: widget.child,
+        builder: (context, child) => Transform.translate(
           offset: Offset(widget.dx * (1 - _curve.value), widget.dy * (1 - _curve.value)),
           child: child,
         ),

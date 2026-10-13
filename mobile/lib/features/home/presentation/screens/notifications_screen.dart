@@ -283,7 +283,6 @@ class _NotificationCard extends StatelessWidget {
       child: Semantics(
         button: true,
         label: '${unread ? 'नई सूचना: ' : ''}${item.title}. ${item.body}',
-        excludeSemantics: true,
         child: Material(
           color: unread ? p.primarySurface : p.surface,
           borderRadius: AppRadius.lgAll,

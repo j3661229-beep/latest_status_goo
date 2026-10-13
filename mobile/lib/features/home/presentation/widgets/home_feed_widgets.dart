@@ -56,7 +56,6 @@ class HomeHeader extends StatelessWidget {
             Semantics(
               button: true,
               label: 'अपनी फोटो और नाम बदलें',
-              excludeSemantics: true,
               child: PressableScale(
                 onTap: onAvatarTap,
                 child: SizedBox(
@@ -183,7 +182,6 @@ class HomeCategoryPills extends StatelessWidget {
             button: true,
             selected: selected,
             label: c.label,
-            excludeSemantics: true,
             child: PressableScale(
               onTap: () {
                 if (selected) return;
@@ -264,7 +262,6 @@ class RailButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: count == null ? label : '$label, $count',
-      excludeSemantics: true,
       onTap: onTap,
       child: PressableScale(
         onTap: busy ? null : onTap,
@@ -373,7 +370,7 @@ class FeedCaption extends StatelessWidget {
               ),
             if (catLabel.isNotEmpty)
               AppBadge(
-                label: '${(cat?.emoji ?? '').isEmpty ? '' : '${cat!.emoji} '}$catLabel',
+                label: '${(cat?.emoji ?? '').trim().isEmpty ? '' : '${cat?.emoji} '}$catLabel',
                 color: AppColors.glassStrong,
                 compact: true,
               ),

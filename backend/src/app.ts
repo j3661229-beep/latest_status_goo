@@ -74,6 +74,20 @@ export async function buildApp() {
     contentSecurityPolicy: false, // APIs don't need CSP
   });
 
+  // The mobile client sends Content-Type: application/json on every request, including
+  // body-less POST/DELETE (e.g. /user/saved/:id). Accept an empty body instead of a 400.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = (body as string).trim();
+    if (!text) return done(null, undefined);
+    try {
+      done(null, JSON.parse(text));
+    } catch {
+      const err = new Error('Invalid JSON body') as Error & { statusCode: number };
+      err.statusCode = 400;
+      done(err, undefined);
+    }
+  });
+
   await app.register(cors, {
     origin: [
       'http://localhost:3001',

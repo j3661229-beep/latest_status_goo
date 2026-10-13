@@ -125,7 +125,6 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
                       Semantics(
                         button: true,
                         label: 'अगला सुविचार',
-                        excludeSemantics: true,
                         child: InkWell(
                           onTap: () => _nextQuote(quotes.length),
                           borderRadius: AppRadius.pillAll,
@@ -185,7 +184,6 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
                         Semantics(
                           button: true,
                           label: _showEn ? 'हिंदी में पढ़ें' : 'Read in English',
-                          excludeSemantics: true,
                           child: InkWell(
                             onTap: () => setState(() => _showEn = !_showEn),
                             borderRadius: AppRadius.pillAll,

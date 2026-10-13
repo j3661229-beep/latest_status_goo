@@ -40,8 +40,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(() {
-      final s = _scroll.hasClients && _scroll.offset > 8;
-      if (s != _scrolled.value) _scrolled.value = s;
+      if (!_scroll.hasClients) return;
+      final s = _scroll.offset > 8;
+      if (s != _scrolled.value) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && s != _scrolled.value) _scrolled.value = s;
+        });
+      }
     });
   }
 
@@ -105,7 +110,11 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
           onNotification: (n) {
             // Infinite scroll: load the next page near the bottom.
             if (n.metrics.axis == Axis.vertical && n.metrics.extentAfter < 600) {
-              ref.read(templateListProvider(_filter).notifier).loadMore();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  ref.read(templateListProvider(_filter).notifier).loadMore();
+                }
+              });
             }
             return false;
           },
@@ -316,20 +325,12 @@ class _StickySearchHeader extends SliverPersistentHeaderDelegate {
     return ValueListenableBuilder<bool>(
       valueListenable: scrolled,
       builder: (context, isScrolled, _) {
-        if (!isScrolled) {
-          return ColoredBox(color: p.bg, child: content);
-        }
-        return ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: p.bg.withValues(alpha: 0.82),
-                border: Border(bottom: BorderSide(color: p.divider)),
-              ),
-              child: content,
-            ),
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: isScrolled ? p.bg.withValues(alpha: 0.96) : p.bg,
+            border: Border(bottom: BorderSide(color: isScrolled ? p.divider : Colors.transparent)),
           ),
+          child: content,
         );
       },
     );

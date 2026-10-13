@@ -307,8 +307,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
         return NotificationListener<ScrollNotification>(
           onNotification: (n) {
-            if (n.metrics.extentAfter < 600) {
-              ref.read(searchTemplatesProvider(_query).notifier).loadMore();
+            if (n.metrics.axis == Axis.vertical && n.metrics.extentAfter < 600) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  ref.read(searchTemplatesProvider(_query).notifier).loadMore();
+                }
+              });
             }
             return false;
           },

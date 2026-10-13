@@ -142,7 +142,7 @@ class _FallbackGradient extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Text(
-        template.nameHi?.isNotEmpty == true ? template.nameHi!.characters.first : '🙏',
+        (template.nameHi?.trim().isNotEmpty == true) ? template.nameHi!.trim().characters.first : '🙏',
         style: const TextStyle(fontSize: 32),
       ),
     );

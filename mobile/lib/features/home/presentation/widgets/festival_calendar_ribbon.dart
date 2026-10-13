@@ -55,7 +55,7 @@ class FestivalCalendarRibbon extends StatelessWidget {
               dx: 18,
               child: _FestivalCard(
                 item: items[index],
-                onTap: onFestivalSelected == null ? null : () => onFestivalSelected!(items[index]),
+                onTap: onFestivalSelected == null ? null : () => onFestivalSelected?.call(items[index]),
               ),
             ),
           ),

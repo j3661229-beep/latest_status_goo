@@ -1,19 +1,25 @@
 // lib/features/auth/presentation/screens/splash_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/auth/session_store.dart';
+import '../../../../core/services/video_cache_service.dart';
 import '../../../../core/widgets/app_ui.dart';
+import '../../../home/presentation/providers/home_data_provider.dart';
 
-/// Animated brand splash. Routing logic: login -> profile-setup -> home.
-class SplashScreen extends StatefulWidget {
+/// Animated brand splash. If the user is already logged in, the home feed API
+/// is called directly on the splash screen so the home screen mounts instantly
+/// with zero loading delay.
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProviderStateMixin {
   late final AnimationController _intro;
   late final AnimationController _loop;
   late final Animation<double> _logoScale;
@@ -34,18 +40,47 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 
   Future<void> _navigate() async {
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (!mounted) return;
-
     final session = SessionStore.instance;
     final onboarded = session.onboardingCompleted;
     final userName = session.displayName;
+    final isLoggedIn = session.isLoggedIn;
+    final isReady = isLoggedIn && onboarded && userName != null && userName.trim().isNotEmpty;
 
-    if (!session.isLoggedIn) {
-      // First time / not logged in: OTP login screen.
+    final minDelay = Future.delayed(const Duration(milliseconds: 1100));
+
+    if (isReady) {
+      // 1. User is already logged in: call home API on the splash screen directly
+      try {
+        final homeFuture = ref.read(homeDataProvider.future);
+        final results = await Future.wait([
+          minDelay,
+          homeFuture.timeout(const Duration(milliseconds: 2500)),
+        ]);
+
+        // 2. Prefetch any video template from the initial feed into disk cache
+        final feed = results[1];
+        if (feed != null) {
+          final all = [...feed.featured, ...feed.trending, ...feed.coordinatorPicks];
+          for (final t in all) {
+            if (t.isVideo && (t.videoUrl ?? '').isNotEmpty) {
+              VideoCacheService.instance.prefetchVideo(t.videoUrl!);
+              break; // prefetch the first video for instant startup
+            }
+          }
+        }
+      } catch (_) {
+        // Safe fallback: continue to home even if network is slow/offline
+        await minDelay;
+      }
+    } else {
+      await minDelay;
+    }
+
+    if (!mounted) return;
+
+    if (!isLoggedIn) {
       context.go('/login');
     } else if (!onboarded || userName == null || userName.trim().isEmpty) {
-      // Logged in but name / photo / region not set up yet.
       context.go('/profile-setup');
     } else {
       context.go('/home');

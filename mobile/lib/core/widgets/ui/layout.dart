@@ -253,7 +253,6 @@ class SectionHeader extends StatelessWidget {
             Semantics(
               button: true,
               label: '$actionLabel: $title',
-              excludeSemantics: true,
               child: InkWell(
                 onTap: onAction,
                 borderRadius: AppRadius.pillAll,

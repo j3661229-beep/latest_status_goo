@@ -64,6 +64,7 @@ const templateSelect = {
   photoZoneY: true,
   photoZoneSize: true,
   photoZoneShape: true,
+  fitMode: true,
   nameZoneEnabled: true,
   nameZoneX: true,
   nameZoneY: true,

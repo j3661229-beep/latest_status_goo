@@ -180,7 +180,6 @@ class _HeartButton extends StatelessWidget {
     return Semantics(
       button: true,
       label: 'सहेजे गए से हटाएं',
-      excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
