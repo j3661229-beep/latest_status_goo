@@ -6,7 +6,11 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@statusgo.in';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'StatusGo@Admin2026!';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 12) {
+  console.error('ADMIN_PASSWORD env var is required (min 12 chars). Refusing to create an admin with a default password.');
+  process.exit(1);
+}
 
 async function resetDatabase() {
   console.log('🔄 Wiping all tables from database...');
@@ -52,7 +56,7 @@ async function resetDatabase() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('🎉 DATABASE RESET COMPLETE — ONLY 1 ADMIN ACCOUNT:');
   console.log(`   Email:    ${admin.email}`);
-  console.log(`   Password: ${ADMIN_PASSWORD}`);
+  console.log("   Password: (the value you supplied in ADMIN_PASSWORD)");
   console.log(`   Role:     ${admin.role}`);
   console.log(`   User ID:  ${admin.id}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

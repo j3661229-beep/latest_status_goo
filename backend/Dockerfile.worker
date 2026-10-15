@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────────────────────
+# Status Go — BullMQ worker image (cron jobs + AI shorts pipeline + scheduled news ingestion)
+#
+# The API image (Dockerfile) only runs dist/server.js. Scheduled jobs and video generation need
+# an ALWAYS-ON process, so deploy this as its own service with at least one instance running
+# continuously (e.g. Cloud Run with min-instances=1 and "CPU always allocated", a VM, or GKE).
+# A scale-to-zero / request-throttled service will silently stop running schedules.
+#
+# Build:  docker build -f Dockerfile.worker -t statusgo-worker .
+# Needs the same env as the API plus the CONTENT_* variables (see .env.example) and
+# CONTENT_PIPELINE_ENABLED=true. Credentials come from the runtime service account (ADC).
+# ─────────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+WORKDIR /app
+RUN apk add --no-cache openssl libc6-compat
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm install
+COPY tsconfig*.json ./
+COPY src ./src/
+RUN npx prisma generate && npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+# ffmpeg (libx264 + libass) for rendering, and a Devanagari font for Hindi captions.
+RUN apk add --no-cache openssl libc6-compat ffmpeg fontconfig font-noto-devanagari
+ENV FFMPEG_PATH=/usr/bin/ffmpeg FFPROBE_PATH=/usr/bin/ffprobe \
+    CONTENT_FONTS_DIR=/usr/share/fonts/noto CONTENT_FONT_NAME="Noto Sans Devanagari"
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm install --omit=dev && npx prisma generate
+COPY --from=builder /app/dist ./dist
+USER node
+CMD ["node", "dist/workers/index.js"]

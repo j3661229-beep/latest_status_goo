@@ -107,12 +107,19 @@ class _IntroScreenState extends State<IntroScreen> {
                   AppSpacing.page, AppSpacing.xs, AppSpacing.xs, 0),
               child: Row(
                 children: [
-                  const AppLogo(
-                      size: 40,
-                      showWordmark: true,
-                      horizontal: true,
-                      wordmarkColor: AppColors.onDark),
-                  const Spacer(),
+                  // Shrinks (never overflows) on narrow screens / large accessibility text.
+                  const Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: AppLogo(
+                          size: 40,
+                          showWordmark: true,
+                          horizontal: true,
+                          wordmarkColor: AppColors.onDark),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
                   AnimatedOpacity(
                     opacity: _last ? 0 : 1,
                     duration: AppMotion.fast,
@@ -169,37 +176,53 @@ class _SlideView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-      child: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: _Illustration(slide: slide),
-              ),
+    // Scrollable + centred: with large text on a small phone the copy alone can exceed the available
+    // height, so it scrolls instead of overflowing. The illustration is dropped when space is tight.
+    return LayoutBuilder(
+      builder: (context, c) {
+        final showArt = c.maxHeight >= 520;
+        final artHeight = (c.maxHeight * 0.5).clamp(0.0, 340.0);
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: c.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (showArt)
+                  SizedBox(
+                    height: artHeight,
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: _Illustration(slide: slide),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  slide.title,
+                  textAlign: TextAlign.center,
+                  style: AppText.heading(
+                      size: 28,
+                      weight: FontWeight.w800,
+                      color: AppColors.onDark,
+                      height: 1.25),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  slide.subtitle,
+                  textAlign: TextAlign.center,
+                  style: AppText.body(
+                      size: 16.5, color: AppColors.onDarkMuted, height: 1.55),
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            slide.title,
-            textAlign: TextAlign.center,
-            style: AppText.heading(
-                size: 28,
-                weight: FontWeight.w800,
-                color: AppColors.onDark,
-                height: 1.25),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            slide.subtitle,
-            textAlign: TextAlign.center,
-            style: AppText.body(
-                size: 16.5, color: AppColors.onDarkMuted, height: 1.55),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

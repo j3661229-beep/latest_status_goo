@@ -34,6 +34,14 @@ const CancelSchema = z.object({
 
 export async function subscriptionRoutes(fastify: FastifyInstance) {
 
+  // In production, refuse to start any payment flow while Razorpay still has its placeholder credentials.
+  // (The webhook scope already returns 503 on its own when its secret is a placeholder.)
+  fastify.addHook('onRequest', async (req, reply) => {
+    if (env.NODE_ENV === 'production' && req.method === 'POST' && !req.url.includes('/webhook') && !RazorpayService.isConfigured()) {
+      return reply.status(503).send({ error: 'Payments are not configured' });
+    }
+  });
+
   // ── Helper: resolve the monthly plan ID ──────────────────────────────────────
   async function getMonthlyPlanId(): Promise<string | null> {
     if (env.RZP_MONTHLY_PLAN_ID) return env.RZP_MONTHLY_PLAN_ID;
@@ -481,7 +489,15 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
       // Idempotency — Razorpay retries on non-2xx; skip duplicates
       const eventId = req.headers['x-razorpay-event-id'];
       if (typeof eventId === 'string' && eventId) {
-        const fresh = await fastify.redis.set(`rzp:evt:${eventId}`, '1', 'EX', 86400, 'NX').catch(() => 'OK');
+        let fresh: string | null;
+        try {
+          fresh = await fastify.redis.set(`rzp:evt:${eventId}`, '1', 'EX', 86400, 'NX');
+        } catch (err) {
+          // Cannot prove this event is new → do NOT process it (a replay could grant premium twice).
+          // 503 makes Razorpay retry later, when Redis is back.
+          req.log.error({ err, eventId }, 'webhook idempotency store unavailable');
+          return reply.status(503).send({ error: 'Temporarily unavailable, retry later' });
+        }
         if (fresh === null) return reply.send({ status: 'duplicate' });
       }
 

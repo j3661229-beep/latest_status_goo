@@ -316,3 +316,34 @@ Local Docker Compose is fine for Postgres/Redis. Backend Dockerfile is a reasona
 ---
 
 *This audit is a snapshot of the tree as of 13 October 2026 plus the device logcat pasted in the same session. It does not re-test payments or Google Sign-In live.*
+
+---
+
+## 10. Remediation status (updated 15 Oct 2026)
+
+Legend: **Fixed** = changed + covered by an automated test · **Already fixed** = found fixed in the working tree · **Open** = not done (reason given).
+
+| ID | Status | Notes |
+|----|--------|-------|
+| M-V1, M-V2, M-V3, M-V4 | Already fixed | Single-player, post-frame dispose, no `RefreshIndicator`/`Transform.scale` on the pager (uncommitted work on `chore/flutter-upgrade`). New Shorts feed follows the same rules and has lifecycle tests. **Still needs a real-device swipe test.** |
+| M-B1 | Already fixed | `enableOnBackInvokedCallback` is set. |
+| B-R1 | **Fixed** | In production the API refuses to boot without Redis and never silently falls back to per-instance memory (`REDIS_ALLOW_MEMORY_FALLBACK=true` is an explicit single-instance escape hatch). `CacheService` now degrades to uncached instead of 500-ing on a Redis blip. `test/hardening.test.ts`. |
+| B-P2 | **Fixed** | Webhook idempotency failure now returns 503 (Razorpay retries) instead of processing the event. |
+| B-P1 | **Fixed** (partly) | Placeholder Razorpay secrets can no longer validate payment signatures (the HMAC key would be public); in production, payment-creating POSTs return 503 until real credentials are set. The server still boots (webhook already refused placeholders). |
+| B-H1 | **Fixed** | Graceful shutdown closes Fastify → Prisma/Redis, with a hard 8 s timeout. |
+| B-H3 | **Fixed** | `/health` no longer returns `NODE_ENV`. |
+| S-1 | **Fixed** | Rate limits on `/search/suggestions` (60/min) and `/search/trending` (30/min). |
+| B-S1 | **Fixed** | `reset-db.ts` requires `ADMIN_PASSWORD` (≥12 chars) and no longer prints it. |
+| T-1 (backend) | **Fixed** | 195 backend tests incl. real-Postgres end-to-end. |
+| T-1 (mobile) | **Fixed** | 361 tests incl. a layout stress test of **every screen** (4 phone sizes, max accessibility text, light/dark, API data/empty/failing, keyboard open on forms). |
+| CI | **Fixed** | `.github/workflows/ci.yml` (backend + real Postgres, admin build, Flutter analyze/test); `release-readiness.yml` for tags. |
+| B-M1 | Fixed (partly) | Migration folder now exists with one additive migration (AI Shorts). Earlier tables are still created by `db push`; baseline before adopting `migrate deploy`. |
+| — (found by new tests) | **Fixed** | `SessionStore` singleton was disposed by its Riverpod provider on scope teardown. · Intro screen overflowed on small phones / large text. · Discover pinned header had invalid sliver geometry (`layoutExtent > paintExtent`). · Notifications provider modified another provider during init (assertion in debug). · Suvichar banner row overflowed on 320 px. · Profile-setup form overflowed on a small phone with the keyboard open. |
+| M-M1 | Not a bug | The merged manifest has no `CAMERA` permission and `image_picker` uses the system camera intent, which needs none. Declaring it would force a runtime prompt. |
+| M-G1 | **Open — needs you** | `google-services.json` is for `com.statusgoo.enpoi`; `applicationId` is `com.statusgo.status_go`. Download the matching file from the Firebase console. `mobile/tool/check_release_ready.sh` fails until fixed. |
+| M-L1 | **Open — needs you** | Support phone/WhatsApp, company name/address, grievance officer, policy URLs are `TODO(owner)` placeholders. Same script fails until filled. |
+| M-A1 | **Open** | Release builds default to a Razorpay **test** key; pass `--dart-define=RAZORPAY_KEY_ID=rzp_live_…`. |
+| M-G2, D-E1 | Open | Firebase key / prod URLs in git. They are client-side identifiers; restrict the Firebase API key in the console. `.env.production` is still tracked. |
+| B-A2, B-A1 | Open | Creator login still accepts SUPER_ADMIN; extra hardcoded Google client id. Product decisions. |
+| M-V5, M-D1 | Open | Share-while-video-playing capture and Discover grid performance need profiling on a device. |
+| D-A1, D-A2, W-1, B-H2, R-1, R-2, C-1, B-C1 | Open | Not addressed in this pass. |

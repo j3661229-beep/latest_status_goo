@@ -181,7 +181,8 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
                         ),
                       ),
                       if (suvichar.textEn != null)
-                        Semantics(
+                        Flexible(
+                          child: Semantics(
                           button: true,
                           label: _showEn ? 'हिंदी में पढ़ें' : 'Read in English',
                           child: InkWell(
@@ -195,6 +196,8 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
                                   child: Text(
                                     _showEn ? 'हिंदी में पढ़ें' : 'Read in English',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: AppText.body(
                                       size: 13,
                                       weight: FontWeight.w700,
@@ -206,6 +209,7 @@ class _DailySuvicharBannerState extends ConsumerState<DailySuvicharBanner> {
                               ),
                             ),
                           ),
+                        ),
                         ),
                     ],
                   ),

@@ -137,7 +137,43 @@ export class MemoryRedis {
   }
 }
 
+/**
+ * Production (without REDIS_ALLOW_MEMORY_FALLBACK): a real, shared Redis is REQUIRED.
+ *  - the app refuses to boot if Redis is unreachable;
+ *  - at runtime commands fail fast instead of silently switching to per-instance memory, which would
+ *    desync refresh tokens / OTPs / rate limits across instances and break webhook idempotency.
+ */
+async function registerStrictRedis(fastify: Parameters<FastifyPluginAsync>[0]) {
+  const redis = new Redis(env.REDIS_URL, {
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false, // fail fast while disconnected instead of queueing
+    enableReadyCheck: true,
+    lazyConnect: true,
+    connectTimeout: 5000,
+    retryStrategy: (times) => Math.min(times * 500, 5000), // keep reconnecting forever
+  });
+  redis.on('error', (err) => fastify.log.error(`Redis error: ${err.message}`));
+  redis.on('ready', () => fastify.log.info('✅ Redis ready'));
+  try {
+    await redis.connect();
+  } catch (err) {
+    redis.disconnect();
+    throw new Error(`Redis is required in production but unreachable: ${(err as Error).message}`);
+  }
+  fastify.decorate('redis', redis);
+  fastify.addHook('onClose', async () => {
+    try { await redis.quit(); } catch { redis.disconnect(); }
+  });
+}
+
 const redisPlugin: FastifyPluginAsync = async (fastify) => {
+  if (env.NODE_ENV === 'production' && !env.REDIS_ALLOW_MEMORY_FALLBACK) {
+    await registerStrictRedis(fastify);
+    return;
+  }
+  if (env.NODE_ENV === 'production') {
+    fastify.log.warn('⚠️ REDIS_ALLOW_MEMORY_FALLBACK=true — sessions/OTP are NOT shared across instances');
+  }
   const memoryFallback = new MemoryRedis();
   let isRedisConnected = false;
 

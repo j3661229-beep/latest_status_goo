@@ -1,0 +1,14 @@
+name: Release readiness (manual / tags)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  mobile-release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Owner-only placeholders and Firebase config
+        run: bash mobile/tool/check_release_ready.sh

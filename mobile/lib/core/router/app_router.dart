@@ -23,6 +23,8 @@ import '../../features/premium/presentation/screens/my_plan_screen.dart';
 import '../../features/support/presentation/screens/help_screen.dart';
 import '../../features/support/presentation/screens/about_screen.dart';
 import '../../features/support/presentation/screens/not_found_screen.dart';
+import '../../features/shorts/presentation/screens/short_detail_screen.dart';
+import '../../features/shorts/presentation/screens/shorts_screen.dart';
 import 'app_shell.dart';
 import '../../core/auth/session_store.dart';
 import '../../core/services/notification_service.dart';
@@ -95,6 +97,10 @@ GoRouter appRouter(AppRouterRef ref) {
       GoRoute(path: '/about', builder: (ctx, state) => const AboutScreen()),
       GoRoute(path: '/help', builder: (ctx, state) => const HelpScreen()),
       GoRoute(
+        path: '/shorts/:id',
+        builder: (ctx, state) => ShortDetailScreen(id: state.pathParameters['id']!),
+      ),
+      GoRoute(
         path: '/template/:id',
         builder: (ctx, state) => TemplatePreviewScreen(
           templateId: state.pathParameters['id']!,
@@ -108,6 +114,7 @@ GoRouter appRouter(AppRouterRef ref) {
         routes: [
           GoRoute(path: '/home', builder: (ctx, state) => const HomeScreen()),
           GoRoute(path: '/discover', builder: (ctx, state) => const DiscoverScreen()),
+          GoRoute(path: '/shorts', builder: (ctx, state) => const ShortsScreen()),
           GoRoute(path: '/saved', builder: (ctx, state) => const SavedScreen()),
           GoRoute(path: '/profile', builder: (ctx, state) => const ProfileScreen()),
         ],

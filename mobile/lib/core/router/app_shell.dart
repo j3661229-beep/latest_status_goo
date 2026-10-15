@@ -34,6 +34,7 @@ class _Dest {
 const _destinations = <_Dest>[
   _Dest(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'होम', path: '/home'),
   _Dest(icon: Icons.explore_outlined, activeIcon: Icons.explore_rounded, label: 'खोजें', path: '/discover'),
+  _Dest(icon: Icons.play_circle_outline_rounded, activeIcon: Icons.play_circle_rounded, label: 'शॉर्ट्स', path: '/shorts'),
   _Dest(icon: Icons.bookmark_outline_rounded, activeIcon: Icons.bookmark_rounded, label: 'सहेजें', path: '/saved'),
   _Dest(icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'प्रोफ़ाइल', path: '/profile'),
 ];

@@ -8,6 +8,7 @@ import IORedis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env';
 import { OneSignalService } from '../lib/notification/onesignal.service';
+import { startContentWorker } from './content.worker';
 
 const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
 const prisma = new PrismaClient();
@@ -123,11 +124,16 @@ cronWorker.on('failed', (job, err) => {
 
 console.log('✅ Workers running: cron');
 
+// AI shorts pipeline (script → narration → render). Disabled unless CONTENT_PIPELINE_ENABLED=true.
+const contentWorker = process.env.CONTENT_PIPELINE_ENABLED === 'true' ? startContentWorker(prisma, env.REDIS_URL) : null;
+if (!contentWorker) console.log('[workers] content pipeline disabled (set CONTENT_PIPELINE_ENABLED=true to enable)');
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('[workers] SIGTERM received — shutting down gracefully');
   await Promise.allSettled([
     cronWorker.close(),
+    contentWorker?.close(),
     cronQueue.close(),
   ]);
   await prisma.$disconnect();
@@ -138,6 +144,7 @@ process.on('SIGINT', async () => {
   console.log('[workers] SIGINT received — shutting down');
   await Promise.allSettled([
     cronWorker.close(),
+    contentWorker?.close(),
     cronQueue.close(),
   ]);
   await prisma.$disconnect();

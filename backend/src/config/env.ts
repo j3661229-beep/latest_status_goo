@@ -34,6 +34,9 @@ const envSchema = z.object({
 
   // Redis
   REDIS_URL: z.string(),
+  // Production fails CLOSED when Redis is unavailable (sessions/OTP/webhook idempotency must be shared and
+  // durable). Set to 'true' ONLY for a single-instance emergency; outside production the fallback is always on.
+  REDIS_ALLOW_MEMORY_FALLBACK: boolFlag,
 
   // JWT
   JWT_SECRET: z.string().min(32),

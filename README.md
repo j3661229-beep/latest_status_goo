@@ -245,3 +245,6 @@ Run `npm run studio` in `/backend` to explore visually.
 ## License
 
 MIT © 2025 Status Go Team
+
+## AI Shorts (Sarkari Yojana & Daily News)
+Setup, environment variables, scheduling/deployment notes, and the first-video walkthrough: [docs/ai-shorts.md](docs/ai-shorts.md).

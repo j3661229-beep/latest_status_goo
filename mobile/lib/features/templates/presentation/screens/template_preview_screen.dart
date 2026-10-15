@@ -204,6 +204,13 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
 
   Future<void> _toggleSaved() async {
     if (_isTogglingSave) return;
+    if (!SessionStore.instance.isLoggedIn) {
+      if (mounted) {
+        AppSnack.info(context, 'स्टेटस सेव करने के लिए कृपया लॉगिन करें');
+        context.push('/login');
+      }
+      return;
+    }
     HapticFeedback.selectionClick();
     setState(() => _isTogglingSave = true);
     try {
@@ -211,12 +218,13 @@ class _TemplatePreviewScreenState extends ConsumerState<TemplatePreviewScreen> {
       final nowSaved = await ref.read(savedIdsProvider.notifier).toggle(widget.templateId);
       if (mounted) {
         if (nowSaved) {
-          AppSnack.success(context, 'स्टेटस सेव हो गया');
+          AppSnack.success(context, 'स्टेटस सेव हो गया 🔖');
         } else {
           AppSnack.info(context, 'स्टेटस सेव से हटा दिया गया');
         }
       }
     } catch (e) {
+      debugPrint('TemplatePreviewScreen _toggleSaved error: $e');
       if (mounted) {
         AppSnack.error(context, apiErrorMessage(e, fallback: 'सेव नहीं हो सका। कृपया दोबारा कोशिश करें।'));
       }

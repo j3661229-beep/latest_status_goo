@@ -521,3 +521,266 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
 }
+
+// ════════════════════════════════════════════════
+//  AI SHORTS — Sarkari Yojana & Daily News
+//  Additive only. One lifecycle (ShortVideo) shared by both content kinds.
+// ════════════════════════════════════════════════
+
+enum ContentKind {
+  SCHEME
+  NEWS
+}
+
+enum ContentStatus {
+  DRAFT
+  SOURCE_VERIFIED
+  SCRIPT_READY
+  GENERATING
+  GENERATED
+  NEEDS_REVIEW
+  APPROVED
+  PUBLISHED
+  FAILED
+  REJECTED
+  EXPIRED
+  CORRECTION_REQUIRED
+  UNPUBLISHED
+}
+
+enum ContentJobType {
+  SOURCE_REFRESH
+  NEWS_INGEST
+  SOURCE_VALIDATE
+  DEDUPE
+  SCRIPT
+  NARRATION
+  VISUALS
+  RENDER
+  THUMBNAIL
+  UPLOAD
+  REVIEW_REMINDER
+  CORRECTION
+}
+
+enum ContentJobState {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum CorrectionStatus {
+  NONE
+  CORRECTED
+  WITHDRAWN
+}
+
+enum ContentReportReason {
+  INCORRECT
+  OUTDATED
+  MISLEADING
+  OFFENSIVE
+  OTHER
+}
+
+enum ContentReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum ContentEventType {
+  VIEW
+  COMPLETE
+  SHARE
+  OPEN_LINK
+}
+
+model Scheme {
+  id               String    @id @default(cuid())
+  slug             String    @unique
+  officialName     String
+  nameHi           String
+  category         String
+  scope            String    @default("CENTRAL") // CENTRAL | STATE
+  stateCode        String?
+  department       String?
+  language         Language  @default(HINDI)
+  benefits         String[]
+  eligibility      String[]
+  documents        String[]
+  applicationSteps String[]
+  applicationMode  String? // ONLINE | OFFLINE | BOTH
+  applicationUrl   String?
+  sourceUrls       String[]
+  sourceUpdatedAt  DateTime?
+  lastCheckedAt    DateTime?
+  lastVerifiedAt   DateTime?
+  reviewStatus     ContentStatus @default(DRAFT)
+  nextReviewAt     DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  videos ShortVideo[]
+
+  @@index([category])
+  @@index([scope, stateCode])
+  @@index([nextReviewAt])
+}
+
+model NewsStory {
+  id               String           @id @default(cuid())
+  originalHeadline String
+  publisher        String
+  canonicalUrl     String           @unique
+  dedupeKey        String // normalized-title hash, used to group reports of one event
+  category         String
+  language         Language         @default(HINDI)
+  publishedAt      DateTime
+  retrievedAt      DateTime         @default(now())
+  lastVerifiedAt   DateTime?
+  relatedSources   Json             @default("[]")
+  summary          String?          @db.Text
+  isDeveloping     Boolean          @default(false)
+  correctionStatus CorrectionStatus @default(NONE)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  videos ShortVideo[]
+
+  @@index([dedupeKey])
+  @@index([category, publishedAt])
+  @@index([publishedAt])
+}
+
+model ShortVideo {
+  id             String        @id @default(cuid())
+  kind           ContentKind
+  schemeId       String?
+  newsStoryId    String?
+  language       Language      @default(HINDI)
+  category       String
+  region         String? // state code or null = national
+  title          String
+  hook           String?
+  description    String?       @db.Text
+  status         ContentStatus @default(DRAFT)
+  scriptVersion  Int           @default(1)
+  script         Json?
+  captions       Json?
+  claims         Json? // [{text, sourceUrl, sourceQuote}]
+  warnings       Json?
+  attribution    String? // end-card / detail-screen source text
+  durationSec    Float?
+  videoKey       String? // object key in storage (private; delivered via signed URL)
+  thumbnailKey   String?
+  audioKey       String?
+  aiMeta         Json? // provider, model, voice, prompt versions
+  costMicroUsd   Int           @default(0)
+  correctionNote String?
+  scheduledAt    DateTime?
+  publishedAt    DateTime?
+  expiresAt      DateTime?
+  approvedById   String?
+  publishedById  String?
+  viewCount      Int           @default(0)
+  shareCount     Int           @default(0)
+  bookmarkCount  Int           @default(0)
+  reportCount    Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  scheme    Scheme?          @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+  newsStory NewsStory?       @relation(fields: [newsStoryId], references: [id], onDelete: SetNull)
+  jobs      ContentJob[]
+  reviews   ContentReview[]
+  reports   ContentReport[]
+  events    ContentEvent[]
+  bookmarks ContentBookmark[]
+
+  @@index([status, kind, publishedAt])
+  @@index([kind, category, status])
+  @@index([schemeId])
+  @@index([newsStoryId])
+  @@index([status, scheduledAt])
+}
+
+model ContentJob {
+  id             String          @id @default(cuid())
+  type           ContentJobType
+  state          ContentJobState @default(QUEUED)
+  shortVideoId   String?
+  idempotencyKey String          @unique
+  payload        Json?
+  attempts       Int             @default(0)
+  maxAttempts    Int             @default(3)
+  failureReason  String?
+  costMicroUsd   Int             @default(0)
+  queuedAt       DateTime        @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  shortVideo ShortVideo? @relation(fields: [shortVideoId], references: [id], onDelete: SetNull)
+
+  @@index([state, type, queuedAt])
+  @@index([shortVideoId])
+}
+
+/// Append-only editorial decision trail (approve / reject / publish / unpublish / correct / edit).
+model ContentReview {
+  id           String   @id @default(cuid())
+  shortVideoId String
+  actorId      String
+  action       String
+  reason       String?
+  before       Json?
+  after        Json?
+  createdAt    DateTime @default(now())
+
+  shortVideo ShortVideo @relation(fields: [shortVideoId], references: [id], onDelete: Cascade)
+
+  @@index([shortVideoId, createdAt])
+}
+
+model ContentReport {
+  id           String              @id @default(cuid())
+  shortVideoId String
+  userId       String
+  reason       ContentReportReason
+  note         String?
+  status       ContentReportStatus @default(OPEN)
+  createdAt    DateTime            @default(now())
+
+  shortVideo ShortVideo @relation(fields: [shortVideoId], references: [id], onDelete: Cascade)
+
+  @@unique([shortVideoId, userId])
+  @@index([status, createdAt])
+}
+
+model ContentEvent {
+  id           String           @id @default(cuid())
+  shortVideoId String
+  userId       String
+  type         ContentEventType
+  dayKey       String // YYYY-MM-DD — one counted event per user/type/day
+  createdAt    DateTime         @default(now())
+
+  shortVideo ShortVideo @relation(fields: [shortVideoId], references: [id], onDelete: Cascade)
+
+  @@unique([shortVideoId, userId, type, dayKey])
+}
+
+model ContentBookmark {
+  id           String   @id @default(cuid())
+  shortVideoId String
+  userId       String
+  createdAt    DateTime @default(now())
+
+  shortVideo ShortVideo @relation(fields: [shortVideoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shortVideoId])
+  @@index([userId, createdAt])
+}

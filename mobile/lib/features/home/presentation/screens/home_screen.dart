@@ -46,6 +46,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _selectedCategory = 'all';
   late final PageController _pageController;
   final ValueNotifier<int> _pageIndex = ValueNotifier<int>(0);
+  final ValueNotifier<bool> _routeCovered = ValueNotifier<bool>(false);
+  GoRouter? _router;
 
   // Busy flags live in notifiers so toggling them doesn't rebuild the pager.
   final ValueNotifier<bool> _sharing = ValueNotifier<bool>(false);
@@ -62,9 +64,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
-    _pageController.addListener(_syncPageIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _router = GoRouter.of(context);
+      _router!.routerDelegate.addListener(_onRouteCovered);
+      _onRouteCovered();
       AppShell.immersive.value = true;
       // Every login flow ends on Home: deliver a deep link buffered from a
       // cold-start notification tap.
@@ -78,9 +82,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     AppShell.immersive.value = false;
     _hintTimer?.cancel();
-    _pageController.removeListener(_syncPageIndex);
+    _router?.routerDelegate.removeListener(_onRouteCovered);
     _pageController.dispose();
     _pageIndex.dispose();
+    _routeCovered.dispose();
     _sharing.dispose();
     _downloading.dispose();
     super.dispose();
@@ -109,12 +114,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   GlobalKey _keyFor(String id) => _cardKeys.putIfAbsent(id, GlobalKey.new);
 
-  void _syncPageIndex() {
-    if (!_pageController.hasClients || !_pageController.position.haveDimensions) return;
-    final page = _pageController.page;
-    if (page == null) return;
-    final i = page.round();
-    if (_pageIndex.value != i) _pageIndex.value = i;
+  /// Preview / search / etc. sit on the root navigator above Home. Flip this
+  /// after the frame so we don't markNeedsBuild during the incoming route's build.
+  void _onRouteCovered() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final path = _router?.routerDelegate.currentConfiguration.uri.path ?? '';
+      final covered = path != '/home';
+      if (_routeCovered.value != covered) _routeCovered.value = covered;
+    });
   }
 
   String get _lang => (SessionStore.instance.language ?? 'HINDI').toUpperCase();
@@ -215,15 +223,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _toggleSaved(TemplateModel template) async {
     HapticFeedback.selectionClick();
+    if (!SessionStore.instance.isLoggedIn) {
+      if (mounted) {
+        AppSnack.info(context, 'स्टेटस सेव करने के लिए कृपया लॉगिन करें');
+        context.push('/login');
+      }
+      return;
+    }
     try {
       final nowSaved = await ref.read(savedIdsProvider.notifier).toggle(template.id);
       if (!mounted) return;
       if (nowSaved) {
-        AppSnack.success(context, 'स्टेटस सेव हो गया');
+        AppSnack.success(context, 'स्टेटस सेव हो गया 🔖');
       } else {
         AppSnack.info(context, 'स्टेटस सेव से हटा दिया गया');
       }
     } catch (e) {
+      debugPrint('HomeScreen _toggleSaved error: $e');
       if (mounted) {
         AppSnack.error(context, apiErrorMessage(e, fallback: 'सेव नहीं हो सका। कृपया दोबारा कोशिश करें।'));
       }
@@ -422,15 +438,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         allowImplicitScrolling: false,
         itemCount: filtered.length,
         onPageChanged: (i) {
-          _pageIndex.value = i;
           HapticFeedback.selectionClick();
           if (_showHint) _dismissHint();
+          // Swap the active player after the pager finishes this frame.
+          // Changing it mid-swipe unmounts VideoPlayer during semantics.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _pageIndex.value != i) _pageIndex.value = i;
+          });
         },
         itemBuilder: (ctx, i) {
           final template = filtered[i];
-          return ValueListenableBuilder<int>(
-            valueListenable: _pageIndex,
-            builder: (context, current, _) {
+          return ListenableBuilder(
+            listenable: Listenable.merge([_pageIndex, _routeCovered]),
+            builder: (context, _) {
               return _FeedPage(
                 key: ValueKey(template.id),
                 template: template,
@@ -440,7 +460,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 captureKey: _keyFor(template.id),
                 sharing: _sharing,
                 downloading: _downloading,
-                playVideo: i == current,
+                playVideo: i == _pageIndex.value && !_routeCovered.value,
                 onOpen: () => _openTemplate(template),
                 onShare: () => _handleShare(template),
                 onDownload: () => _handleDownload(template),
@@ -519,6 +539,7 @@ class _FeedPage extends ConsumerWidget {
                                 userPhoto: userPhoto,
                                 showVideoBadge: true,
                                 playVideo: playVideo,
+                                pauseVideoWhenObscured: false,
                                 borderRadius: AppRadius.lg,
                                 boxShadow: [
                                   BoxShadow(

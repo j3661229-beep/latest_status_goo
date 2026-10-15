@@ -325,12 +325,17 @@ class _StickySearchHeader extends SliverPersistentHeaderDelegate {
     return ValueListenableBuilder<bool>(
       valueListenable: scrolled,
       builder: (context, isScrolled, _) {
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: isScrolled ? p.bg.withValues(alpha: 0.96) : p.bg,
-            border: Border(bottom: BorderSide(color: isScrolled ? p.divider : Colors.transparent)),
+        // The child must fill the delegate's extent exactly: SliverPersistentHeader derives paintExtent
+        // from the child's size, and a shorter child makes layoutExtent > paintExtent (invalid geometry).
+        return SizedBox(
+          height: extent,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isScrolled ? p.bg.withValues(alpha: 0.96) : p.bg,
+              border: Border(bottom: BorderSide(color: isScrolled ? p.divider : Colors.transparent)),
+            ),
+            child: Align(alignment: Alignment.bottomCenter, child: content),
           ),
-          child: content,
         );
       },
     );

@@ -139,4 +139,28 @@ export const adminApi = {
   // Audit Log
   getAuditLogs: (params?: Record<string, any>) =>
     api.get('/admin/audit-log', { params: cleanParams(params) }).then(r => r.data),
+
+  // AI Shorts content (Sarkari Yojana + Daily News)
+  getContentQueue: (params?: Record<string, any>) =>
+    api.get('/admin/content/review-queue', { params: cleanParams(params) }).then(r => r.data),
+  getContentCounts: () => api.get('/admin/content/status-counts').then(r => r.data),
+  getContent: (id: string) => api.get(`/admin/content/${id}`).then(r => r.data),
+  editContent: (id: string, body: Record<string, any>) =>
+    api.patch(`/admin/content/${id}`, body).then(r => r.data),
+  contentAction: (id: string, action: string, body: Record<string, any> = {}) =>
+    api.post(`/admin/content/${id}/${action}`, body).then(r => r.data),
+  getContentJobs: (params?: Record<string, any>) =>
+    api.get('/admin/content/jobs', { params: cleanParams(params) }).then(r => r.data),
+  cancelContentJob: (id: string) => api.post(`/admin/content/jobs/${id}/cancel`).then(r => r.data),
+  getContentCosts: () => api.get('/admin/content/costs').then(r => r.data),
+  getContentReports: (params?: Record<string, any>) =>
+    api.get('/admin/content/reports', { params: cleanParams(params) }).then(r => r.data),
+  resolveContentReport: (id: string, status: 'RESOLVED' | 'DISMISSED') =>
+    api.post(`/admin/content/reports/${id}/resolve`, { status }).then(r => r.data),
+  getContentSettings: () => api.get('/admin/content/settings').then(r => r.data),
+  putContentSettings: (body: Record<string, any>) => api.put('/admin/content/settings', body).then(r => r.data),
+  runContentIngest: () => api.post('/admin/content/ingest/run').then(r => r.data),
+  getContentAttention: () => api.get('/admin/content/attention').then(r => r.data),
+  createScheme: (body: Record<string, any>) => api.post('/admin/content/schemes', body).then(r => r.data),
+  verifyScheme: (id: string) => api.post(`/admin/content/schemes/${id}/verify`).then(r => r.data),
 };

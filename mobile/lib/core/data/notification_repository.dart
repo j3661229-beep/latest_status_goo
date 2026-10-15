@@ -174,7 +174,11 @@ class NotificationsNotifier extends StateNotifier<AsyncValue<List<NotificationMo
   StreamSubscription<NotificationModel>? _sub;
 
   NotificationsNotifier(this._repo, this._ref) : super(const AsyncValue.loading()) {
-    load();
+    // Deferred: load() updates unreadNotificationsCountProvider, and Riverpod forbids modifying another
+    // provider while this one is still initialising (throws in debug builds).
+    Future<void>.microtask(() {
+      if (mounted) load();
+    });
     // Listen for live foreground notifications arriving via OneSignal
     _sub = NotificationService.instance.onNotificationReceived.listen((notif) {
       _onLiveNotificationArrived(notif);

@@ -25,6 +25,8 @@ import { festivalRoutes } from './modules/festivals/festival.route';
 import { creatorRoutes } from './modules/creator/creator.route';
 import { adminRoutes } from './modules/admin/admin.route';
 import { uploadRoutes } from './modules/upload/upload.route';
+import { shortsRoutes, schemeFeedRoutes, newsFeedRoutes } from './modules/shorts/shorts.route';
+import { contentAdminRoutes } from './modules/content-admin/content.admin.route';
 
 // Global JSON fallback for BigInt (e.g. un-cast COUNT(*) from $queryRaw) — without
 // this JSON.stringify throws "Do not know how to serialize a BigInt" → 500.
@@ -159,7 +161,6 @@ export async function buildApp() {
       db: dbStatus,
       redis: redisStatus,
       version: '1.0.0',
-      env: env.NODE_ENV,
       latency_ms: Date.now() - start,
     });
   });
@@ -175,7 +176,11 @@ export async function buildApp() {
   await app.register(festivalRoutes,      { prefix: `${V1}/festivals` });
   await app.register(creatorRoutes,       { prefix: `${V1}/creator` });
   await app.register(adminRoutes,         { prefix: `${V1}/admin` });
+  await app.register(contentAdminRoutes,  { prefix: `${V1}/admin` });
   await app.register(uploadRoutes,        { prefix: `${V1}/upload` });
+  await app.register(shortsRoutes,        { prefix: `${V1}/shorts` });
+  await app.register(schemeFeedRoutes,    { prefix: `${V1}/schemes` });
+  await app.register(newsFeedRoutes,      { prefix: `${V1}/news` });
 
   // Fallback for plan list
   app.get(`${V1}/plans`, async (_req, reply) => {

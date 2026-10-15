@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, ClipboardList, Image, Users, User,
   CalendarDays, Bell, BarChart2, DollarSign, Settings, FileText,
-  Sparkles, LogOut, Menu, X, Pin, Layers,
+  Sparkles, Newspaper, LogOut, Menu, X, Pin, Layers,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { adminApi } from '../lib/api';
@@ -23,6 +23,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/review-queue', label: 'Review Queue', icon: ClipboardList, badge: true },
+  { href: '/content', label: 'Yojana & News', icon: Newspaper },
   { href: '/coordinator', label: 'Coordinator Picks', icon: Pin },
   { href: '/categories', label: 'Categories', icon: Layers },
   { href: '/templates', label: 'Templates', icon: Image },

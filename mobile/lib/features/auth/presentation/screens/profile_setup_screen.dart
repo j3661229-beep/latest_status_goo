@@ -497,6 +497,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       _ => true,
     };
 
+    // With the soft keyboard up on a small phone there is no room for the decorative title block and the
+    // skip link — hide them so the form + primary button always fit.
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+
     return PopScope(
       canPop: step == _SetupStep.language,
       onPopInvokedWithResult: (didPop, _) {
@@ -549,6 +553,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                   ),
                 ),
               ),
+              if (!keyboardOpen)
               Padding(
                 padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.md, AppSpacing.page, AppSpacing.xs),
                 child: Align(
@@ -591,7 +596,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (step == _SetupStep.namePhoto && _state.imageFile == null && _state.uploadedPhotoUrl == null)
+                    if (!keyboardOpen && step == _SetupStep.namePhoto && _state.imageFile == null && _state.uploadedPhotoUrl == null)
                       Align(
                         alignment: Alignment.center,
                         child: TextButton(

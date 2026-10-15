@@ -22,7 +22,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
     return reply.send(result);
   });
 
-  fastify.get('/suggestions', async (req, reply) => {
+  fastify.get('/suggestions', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { q } = req.query as { q?: string };
     if (typeof q !== 'string' || q.trim().length < 2) return reply.send({ suggestions: [] });
     if (q.length > 100) return reply.status(400).send({ error: 'Query too long (max 100 characters)' });
@@ -30,7 +30,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
     return reply.send({ suggestions });
   });
 
-  fastify.get('/trending', async (_req, reply) => {
+  fastify.get('/trending', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (_req, reply) => {
     const terms = await service.getTrendingTerms();
     return reply.send({ terms });
   });

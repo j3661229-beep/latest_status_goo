@@ -38,6 +38,10 @@ class TemplateComposition extends StatelessWidget {
   /// Autoplay video templates (muted, looped) while the card is on screen.
   final bool playVideo;
 
+  /// Forwarded to [TemplateVideoLayer]. Home sets this false because the pager
+  /// already mounts the layer only for the settled page.
+  final bool pauseVideoWhenObscured;
+
   /// Editor toggles: hide the name / photo zones entirely.
   final bool showName;
   final bool showPhoto;
@@ -57,6 +61,7 @@ class TemplateComposition extends StatelessWidget {
     this.headerTitle,
     this.showVideoBadge = false,
     this.playVideo = false,
+    this.pauseVideoWhenObscured = true,
     this.showName = true,
     this.showPhoto = true,
     this.borderRadius = AppRadius.lg,
@@ -143,10 +148,15 @@ class TemplateComposition extends StatelessWidget {
 
                 // 1b. Video artwork (autoplays while visible; poster above stays until ready)
                 if (playVideo && template.isVideo && !template.isLocked && (template.videoUrl ?? '').isNotEmpty)
-                  TemplateVideoLayer(
+                  // Decorative texture with no a11y value; kept out of the semantics
+                  // tree (mounted/unmounted as pages scroll).
+                  ExcludeSemantics(
                     key: const ValueKey('tc-video'),
-                    videoUrl: template.videoUrl!,
-                    fit: template.fillsCanvas ? BoxFit.cover : BoxFit.contain,
+                    child: TemplateVideoLayer(
+                      videoUrl: template.videoUrl!,
+                      fit: template.fillsCanvas ? BoxFit.cover : BoxFit.contain,
+                      pauseWhenObscured: pauseVideoWhenObscured,
+                    ),
                   ),
 
                 // 2. Optional header title (with contrast vignette)

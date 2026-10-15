@@ -19,6 +19,13 @@ class SessionStore extends ChangeNotifier {
   SessionStore._();
   static final SessionStore instance = SessionStore._();
 
+  /// This is a process-wide singleton, but `ChangeNotifierProvider` calls `dispose()` on its notifier when
+  /// the ProviderScope is torn down (tests, hot restart). A disposed ChangeNotifier throws on every later
+  /// use, which would brick the session for the rest of the process — so disposal is a deliberate no-op.
+  @override
+  // ignore: must_call_super
+  void dispose() {}
+
   // Local-only keys (not part of the server user object)
   static const String keyLocalPhotoPath = 'photoPath'; // file on this device
   static const String keyProfilePhotoUrl = 'profilePhotoUrl'; // remote http(s) URL

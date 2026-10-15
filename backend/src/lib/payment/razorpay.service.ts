@@ -52,7 +52,14 @@ export interface RazorpayPlan {
   item: { amount: number; currency: string; name: string };
 }
 
+const PLACEHOLDER_SECRETS = new Set(['', 'placeholder', 'XXXXX']);
+
 export class RazorpayService {
+  /** True when real API credentials are configured (not the boot-time placeholder defaults). */
+  static isConfigured(): boolean {
+    return !PLACEHOLDER_SECRETS.has(env.RAZORPAY_KEY_SECRET) && !env.RAZORPAY_KEY_ID.endsWith('_placeholder');
+  }
+
   // ─── One-time Order (legacy / fallback) ───────────────────────────────────
 
   static async createOrder(userId: string, plan: 'PREMIUM' | 'ANNUAL'): Promise<RazorpayOrder> {
@@ -78,6 +85,8 @@ export class RazorpayService {
     paymentId: string,
     signature: string
   ): boolean {
+    // With the placeholder secret the HMAC key is public knowledge: anyone could forge a "valid" payment.
+    if (!this.isConfigured()) return false;
     const body = `${orderId}|${paymentId}`;
     const expectedSignature = createHmac('sha256', env.RAZORPAY_KEY_SECRET)
       .update(body)
@@ -201,7 +210,7 @@ export class RazorpayService {
   /** True when a real webhook secret is configured (not the placeholder default). */
   static isWebhookConfigured(): boolean {
     const secret = env.RAZORPAY_WEBHOOK_SECRET;
-    return !!secret && secret !== 'placeholder' && secret !== 'XXXXX';
+    return !!secret && !PLACEHOLDER_SECRETS.has(secret);
   }
 
   /**
@@ -227,6 +236,7 @@ export class RazorpayService {
     paymentId: string,
     signature: string
   ): boolean {
+    if (!this.isConfigured()) return false;
     const body = `${paymentId}|${subscriptionId}`;
     const expected = createHmac('sha256', env.RAZORPAY_KEY_SECRET).update(body).digest('hex');
     try {

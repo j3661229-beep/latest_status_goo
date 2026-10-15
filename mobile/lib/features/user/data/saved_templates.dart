@@ -71,13 +71,14 @@ class SavedIdsNotifier extends StateNotifier<Set<String>> {
     _set(templateId, !wasSaved);
     try {
       if (wasSaved) {
-        await apiClient.delete('/user/saved/$templateId');
+        await apiClient.delete('/user/saved/$templateId', data: const <String, dynamic>{});
       } else {
-        await apiClient.post('/user/saved/$templateId');
+        await apiClient.post('/user/saved/$templateId', data: const <String, dynamic>{});
       }
       _ref.invalidate(savedTemplatesProvider);
       return !wasSaved;
-    } catch (_) {
+    } catch (e) {
+      // Roll back optimistic state on failure
       _set(templateId, wasSaved);
       rethrow;
     }

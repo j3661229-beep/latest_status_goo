@@ -55,6 +55,16 @@ class _AuthInterceptor extends Interceptor {
         options.headers['Authorization'] = 'Bearer $token';
       }
     }
+    // Fastify throws FST_ERR_CTP_EMPTY_JSON_BODY (400) if a POST/PUT/PATCH/DELETE
+    // has Content-Type: application/json but no body. Supply an empty JSON map.
+    if ((options.method == 'POST' ||
+            options.method == 'PUT' ||
+            options.method == 'PATCH' ||
+            options.method == 'DELETE') &&
+        options.data == null &&
+        (options.headers['Content-Type']?.toString().contains('application/json') ?? true)) {
+      options.data = const <String, dynamic>{};
+    }
     handler.next(options);
   }
 

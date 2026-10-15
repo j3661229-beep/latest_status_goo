@@ -259,16 +259,13 @@ class RailButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final big = size > 56;
-    return Semantics(
-      button: true,
-      label: count == null ? label : '$label, $count',
-      onTap: onTap,
-      child: PressableScale(
-        onTap: busy ? null : onTap,
-        scale: 0.9,
-        child: SizedBox(
-          width: 68,
-          child: Column(
+    return PressableScale(
+      semanticLabel: count == null ? label : '$label, $count',
+      onTap: busy ? null : onTap,
+      scale: 0.9,
+      child: SizedBox(
+        width: 68,
+        child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
@@ -315,7 +312,6 @@ class RailButton extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }
