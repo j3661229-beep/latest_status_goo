@@ -466,6 +466,9 @@ export async function subscriptionRoutes(fastify: FastifyInstance) {
   // ═══════════════════════════════════════════════════════════════════════════
 
   await fastify.register(async (webhook) => {
+    if (webhook.hasContentTypeParser('application/json')) {
+      webhook.removeContentTypeParser('application/json');
+    }
     webhook.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => {
       done(null, body);
     });

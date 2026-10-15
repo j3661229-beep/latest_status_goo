@@ -78,6 +78,9 @@ export async function buildApp() {
 
   // The mobile client sends Content-Type: application/json on every request, including
   // body-less POST/DELETE (e.g. /user/saved/:id). Accept an empty body instead of a 400.
+  if (app.hasContentTypeParser('application/json')) {
+    app.removeContentTypeParser('application/json');
+  }
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
     const text = (body as string).trim();
     if (!text) return done(null, undefined);
