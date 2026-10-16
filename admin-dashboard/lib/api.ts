@@ -160,6 +160,7 @@ export const adminApi = {
   getContentSettings: () => api.get('/admin/content/settings').then(r => r.data),
   putContentSettings: (body: Record<string, any>) => api.put('/admin/content/settings', body).then(r => r.data),
   runContentIngest: () => api.post('/admin/content/ingest/run').then(r => r.data),
+  getContentHealth: () => api.get('/admin/content/health').then(r => r.data),
   getContentAttention: () => api.get('/admin/content/attention').then(r => r.data),
   createScheme: (body: Record<string, any>) => api.post('/admin/content/schemes', body).then(r => r.data),
   verifyScheme: (id: string) => api.post(`/admin/content/schemes/${id}/verify`).then(r => r.data),

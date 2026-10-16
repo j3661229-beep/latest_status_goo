@@ -31,19 +31,23 @@ class ShortsScreen extends ConsumerStatefulWidget {
   ConsumerState<ShortsScreen> createState() => _ShortsScreenState();
 }
 
-class _ShortsScreenState extends ConsumerState<ShortsScreen> {
+class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBindingObserver {
   late final ShortPlaybackController _playback;
   PageController _pager = PageController();
   ShortsFeed _feed = ShortsFeed.news;
   String? _category;
   int _index = 0;
   final Set<String> _viewed = {};
+  DateTime _backgroundedAt = DateTime.now();
+  // Content is published automatically, so a long-idle feed is refreshed when the app returns.
+  static const _staleAfter = Duration(minutes: 10);
 
   ShortsQuery get _query => ShortsQuery(_feed, _feed == ShortsFeed.saved ? null : _category);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _playback = ShortPlaybackController(factory: widget.controllerFactory);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) AppShell.immersive.value = true;
@@ -52,10 +56,22 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AppShell.immersive.value = false;
     _pager.dispose();
     _playback.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _backgroundedAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed &&
+        DateTime.now().difference(_backgroundedAt) > _staleAfter &&
+        _feed != ShortsFeed.saved) {
+      ref.read(shortsFeedProvider(_query).notifier).refresh();
+    }
   }
 
   void _selectFeed(ShortsFeed f) {
@@ -198,7 +214,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> {
         ),
       );
     }
-    return PageView.builder(
+    final pager = PageView.builder(
       key: ValueKey(_query),
       controller: _pager,
       scrollDirection: Axis.vertical,
@@ -219,6 +235,27 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> {
           onReport: () => _report(item),
         );
       },
+    );
+    if (state.loadMoreError == null) return pager;
+    return Stack(
+      children: [
+        Positioned.fill(child: pager),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: topInset + 112,
+          child: Center(
+            child: ActionChip(
+              avatar: const Icon(Icons.refresh_rounded, size: 18, color: Colors.white),
+              label: Text('और वीडियो लोड नहीं हुए — दोबारा कोशिश करें',
+                  style: AppText.body(size: 13.5, weight: FontWeight.w700, color: Colors.white)),
+              backgroundColor: Colors.black.withValues(alpha: 0.6),
+              side: BorderSide.none,
+              onPressed: notifier.loadMore,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

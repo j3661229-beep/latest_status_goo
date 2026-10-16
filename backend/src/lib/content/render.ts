@@ -72,7 +72,7 @@ export function buildAss(plan: RenderPlan, cfg: Pick<ContentConfig, 'fontName'>)
     `Style: Brand,${f},40,&H00E0E0E0,&H00000000,&H00000000,0,1,2,0,9,50,50,60`,
     `Style: End,${f},52,&H00FFFFFF,&H00000000,&H99000000,1,3,4,0,5,90,90,0`,
     '',
-    '[Events]', 'Format: Layer,Start,End,Name,Style,MarginL,MarginR,MarginV,Effect,Text',
+    '[Events]', 'Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text',
     ev('Brand', 0, plan.durationSec, plan.brand),
     ev('Title', 0, Math.min(plan.durationSec, 4), plan.title),
     ...plan.captions.filter((c) => c.start < endStart).map((c) => ev('Cap', c.start, Math.min(c.end, endStart), c.text)),
@@ -93,8 +93,9 @@ export function buildFfmpegArgs(o: {
     '-i', o.audio,
     '-vf', `${sub},format=yuv420p`,
     '-c:v', 'libx264', '-profile:v', 'main', '-preset', 'veryfast', '-crf', '26', '-r', '25',
-    '-c:a', 'aac', '-b:a', '96k', '-ar', '44100',
-    '-t', o.durationSec.toFixed(2), '-shortest', '-movflags', '+faststart',
+    // Pad the narration with silence so the end card (shown after the narration) is not cut off; -t sets the length.
+    '-af', 'apad', '-c:a', 'aac', '-b:a', '96k', '-ar', '44100',
+    '-t', o.durationSec.toFixed(2), '-movflags', '+faststart',
     o.out,
   ];
 }

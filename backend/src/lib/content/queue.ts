@@ -53,6 +53,8 @@ export async function startGeneration(prisma: PrismaClient, videoId: string, q?:
 // ── Maintenance (scheduled tick + manual ingest) ─────────────
 export const MAINTENANCE_QUEUE = 'content-maintenance';
 export const TICK_EVERY_MS = 5 * 60_000;
+/** Redis key the worker refreshes after every tick; the admin API reads it for worker health. */
+export const HEARTBEAT_KEY = 'content:worker:heartbeat';
 
 let maintenanceQueue: Queue | null = null;
 export function getMaintenanceQueue(): Queue {

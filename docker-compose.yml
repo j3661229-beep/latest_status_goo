@@ -73,6 +73,30 @@ services:
     networks:
       - statusgo_net
 
+  # ── Content worker (AI shorts: ingest → script → voice → render → optional auto-publish) ──
+  # Always-on. Needs backend/.env plus Google ADC; start with:
+  #   docker compose --profile worker up -d --build worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: statusgo_worker
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      CONTENT_PIPELINE_ENABLED: "true"
+      DATABASE_URL: postgresql://statusgo:statusgo_dev_password@postgres:5432/statusgo_db
+      REDIS_URL: redis://:statusgo_redis_password@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - statusgo_net
+    profiles:
+      - worker
+
   # ── pgAdmin (Optional DB GUI) ─────────────────
   pgadmin:
     image: dpage/pgadmin4:latest

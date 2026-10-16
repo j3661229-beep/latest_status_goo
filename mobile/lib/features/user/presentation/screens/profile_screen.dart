@@ -22,6 +22,8 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindingObserver {
+  bool _refreshFailed = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,8 +46,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
   Future<void> _refreshUser({bool silent = false}) async {
     try {
       await ref.read(authRepositoryProvider).refreshCurrentUser();
+      if (mounted && _refreshFailed) setState(() => _refreshFailed = false);
     } catch (e) {
-      if (!silent && mounted) AppSnack.error(context, apiErrorMessage(e));
+      if (!mounted) return;
+      // Cached data stays visible; a retry strip tells the user it may be out of date.
+      if (!_refreshFailed) setState(() => _refreshFailed = true);
+      if (!silent) AppSnack.error(context, apiErrorMessage(e));
     }
   }
 
@@ -141,6 +147,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
                   state: userState,
                   region: userRegion,
                 ),
+                if (_refreshFailed)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.sm, AppSpacing.page, 0),
+                    child: _StaleBanner(onRetry: () => _refreshUser()),
+                  ),
                 const SizedBox(height: AppSpacing.md),
 
                 // Plan promo
@@ -281,6 +292,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindi
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StaleBanner extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _StaleBanner({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: p.surface,
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(color: p.border),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, size: 20, color: p.textMuted),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text('प्रोफ़ाइल अपडेट नहीं हो सकी — पुराना डेटा दिख रहा है',
+                style: AppText.body(size: 13.5, color: p.textSecondary, height: 1.3)),
+          ),
+          TextButton(onPressed: onRetry, child: const Text('फिर से')),
+        ],
       ),
     );
   }

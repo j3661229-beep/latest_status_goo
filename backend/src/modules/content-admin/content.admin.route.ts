@@ -312,6 +312,28 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     return reply.send({ data: await collectAttention(prisma, s, new Date()) });
   });
 
+  /** Is the always-on worker alive, and is the pipeline failing? Drives the dashboard health banner. */
+  fastify.get('/content/health', guard, async (_req, reply) => {
+    let heartbeat: { at: string; report?: unknown } | null = null;
+    try {
+      const raw = await fastify.redis?.get('content:worker:heartbeat');
+      heartbeat = raw ? JSON.parse(raw) : null;
+    } catch { /* redis down → reported as no heartbeat */ }
+    const lastTickAt = heartbeat?.at ? new Date(heartbeat.at) : null;
+    const since = new Date(Date.now() - 24 * 3_600_000);
+    const [failedJobs24h, stuckGenerating] = await Promise.all([
+      prisma.contentJob.count({ where: { state: 'FAILED', queuedAt: { gte: since } } }),
+      prisma.shortVideo.count({ where: { status: 'GENERATING', updatedAt: { lt: new Date(Date.now() - 3_600_000) } } }),
+    ]);
+    return reply.send({
+      data: {
+        // Ticks run every 5 minutes; allow three missed before calling the worker down.
+        workerAlive: !!lastTickAt && Date.now() - lastTickAt.getTime() < 15 * 60_000,
+        lastTickAt, lastReport: heartbeat?.report ?? null, failedJobs24h, stuckGenerating,
+      },
+    });
+  });
+
   fastify.get('/content/:id', guard, async (req, reply) => {
     const p = IdParams.safeParse(req.params);
     if (!p.success) return sendValidationError(reply, p.error);

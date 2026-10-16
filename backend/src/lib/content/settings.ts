@@ -11,6 +11,9 @@ export interface ContentSettings {
   ingestEnabled: boolean;
   ingestIntervalMinutes: number;
   autoGenerate: boolean;
+  autoPublishEnabled: boolean;
+  autoPublishSchemes: boolean;
+  autoPublishMaxPerDay: number;
   maxNewVideosPerRun: number;
   newsStaleHours: number;
   newsAutoExpireHours: number; // 0 = never auto-expire published news
@@ -24,6 +27,9 @@ export const DEFAULTS: ContentSettings = {
   ingestEnabled: false,
   ingestIntervalMinutes: 180,
   autoGenerate: true,
+  autoPublishEnabled: false,
+  autoPublishSchemes: false,
+  autoPublishMaxPerDay: 10,
   maxNewVideosPerRun: 5,
   newsStaleHours: 48,
   newsAutoExpireHours: 72,
@@ -37,6 +43,9 @@ const KEYS = {
   ingestEnabled: 'content.news_ingest_enabled',
   ingestIntervalMinutes: 'content.news_ingest_interval_minutes',
   autoGenerate: 'content.news_auto_generate',
+  autoPublishEnabled: 'content.auto_publish_enabled',
+  autoPublishSchemes: 'content.auto_publish_schemes',
+  autoPublishMaxPerDay: 'content.auto_publish_max_per_day',
   maxNewVideosPerRun: 'content.news_max_new_videos_per_run',
   newsStaleHours: 'content.news_stale_hours',
   newsAutoExpireHours: 'content.news_auto_expire_hours',
@@ -51,6 +60,9 @@ export const SettingsPatchSchema = z
     ingestEnabled: z.boolean(),
     ingestIntervalMinutes: z.number().int().min(15).max(1440),
     autoGenerate: z.boolean(),
+    autoPublishEnabled: z.boolean(),
+    autoPublishSchemes: z.boolean(),
+    autoPublishMaxPerDay: z.number().int().min(0).max(100),
     maxNewVideosPerRun: z.number().int().min(0).max(20),
     newsStaleHours: z.number().int().min(1).max(720),
     newsAutoExpireHours: z.number().int().min(0).max(2160),
@@ -87,6 +99,9 @@ export async function loadSettings(prisma: Pick<PrismaClient, 'appConfig'>): Pro
     ingestEnabled: bool(get(KEYS.ingestEnabled), DEFAULTS.ingestEnabled),
     ingestIntervalMinutes: int(get(KEYS.ingestIntervalMinutes), DEFAULTS.ingestIntervalMinutes, 15),
     autoGenerate: bool(get(KEYS.autoGenerate), DEFAULTS.autoGenerate),
+    autoPublishEnabled: bool(get(KEYS.autoPublishEnabled), DEFAULTS.autoPublishEnabled),
+    autoPublishSchemes: bool(get(KEYS.autoPublishSchemes), DEFAULTS.autoPublishSchemes),
+    autoPublishMaxPerDay: int(get(KEYS.autoPublishMaxPerDay), DEFAULTS.autoPublishMaxPerDay, 0),
     maxNewVideosPerRun: int(get(KEYS.maxNewVideosPerRun), DEFAULTS.maxNewVideosPerRun, 0),
     newsStaleHours: int(get(KEYS.newsStaleHours), DEFAULTS.newsStaleHours, 1),
     newsAutoExpireHours: int(get(KEYS.newsAutoExpireHours), DEFAULTS.newsAutoExpireHours, 0),

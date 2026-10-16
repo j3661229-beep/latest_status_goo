@@ -89,7 +89,12 @@ export const httpsTransport: Transport = ({ url, address }, { timeoutMs, maxByte
         timeout: timeoutMs,
         headers: { 'User-Agent': userAgent, Accept: 'text/html,application/xml,application/rss+xml,application/json,text/plain' },
         // Pin the socket to the address we already vetted.
-        lookup: (_h, _o, cb) => (cb as any)(null, address, net.isIP(address)),
+        // Node >= 20 calls lookup with { all: true } and expects an array; older call shapes expect (addr, family).
+        lookup: (_h, o, cb) => {
+          const family = net.isIP(address);
+          if ((o as { all?: boolean } | undefined)?.all) (cb as any)(null, [{ address, family }]);
+          else (cb as any)(null, address, family);
+        },
       },
       (res) => {
         const chunks: Buffer[] = [];

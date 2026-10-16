@@ -4,7 +4,7 @@
 // the schedule from the dashboard with no redeploy and no restart. A Redis lock stops overlapping runs.
 //
 // Guarantees:
-//   * never publishes or approves anything (generation ends at NEEDS_REVIEW)
+//   * publishes nothing unless an admin enabled auto-publish; then only items passing every gate (see autopublish.ts)
 //   * if feeds fail or contain nothing new, no stories/videos are created
 //   * generation spend is bounded per run (maxNewVideosPerRun) and by the pipeline's daily/monthly limits
 import type { PrismaClient } from '@prisma/client';
@@ -12,6 +12,7 @@ import { contentConfig, ContentConfig } from './config';
 import { ingestNews, IngestResult } from './ingest';
 import { FetchFn, safeFetchText } from './safe-fetch';
 import { ContentSettings, ingestDue, loadSettings, markIngestRun } from './settings';
+import { autoPublish, AutoPublishReport } from './autopublish';
 import {
   checkPublishedSources, collectAttention, expirePublished, handleChangedStories, recordReviewReminder,
   rejectStaleUnpublishedNews,
@@ -41,6 +42,7 @@ export interface TickReport {
   draftsCreated: number;
   generationQueued: number;
   sourceChecks?: { checked: number; takenDown: number; inconclusive: number };
+  autoPublish?: Pick<AutoPublishReport, 'published' | 'capped'> & { held: number };
   reminderRecorded: boolean;
 }
 
@@ -123,6 +125,12 @@ export async function runMaintenanceTick(d: TickDeps, opts: { forceIngest?: bool
 
       report.sourceChecks = await checkPublishedSources(d.prisma, fetchText, now);
       report.takenDown += report.sourceChecks.takenDown;
+    }
+
+    if (s.autoPublishEnabled) {
+      const ap = await autoPublish(d.prisma, s, now);
+      report.autoPublish = { published: ap.published, capped: ap.capped, held: ap.held.length };
+      if (ap.held.length) d.log?.('auto-publish held items', { held: ap.held });
     }
 
     report.reminderRecorded = await recordReviewReminder(d.prisma, await collectAttention(d.prisma, s, now), now);

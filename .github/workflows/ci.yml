@@ -34,11 +34,20 @@ jobs:
         run: npx tsc --noEmit -p backend/tsconfig.json
       - name: Build
         run: npm run build --workspace=backend
-      - name: Apply schema to the throwaway CI database
-        run: npx prisma db push --schema backend/prisma/schema.prisma --skip-generate
+      - name: Apply migrations to the throwaway CI database (fresh-DB path)
+        run: npx prisma migrate deploy --schema backend/prisma/schema.prisma
         env:
           DATABASE_URL: postgresql://scratch:scratch@localhost:5432/ci
           DIRECT_DATABASE_URL: postgresql://scratch:scratch@localhost:5432/ci
+      - name: Schema drift check (migrations must produce exactly schema.prisma)
+        run: >
+          npx prisma migrate diff --from-url postgresql://scratch:scratch@localhost:5432/ci
+          --to-schema-datamodel backend/prisma/schema.prisma --exit-code
+        env:
+          DATABASE_URL: postgresql://scratch:scratch@localhost:5432/ci
+          DIRECT_DATABASE_URL: postgresql://scratch:scratch@localhost:5432/ci
+      - name: Lint
+        run: npm run lint --workspace=backend
       - name: Unit + real-Postgres integration tests
         run: npm test --workspace=backend
 
@@ -51,8 +60,30 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
         working-directory: admin-dashboard
+      - name: Lint (non-interactive; config is committed)
+        run: npx next lint
+        working-directory: admin-dashboard
+        env:
+          CI: 'true'
       - run: npx next build
         working-directory: admin-dashboard
+
+  creator-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npx tsc --noEmit
+        working-directory: creator-dashboard
+      - name: Lint (non-interactive; config is committed)
+        run: npx next lint
+        working-directory: creator-dashboard
+        env:
+          CI: 'true'
+      - run: npx next build
+        working-directory: creator-dashboard
 
   mobile:
     runs-on: ubuntu-latest

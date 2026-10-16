@@ -273,10 +273,12 @@ describe('admin: settings / ingest / attention endpoints', () => {
     role = 'MANAGER';
   });
   it('GET reports feeds that the host allowlist would block', async () => {
+    vi.stubEnv('CONTENT_SOURCE_HOSTS', ''); // explicit: never depend on a developer's real .env
     const app = await build(withAudit({ 'content.news_feeds': JSON.stringify(feeds) }));
     const body = (await app.inject({ url: '/admin/content/settings', headers: h })).json();
     expect(body.sourceHostsConfigured).toBe(false);
     expect(body.blockedFeeds).toEqual(['https://pib.gov.in/rss']);
+    vi.unstubAllEnvs();
   });
   it('PUT validates, saves and audits', async () => {
     const cfg: Record<string, string> = {};

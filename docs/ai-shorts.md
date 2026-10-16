@@ -3,8 +3,10 @@
 Hindi short-video explainers for government schemes/scholarships and daily news, generated from
 **cited source material**, reviewed by a human, then published to the app's **Shorts** tab.
 
-> Nothing is ever published automatically. Every video passes `NEEDS_REVIEW → APPROVED → PUBLISHED`
+> By default nothing is published automatically: every video passes `NEEDS_REVIEW → APPROVED → PUBLISHED`
 > through an authenticated MANAGER / SUPER_ADMIN. Creators have no access.
+> **Optional hands-off mode** (Admin → Yojana & News → Schedule → *Auto-publish*, off by default, see §6a) lets the
+> worker publish items that pass every gate; anything with a warning, report or failed check stays in review.
 
 ## 1. Architecture
 
@@ -116,12 +118,23 @@ build `backend/Dockerfile.worker` (adds ffmpeg + Noto Devanagari) and run ≥1 i
 Exactly one repeatable `content-tick` job exists (fixed job id) and a Redis lock prevents overlapping runs, so extra worker replicas are safe.
 The API server never registers schedules.
 
+## 6a. Hands-off mode (auto-publish)
+Off by default. When enabled, each 5-minute tick publishes `NEEDS_REVIEW` items **only if** all of these hold: video, thumbnail,
+attribution and source-referenced claims exist; the scheme is verified (scheme videos are auto-published only if *Also auto-publish
+scheme videos* is ticked; otherwise news only); the news source was re-checked recently (1h developing / 6h otherwise), is not stale,
+withdrawn or developing; the item has no editorial warnings (including generator uncertainty notes) and no user reports; and the rolling
+24h cap (*Max auto-published per 24h*, default 10) isn't reached. Everything else waits for a person. Each auto-publish is recorded
+as actor `system` (ContentReview `auto_publish` + AuditLog). **Pause:** untick the switch — takes effect on the next tick. **Undo:** Unpublish.
+Freshness safeguards keep running (auto-expire, source re-checks, take-down on changed/withdrawn sources).
+The dashboard shows a worker-health banner (`GET /admin/content/health`): worker heartbeat, failed jobs in 24h, videos stuck generating.
+Local worker: `docker compose --profile worker up -d --build worker`.
+
 ## 7. API
 Public (JWT; GET list/detail also work as guest): `GET /api/v1/shorts|schemes|news` (`kind`, `category`, `region`, `page`, `limit≤30`),
 `GET /shorts/:id` (text alternative, sources, related), `POST /shorts/:id/events|report|bookmark`, `DELETE /shorts/:id/bookmark`, `GET /shorts/bookmarks/list`.
 Admin (`MANAGER`/`SUPER_ADMIN`, prefix `/api/v1/admin/content`): `review-queue`, `status-counts`, `:id`, `PATCH :id`, `generate`, `approve`, `reject`, `publish`,
 `unpublish`, `expire`, `correct`, `request-review`, `retry`, `recheck`, `jobs`, `jobs/:id/cancel`, `costs`, `reports`, `reports/:id/resolve`, `schemes`, `schemes/:id/verify`,
-`drafts`, `settings` (GET/PUT), `ingest/run`, `attention`.
+`drafts`, `settings` (GET/PUT), `ingest/run`, `attention`, `health`.
 
 ## 8. Safeguards in the code
 - **No unsupported claims:** a script is rejected unless every claim quotes its source verbatim, every number appears in the sources, no link is invented, nothing promises a benefit, and it is Hindi. No source text → the model is never called (no general-knowledge news).

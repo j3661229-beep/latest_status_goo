@@ -283,6 +283,22 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
+function WorkerHealth() {
+  const { data } = useQuery({ queryKey: ['content-health'], queryFn: adminApi.getContentHealth, refetchInterval: 60_000 });
+  const h = data?.data;
+  if (!h) return null;
+  const problems: string[] = [];
+  if (!h.workerAlive) problems.push(h.lastTickAt ? `Worker has not reported since ${fmt(h.lastTickAt)} — schedules and generation are stopped.` : 'No worker heartbeat — schedules and generation are not running (start the worker with CONTENT_PIPELINE_ENABLED=true).');
+  if (h.failedJobs24h > 0) problems.push(`${h.failedJobs24h} pipeline job(s) failed in the last 24h — see Jobs.`);
+  if (h.stuckGenerating > 0) problems.push(`${h.stuckGenerating} video(s) stuck generating for over an hour.`);
+  if (problems.length === 0) return <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">Worker healthy · last tick {fmt(h.lastTickAt)}</div>;
+  return (
+    <div role="alert" className="border border-rose-300 bg-rose-50 rounded-xl p-3 text-xs text-rose-800 space-y-1">
+      {problems.map(p => <div key={p}>{p}</div>)}
+    </div>
+  );
+}
+
 function AttentionPanel() {
   const { data } = useQuery({ queryKey: ['content-attention'], queryFn: adminApi.getContentAttention, refetchInterval: 120_000 });
   const a = data?.data;
@@ -314,6 +330,7 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
 
   return (
     <div className="space-y-4">
+      <WorkerHealth />
       <AttentionPanel />
       <div className="flex flex-wrap gap-1.5">
         {STATUS_TABS.map(t => (
@@ -499,9 +516,28 @@ function ScheduleView() {
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={s.autoGenerate} onChange={e => set({ autoGenerate: e.target.checked })} />
-          Automatically generate scripts/videos for new drafts (never publishes — review is always required)
+          Automatically generate scripts and videos for new drafts
         </label>
         <div className="text-xs text-slate-500">Last ingest: {fmt(s.lastIngestAt)}</div>
+      </div>
+
+      <div className={`border rounded-xl p-4 space-y-3 ${s.autoPublishEnabled ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-slate-200'}`}>
+        <label className="flex items-center gap-2 text-sm font-semibold">
+          <input type="checkbox" checked={!!s.autoPublishEnabled} onChange={e => set({ autoPublishEnabled: e.target.checked })} />
+          Auto-publish (hands-off){s.autoPublishEnabled ? ' — ON' : ' — OFF'}
+        </label>
+        <p className="text-xs text-slate-600">
+          Publishes a video from the review queue only when every publish check passes: rendered video and thumbnail, cited claims, a fresh source check,
+          not stale or developing, no editorial warnings and no user reports. Anything else stays in <b>Needs Review</b> for a person.
+          Every auto-publish is logged as <code>system</code> and can be undone with Unpublish. Untick to pause instantly.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          {num('autoPublishMaxPerDay', 'Max auto-published per 24h', '0–100')}
+          <label className="flex items-center gap-2 text-xs self-end pb-2">
+            <input type="checkbox" checked={!!s.autoPublishSchemes} onChange={e => set({ autoPublishSchemes: e.target.checked })} />
+            Also auto-publish scheme (Yojana) videos
+          </label>
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">

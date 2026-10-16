@@ -5,7 +5,7 @@ import { Worker, UnrecoverableError } from 'bullmq';
 import IORedis from 'ioredis';
 import type { PrismaClient } from '@prisma/client';
 import { contentConfig } from '../lib/content/config';
-import { CONTENT_QUEUE, MAINTENANCE_QUEUE, enqueueStage, registerMaintenanceTick, startGeneration } from '../lib/content/queue';
+import { CONTENT_QUEUE, HEARTBEAT_KEY, MAINTENANCE_QUEUE, enqueueStage, registerMaintenanceTick, startGeneration } from '../lib/content/queue';
 import { redisLocker, runMaintenanceTick } from '../lib/content/maintenance';
 import { PermanentError, SkippedError, PipelineDeps, Stage, runStage, recordFailure } from '../lib/content/pipeline';
 import { VertexGeminiProvider } from '../lib/content/script';
@@ -71,6 +71,8 @@ export function startContentWorker(prisma: PrismaClient, redisUrl: string) {
         { forceIngest: job.name === 'ingest-now' },
       );
       deps.log?.(`${job.name} done`, report);
+      // Heartbeat for the admin dashboard's worker-health banner (expires, so a dead worker shows as down).
+      await lockRedis.set(HEARTBEAT_KEY, JSON.stringify({ at: new Date().toISOString(), report }), 'EX', 3600).catch(() => undefined);
       return report;
     },
     { connection: new IORedis(redisUrl, { maxRetriesPerRequest: null }), concurrency: 1 },
