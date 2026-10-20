@@ -42,8 +42,9 @@ COPY package*.json ./
 COPY prisma ./prisma/
 RUN npm install --omit=dev && npx prisma generate
 
-# Copy compiled JavaScript output
+# Copy compiled JavaScript output and static media assets
 COPY --from=builder /app/dist ./dist
+COPY assets ./assets/
 
 # Non-root user for security
 USER node

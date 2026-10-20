@@ -255,8 +255,12 @@ export async function runRenderStage(d: PipelineDeps, videoId: string) {
     ? [script.attributionText, v.scheme?.applicationUrl ? `आधिकारिक वेबसाइट: ${v.scheme.applicationUrl}` : '', 'AI-सहायता प्राप्त सारांश']
     : [script.attributionText, v.newsStory ? `${v.newsStory.publisher} · ${v.newsStory.publishedAt.toLocaleDateString('en-IN')}` : '', 'AI-सहायता प्राप्त सारांश'];
   const rendered = await renderShort(audio, {
-    title: script.title, brand: 'स्टेटस गो',
+    title: script.title,
+    brand: 'स्टेटस गो',
     sceneCaptions: captionTexts(v),
+    scenes: (script as any).scenes,
+    category: v.category,
+    kind: v.kind,
     endCardLines: endCard.filter(Boolean),
   }, cfg, d.exec ?? defaultExec);
   if (await isCancelled(d, job.id)) throw new SkippedError('Cancelled');

@@ -26,6 +26,46 @@ describe('render helpers', () => {
     expect(a[a.indexOf('-vf') + 1]).toContain("fontsdir='/fonts'");
     expect(a[a.indexOf('-vf') + 1]).toContain('C\\:/t/c.ass'); // drive colon escaped for the filter graph
   });
+  it('ffmpeg args (animated): generates filter_complex with moving gradient, audio visualizer, progress bar', () => {
+    const a = buildFfmpegArgs({ audio: 'a.mp3', ass: 'C:\\t\\c.ass', out: 'o.mp4', durationSec: 28.5, fontsDir: '/fonts', animated: true });
+    expect(a).toEqual(expect.arrayContaining(['libx264', 'aac', '+faststart']));
+    expect(a.join(' ')).toContain('gradients=s=1080x1920');
+    expect(a.join(' ')).toContain('showfreqs=s=800x140');
+    expect(a.join(' ')).toContain('drawbox');
+    expect(a).toContain('-filter_complex');
+  });
+  it('ffmpeg args (animated with avatar): renders photorealistic studio anchor broadcast with news card and audio visualizer', () => {
+    const a = buildFfmpegArgs({
+      audio: 'a.mp3',
+      ass: 'C:\\t\\c.ass',
+      out: 'o.mp4',
+      durationSec: 28.5,
+      fontsDir: '/fonts',
+      animated: true,
+      avatarVideo: 'avatar.mp4',
+    });
+    expect(a).toEqual(expect.arrayContaining(['libx264', 'aac', '+faststart', '-i', 'avatar.mp4']));
+    expect(a.join(' ')).toContain('scale=1080:1920');
+    expect(a.join(' ')).toContain('showfreqs=s=880x90');
+    expect(a.join(' ')).toContain('drawbox');
+    expect(a).toContain('-filter_complex');
+  });
+  it('ASS generates rich animated scene cards and badges when scenes provided', () => {
+    const ass = buildAss({
+      title: 'मुख्य शीर्षक',
+      brand: 'स्टेटस गो',
+      durationSec: 20,
+      captions: [{ start: 0, end: 10, text: 'पहला दृश्य विवरण' }],
+      scenes: [{ visual: 'KEY_FACT', text: '50000 रुपये की सहायता', caption: 'पहला दृश्य विवरण' }],
+      kind: 'SCHEME',
+      category: 'शिक्षा',
+      endCardLines: ['स्रोत: आधिकारिक पोर्टल', 'AI-सहायता प्राप्त सारांश'],
+    }, { fontName: 'Noto Sans Devanagari' });
+    expect(ass).toContain('Style: Badge');
+    expect(ass).toContain('Style: Highlight');
+    expect(ass).toContain('वित्तीय सहायता व लाभ');
+    expect(ass).toContain('50000 रुपये की सहायता');
+  });
   it('TTS prep expands symbols without changing numbers', () => {
     expect(prepareNarration('₹6,000 की सहायता, 50% छूट, PM KYC')).toBe('6,000 रुपये की सहायता, 50 प्रतिशत छूट, पी एम के वाई सी');
   });

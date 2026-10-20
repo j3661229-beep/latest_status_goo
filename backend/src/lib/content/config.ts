@@ -22,6 +22,7 @@ export function contentConfig(e: NodeJS.ProcessEnv = process.env) {
     fontsDir: e.CONTENT_FONTS_DIR ?? '',
     fontName: e.CONTENT_FONT_NAME ?? 'Noto Sans Devanagari',
     tmpDir: e.CONTENT_TMP_DIR ?? '',
+    avatarVideoPath: e.CONTENT_AVATAR_VIDEO_PATH ?? '',
 
     // ── Safety / network ─────────────────────────────────────
     /** Comma-separated hostnames (and their subdomains) the pipeline may fetch from. Empty = fetch nothing. */
