@@ -89,30 +89,30 @@ export default function FestivalsPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">Name (English) *</label>
-                <input required value={form.nameEn} onChange={e => setForm(f => ({ ...f, nameEn: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm" placeholder="Diwali" />
+                <input required value={form.nameEn ?? ''} onChange={e => setForm(f => ({ ...f, nameEn: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm" placeholder="Diwali" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">Name (Hindi) *</label>
-                <input required value={form.nameHi} onChange={e => setForm(f => ({ ...f, nameHi: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm font-devanagari" placeholder="दीपावली" />
+                <input required value={form.nameHi ?? ''} onChange={e => setForm(f => ({ ...f, nameHi: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm font-devanagari" placeholder="दीपावली" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">Name (Marathi) *</label>
-                <input required value={form.nameMr} onChange={e => setForm(f => ({ ...f, nameMr: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm font-devanagari" placeholder="दिवाळी" />
+                <input required value={form.nameMr ?? ''} onChange={e => setForm(f => ({ ...f, nameMr: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm font-devanagari" placeholder="दिवाळी" />
               </div>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">Event Date *</label>
-                <input type="date" required value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm" />
+                <input type="date" required value={form.date ?? ''} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">Notify Days Before</label>
-                <input type="number" min="0" value={form.notifyDaysBefore} onChange={e => setForm(f => ({ ...f, notifyDaysBefore: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm" />
+                <input type="number" min="0" value={form.notifyDaysBefore ?? 0} onChange={e => setForm(f => ({ ...f, notifyDaysBefore: parseInt(e.target.value) || 0 }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">Emoji Icon</label>
-                <input required value={form.emoji} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm text-center text-lg" />
+                <input required value={form.emoji ?? ''} onChange={e => setForm(f => ({ ...f, emoji: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 text-sm text-center text-lg" />
               </div>
               <div className="flex flex-col justify-center gap-1.5 sm:mt-5">
                 {editId ? (

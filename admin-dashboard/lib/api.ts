@@ -162,6 +162,16 @@ export const adminApi = {
   runContentIngest: () => api.post('/admin/content/ingest/run').then(r => r.data),
   getContentHealth: () => api.get('/admin/content/health').then(r => r.data),
   getContentAttention: () => api.get('/admin/content/attention').then(r => r.data),
+  // Schemes (Sarkari Yojana)
+  getSchemes: (params?: Record<string, any>) =>
+    api.get('/admin/content/schemes', { params: cleanParams(params) }).then(r => r.data),
+  getScheme: (id: string) => api.get(`/admin/content/schemes/${id}`).then(r => r.data),
   createScheme: (body: Record<string, any>) => api.post('/admin/content/schemes', body).then(r => r.data),
+  updateScheme: (id: string, body: Record<string, any>) => api.put(`/admin/content/schemes/${id}`, body).then(r => r.data),
+  deleteScheme: (id: string) => api.delete(`/admin/content/schemes/${id}`).then(r => r.data),
   verifyScheme: (id: string) => api.post(`/admin/content/schemes/${id}/verify`).then(r => r.data),
+  createSchemeDraft: (id: string, autoGenerate = true) =>
+    api.post(`/admin/content/schemes/${id}/draft`, { autoGenerate }).then(r => r.data),
+  seedSchemes: () => api.post('/admin/content/schemes/seed').then(r => r.data),
+  generateVideo: (shortVideoId: string) => api.post('/admin/content/generate', { shortVideoId }).then(r => r.data),
 };

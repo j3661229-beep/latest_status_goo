@@ -69,6 +69,7 @@ export async function ingestNews(
   let budget = cfg.maxIngestPerDay - (await prisma.newsStory.count({ where: { retrievedAt: { gte: dayStart } } }));
   const maxAgeMs = (opts.staleHours ?? 48) * 3_600_000;
 
+  const reverifiedIds: string[] = [];
   for (const feed of feeds) {
     if (budget <= 0) break;
     let items: FeedItem[];
@@ -76,10 +77,11 @@ export async function ingestNews(
     catch (e) { result.errors.push(`${feed.name}: ${(e as Error).message}`); continue; } // failure → no stories, no fabrication
     for (const it of items) {
       if (budget <= 0) break;
-      // Validate source + publication time.
-      if (!it.publishedAt || it.publishedAt.getTime() > now.getTime() + 3_600_000 || now.getTime() - it.publishedAt.getTime() > maxAgeMs) { result.rejected++; continue; }
+      // Validate source + publication time (default to now if feed does not include pubDate tag, e.g. PIB)
+      const pubDate = it.publishedAt ?? now;
+      if (pubDate.getTime() > now.getTime() + 6 * 3_600_000 || now.getTime() - pubDate.getTime() > maxAgeMs) { result.rejected++; continue; }
       let canonical: string;
-      try { const u = new URL(it.link); if (u.protocol !== 'https:') throw new Error('http'); u.hash = ''; canonical = u.toString(); } catch { result.rejected++; continue; }
+      try { const u = new URL(it.link, feed.url); if (u.protocol !== 'https:') throw new Error('http'); u.hash = ''; canonical = u.toString(); } catch { result.rejected++; continue; }
 
       const key = dedupeKey(it.title);
       const known = await prisma.newsStory.findUnique({ where: { canonicalUrl: canonical } });
@@ -95,25 +97,25 @@ export async function ingestNews(
           });
           result.changed.push({ storyId: known.id, headline: it.title });
         } else {
-          await prisma.newsStory.update({ where: { id: known.id }, data: { lastVerifiedAt: now } });
+          reverifiedIds.push(known.id);
           result.reverified++;
         }
         continue;
       }
 
-      const sameEvent = await prisma.newsStory.findFirst({ where: { dedupeKey: key, publishedAt: { gte: new Date(it.publishedAt.getTime() - 48 * 3_600_000) } } });
+      const sameEvent = await prisma.newsStory.findFirst({ where: { dedupeKey: key, publishedAt: { gte: new Date(pubDate.getTime() - 48 * 3_600_000) } } });
       if (sameEvent) {
         const related = Array.isArray(sameEvent.relatedSources) ? (sameEvent.relatedSources as unknown[]) : [];
         await prisma.newsStory.update({
           where: { id: sameEvent.id },
-          data: { relatedSources: [...related, { publisher: feed.name, url: canonical, publishedAt: it.publishedAt.toISOString() }] as Prisma.InputJsonValue },
+          data: { relatedSources: [...related, { publisher: feed.name, url: canonical, publishedAt: pubDate.toISOString() }] as Prisma.InputJsonValue },
         });
         result.grouped++; continue;
       }
       const created = await prisma.newsStory.create({
         data: {
           originalHeadline: it.title.slice(0, 500), publisher: feed.name, canonicalUrl: canonical, dedupeKey: key,
-          category: feed.category, publishedAt: it.publishedAt, retrievedAt: now, lastVerifiedAt: now,
+          category: feed.category, publishedAt: pubDate, retrievedAt: now, lastVerifiedAt: now,
           summary: it.summary.slice(0, 4000) || null,
         },
       });
@@ -121,5 +123,19 @@ export async function ingestNews(
       if (created?.id) result.createdIds.push(created.id);
     }
   }
+
+  if (reverifiedIds.length > 0) {
+    if (typeof (prisma.newsStory as any).updateMany === 'function') {
+      await (prisma.newsStory as any).updateMany({
+        where: { id: { in: reverifiedIds } },
+        data: { lastVerifiedAt: now },
+      }).catch(() => undefined);
+    } else {
+      for (const id of reverifiedIds) {
+        await prisma.newsStory.update({ where: { id }, data: { lastVerifiedAt: now } }).catch(() => undefined);
+      }
+    }
+  }
+
   return result;
 }

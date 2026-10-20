@@ -14,6 +14,7 @@ import { CacheService } from './lib/cache/cache.service';
 import prismaPlugin from './plugins/prisma.plugin';
 import redisPlugin from './plugins/redis.plugin';
 import authPlugin from './plugins/auth.plugin';
+import contentSchedulerPlugin from './plugins/content-scheduler.plugin';
 
 // Routes
 import { authRoutes } from './modules/auth/auth.route';
@@ -138,6 +139,7 @@ export async function buildApp() {
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
   await app.register(authPlugin);
+  await app.register(contentSchedulerPlugin);
 
   // ── Health Check ─────────────────────────────────────────
   app.get('/api/v1/health', async (req, reply) => {

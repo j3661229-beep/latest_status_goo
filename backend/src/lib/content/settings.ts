@@ -23,6 +23,14 @@ export interface ContentSettings {
   lastIngestAt: Date | null;
 }
 
+export const DEFAULT_FEEDS: FeedConfig[] = [
+  { name: 'Google News (Hindi Top)', url: 'https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi', category: 'NEWS' },
+  { name: 'Google News (National)', url: 'https://news.google.com/rss/headlines/section/topic/NATION?hl=hi&gl=IN&ceid=IN:hi', category: 'NEWS' },
+  { name: 'Amar Ujala (Breaking)', url: 'https://www.amarujala.com/rss/breaking-news.xml', category: 'NEWS' },
+  { name: 'PIB Hindi (Govt)', url: 'https://pib.gov.in/RssMain.aspx?ModId=6&LangId=2', category: 'SCHEMES' },
+  { name: 'PIB National', url: 'https://pib.gov.in/RssMain.aspx?ModId=6&LangId=1', category: 'NEWS' },
+];
+
 export const DEFAULTS: ContentSettings = {
   ingestEnabled: false,
   ingestIntervalMinutes: 180,
@@ -91,9 +99,12 @@ export async function loadSettings(prisma: Pick<PrismaClient, 'appConfig'>): Pro
   const get = (k: string) => rows.find((r) => r.key === k)?.value;
   let feeds: FeedConfig[] = [];
   try {
-    const parsed = JSON.parse(get(KEYS.feeds) ?? '[]');
+    const raw = get(KEYS.feeds);
+    const parsed = raw ? JSON.parse(raw) : [];
     feeds = Array.isArray(parsed) ? parsed.filter((f) => f && typeof f.url === 'string' && typeof f.name === 'string') : [];
-  } catch { /* invalid JSON → no feeds; never throw from the scheduler */ }
+  } catch {
+    feeds = [];
+  }
   const last = get(LAST_INGEST_KEY);
   return {
     ingestEnabled: bool(get(KEYS.ingestEnabled), DEFAULTS.ingestEnabled),

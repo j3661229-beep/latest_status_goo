@@ -129,7 +129,7 @@ export default function ConfigPage() {
               )}
               {BOOLEAN_KEYS.includes(config.key) ? (
                 <select
-                  value={form[config.key] ?? config.value}
+                  value={form[config.key] ?? config.value ?? 'false'}
                   onChange={e => handleChange(config.key, e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-xs font-medium bg-slate-50/50 text-slate-800"
                 >
@@ -138,7 +138,7 @@ export default function ConfigPage() {
                 </select>
               ) : (
                 <input
-                  value={form[config.key] ?? config.value}
+                  value={form[config.key] ?? config.value ?? ''}
                   onChange={e => handleChange(config.key, e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-xs font-medium bg-slate-50/50 text-slate-800 font-mono"
                   placeholder={`Enter ${config.key}`}

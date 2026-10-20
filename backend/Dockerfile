@@ -31,7 +31,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-RUN apk add --no-cache openssl libc6-compat
+RUN apk add --no-cache openssl libc6-compat ffmpeg font-noto-devanagari fontconfig
+
+ENV FFMPEG_PATH=ffmpeg
+ENV FFPROBE_PATH=ffprobe
+ENV CONTENT_FONT_NAME="Noto Sans Devanagari"
 
 # Copy production dependencies & Prisma
 COPY package*.json ./

@@ -84,6 +84,93 @@ const SchemeBody = z.object({
   expiresAt: z.string().datetime().nullable().optional(),
 });
 
+const SchemeUpdateBody = SchemeBody.partial();
+
+const SchemeQuery = z.object({
+  search: optionalString(100),
+  category: optionalString(64),
+  scope: optionalEnum(['CENTRAL', 'STATE']),
+  reviewStatus: optionalEnum([...STATUSES]),
+});
+
+const SEED_SCHEMES = [
+  {
+    slug: 'pm-kisan-samman-nidhi',
+    officialName: 'Pradhan Mantri Kisan Samman Nidhi',
+    nameHi: 'प्रधानमंत्री किसान सम्मान निधि योजना',
+    category: 'FARMER',
+    scope: 'CENTRAL' as const,
+    department: 'कृषि एवं किसान कल्याण मंत्रालय (Ministry of Agriculture)',
+    benefits: ['₹6,000 प्रति वर्ष 3 समान किस्तों में प्रत्यक्ष बैंक खाते में (DBT) हस्तांतरित किए जाते हैं।'],
+    eligibility: ['सभी भूमिधारक किसान परिवार जिनके नाम कृषि योग्य भूमि दर्ज है। संस्थागत भूमिधारक अपात्र हैं।'],
+    documents: ['आधार कार्ड', 'बैंक खाता पासबुक (आधार से लिंक)', 'भूमि स्वामित्व दस्तावेज (खतौनी/भूलेख)', 'सक्रिय मोबाइल नंबर'],
+    applicationSteps: ['1. आधिकारिक पोर्टल pmkisan.gov.in पर जाएं', '2. New Farmer Registration विकल्प चुनें', '3. आधार और मोबाइल नंबर दर्ज करें', '4. राज्य, जिला व जमीन का विवरण भरकर सबमिट करें'],
+    applicationMode: 'ONLINE',
+    applicationUrl: 'https://pmkisan.gov.in',
+    sourceUrls: ['https://pmkisan.gov.in', 'https://myscheme.gov.in'],
+  },
+  {
+    slug: 'ayushman-bharat-pm-jay',
+    officialName: 'Ayushman Bharat Pradhan Mantri Jan Arogya Yojana',
+    nameHi: 'आयुष्मान भारत - प्रधानमंत्री जन आरोग्य योजना (PM-JAY)',
+    category: 'HEALTHCARE',
+    scope: 'CENTRAL' as const,
+    department: 'राष्ट्रीय स्वास्थ्य प्राधिकरण (NHA) / स्वास्थ्य एवं परिवार कल्याण मंत्रालय',
+    benefits: ['प्रति परिवार प्रति वर्ष ₹5 लाख तक का कैशलेस एवं पेपरलेस स्वास्थ्य बीमा कवर।', '70 वर्ष या उससे अधिक आयु के सभी वरिष्ठ नागरिकों के लिए आयुष्मान वय वंदना कवर।'],
+    eligibility: ['SECC डेटाबेस के अनुसार ग्रामीण एवं शहरी गरीब परिवार। 70 वर्ष से अधिक आयु के सभी भारतीय नागरिक।'],
+    documents: ['आधार कार्ड', 'राशन कार्ड', 'मोबाइल नंबर'],
+    applicationSteps: ['1. beneficiary.nha.gov.in पोर्टल पर जाएं', '2. मोबाइल नंबर और OTP से लॉगिन करें', '3. परिवार का नाम खोजें व e-KYC पूरा करें', '4. आयुष्मान कार्ड तुरंत डाउनलोड करें'],
+    applicationMode: 'ONLINE',
+    applicationUrl: 'https://beneficiary.nha.gov.in',
+    sourceUrls: ['https://nha.gov.in', 'https://myscheme.gov.in'],
+  },
+  {
+    slug: 'pm-awas-yojana',
+    officialName: 'Pradhan Mantri Awas Yojana (PMAY)',
+    nameHi: 'प्रधानमंत्री आवास योजना (ग्रामीण एवं शहरी)',
+    category: 'HOUSING',
+    scope: 'CENTRAL' as const,
+    department: 'ग्रामीण विकास मंत्रालय / आवास और शहरी कार्य मंत्रालय',
+    benefits: ['पक्का मकान बनाने के लिए ₹1.20 लाख से ₹1.30 लाख की सीधी वित्तीय सहायता।', 'शहरी क्षेत्रों में गृह ऋण पर ब्याज सब्सिडी।'],
+    eligibility: ['ऐसे परिवार जिनके पास भारत में कहीं भी अपना पक्का मकान नहीं है। BPL / EWS श्रेणी के पात्र परिवार।'],
+    documents: ['आधार कार्ड', 'बैंक खाता पासबुक', 'जमीन के कागजात या पट्टा', 'आय प्रमाण पत्र / राशन कार्ड'],
+    applicationSteps: ['1. pmaymis.gov.in (शहरी) या ग्राम पंचायत (ग्रामीण) से संपर्क करें', '2. ऑनलाइन या CSC के माध्यम से आवेदन फॉर्म भरें', '3. जियो-टैगिंग सत्यापन के बाद खाते में किस्त प्राप्त करें'],
+    applicationMode: 'BOTH',
+    applicationUrl: 'https://pmaymis.gov.in',
+    sourceUrls: ['https://pmaymis.gov.in', 'https://pmayg.nic.in'],
+  },
+  {
+    slug: 'pm-vishwakarma-yojana',
+    officialName: 'PM Vishwakarma Scheme',
+    nameHi: 'पीएम विश्वकर्मा योजना',
+    category: 'SKILLS',
+    scope: 'CENTRAL' as const,
+    department: 'सूक्ष्म, लघु एवं मध्यम उद्यम मंत्रालय (MSME)',
+    benefits: ['₹15,000 का आधुनिक टूलकिट प्रोत्साहन वाउचर।', '5-7 दिन का बेसिक कौशल प्रशिक्षण व ₹500/दिन स्टाइपेंड।', 'बिना गारंटी ₹3 लाख तक का सस्ता लोन (मात्र 5% ब्याज दर)।'],
+    eligibility: ['18 पारंपरिक शिल्पों में हाथों और औजारों से कार्य करने वाले कारीगर (बढ़ई, लोहार, कुम्हार, दर्जी, सुनार आदि)।'],
+    documents: ['आधार कार्ड', 'सक्रिय बैंक खाता पासबुक', 'मोबाइल नंबर', 'पारंपरिक शिल्प व्यवसाय का प्रमाण'],
+    applicationSteps: ['1. नजदीकी कॉमन सर्विस सेंटर (CSC) पर जाएं', '2. बायोमेट्रिक सत्यापन और आधार e-KYC कराएं', '3. शिल्प श्रेणी चुनकर पंजीकरण पूरा करें'],
+    applicationMode: 'ONLINE',
+    applicationUrl: 'https://pmvishwakarma.gov.in',
+    sourceUrls: ['https://pmvishwakarma.gov.in', 'https://myscheme.gov.in'],
+  },
+  {
+    slug: 'sukanya-samriddhi-yojana',
+    officialName: 'Sukanya Samriddhi Yojana (SSY)',
+    nameHi: 'सुकन्या समृद्धि योजना',
+    category: 'WOMEN',
+    scope: 'CENTRAL' as const,
+    department: 'डाक विभाग (India Post) / वित्त मंत्रालय',
+    benefits: ['8.2% की सुरक्षित एवं उच्च वार्षिक चक्रवृद्धि ब्याज दर।', 'धारा 80C के तहत आयकर में छूट और मैच्योरिटी पर पूरी तरह टैक्स-फ्री रिटर्न।'],
+    eligibility: ['10 वर्ष या उससे कम आयु की बेटियों के नाम पर माता-पिता या अभिभावक द्वारा खाता खोला जा सकता है।'],
+    documents: ['बेटी का जन्म प्रमाण पत्र', 'माता-पिता / अभिभावक का आधार कार्ड व पैन कार्ड', 'पते का प्रमाण', 'पासपोर्ट साइज फोटो'],
+    applicationSteps: ['1. निकटतम डाकघर या अधिकृत बैंक शाखा में जाएं', '2. SSY खाता खोलने का फॉर्म भरें', '3. आवश्यक दस्तावेज व न्यूनतम ₹250 जमा करें'],
+    applicationMode: 'OFFLINE',
+    applicationUrl: 'https://www.indiapost.gov.in',
+    sourceUrls: ['https://www.indiapost.gov.in', 'https://myscheme.gov.in'],
+  },
+];
+
 const DraftBody = z
   .object({
     kind: z.enum(['SCHEME', 'NEWS']),
@@ -293,17 +380,40 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     return reply.send({ data: await loadSettings(prisma) });
   });
 
-  fastify.post('/content/ingest/run', { ...guard, config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (req, reply) => {
+  fastify.post('/content/ingest/run', { ...guard, config: { rateLimit: { max: 12, timeWindow: '1 minute' } } }, async (req, reply) => {
     const s = await loadSettings(prisma);
     if (s.feeds.length === 0) return err(reply, 422, 'No news feeds configured', { problems: ['Add at least one feed in settings first'] });
+
+    const cfg = contentConfig();
+    const lockRedis = fastify.redis;
     try {
-      await requestIngest();
-    } catch (e) {
-      req.log.error({ err: e }, 'failed to enqueue ingest');
-      return err(reply, 503, 'Worker queue unavailable');
+      const { runMaintenanceTick, redisLocker } = await import('../../lib/content/maintenance');
+      const locker = lockRedis ? redisLocker(lockRedis) : (async () => async () => {});
+      const report = await runMaintenanceTick(
+        {
+          prisma,
+          cfg,
+          lock: locker,
+          startGeneration: (id) => start(id),
+          log: (m, x) => req.log.info({ extra: x }, `[content-ingest] ${m}`),
+        },
+        { forceIngest: true },
+      );
+      if (lockRedis) {
+        const { HEARTBEAT_KEY } = await import('../../lib/content/queue');
+        await lockRedis.set(HEARTBEAT_KEY, JSON.stringify({ at: new Date().toISOString(), report }), 'EX', 3600).catch(() => undefined);
+      }
+      await audit(req, 'content.ingest.run', 'ingest', undefined, report, 'ContentSettings');
+      return reply.send({ ok: true, report });
+    } catch (e: any) {
+      req.log.error({ err: e }, 'direct ingest run failed, falling back to background worker queue');
+      try {
+        await requestIngest();
+        return reply.status(202).send({ queued: true, message: 'Ingest queued to background worker' });
+      } catch (queueErr: any) {
+        return err(reply, 503, 'Worker queue unavailable', { original: queueErr?.message ?? e?.message });
+      }
     }
-    await audit(req, 'content.ingest.run', 'ingest', undefined, undefined, 'ContentSettings');
-    return reply.status(202).send({ queued: true });
   });
 
   /** What needs a human: overdue scheme verification, slow review queue, open user reports. */
@@ -350,7 +460,53 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     return reply.send({ data: { ...(await present(v)), videoUrl, thumbnailUrl, audioUrl }, jobs, reviews, reports });
   });
 
-  // ── Manual source entry ──────────────────────────────────────
+  // ── Schemes (Yojana) Management ──────────────────────────────
+  fastify.get('/content/schemes', guard, async (req, reply) => {
+    const q = SchemeQuery.safeParse(req.query ?? {});
+    if (!q.success) return sendValidationError(reply, q.error);
+    const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
+    const where: Prisma.SchemeWhereInput = {
+      ...(q.data.category && { category: q.data.category }),
+      ...(q.data.scope && { scope: q.data.scope }),
+      ...(q.data.reviewStatus && { reviewStatus: q.data.reviewStatus }),
+      ...(q.data.search && {
+        OR: [
+          { officialName: { contains: q.data.search, mode: 'insensitive' } },
+          { nameHi: { contains: q.data.search, mode: 'insensitive' } },
+          { department: { contains: q.data.search, mode: 'insensitive' } },
+          { slug: { contains: q.data.search, mode: 'insensitive' } },
+        ],
+      }),
+    };
+    const [data, total] = await Promise.all([
+      prisma.scheme.findMany({
+        where,
+        include: { _count: { select: { videos: true } } },
+        orderBy: [{ lastVerifiedAt: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+      prisma.scheme.count({ where }),
+    ]);
+    return reply.send({ data, meta: { page, limit, total } });
+  });
+
+  fastify.get('/content/schemes/:id', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    const scheme = await prisma.scheme.findUnique({
+      where: { id: p.data.id },
+      include: {
+        videos: {
+          select: { id: true, title: true, status: true, publishedAt: true, category: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!scheme) return err(reply, 404, 'Scheme not found');
+    return reply.send({ data: scheme });
+  });
+
   fastify.post('/content/schemes', guard, async (req, reply) => {
     const b = SchemeBody.safeParse(req.body ?? {});
     if (!b.success) return sendValidationError(reply, b.error);
@@ -371,6 +527,89 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return err(reply, 409, 'A scheme with this slug already exists');
       throw e;
     }
+  });
+
+  fastify.put('/content/schemes/:id', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    const b = SchemeUpdateBody.safeParse(req.body ?? {});
+    if (!p.success) return sendValidationError(reply, p.error);
+    if (!b.success) return sendValidationError(reply, b.error);
+    const existing = await prisma.scheme.findUnique({ where: { id: p.data.id } });
+    if (!existing) return err(reply, 404, 'Scheme not found');
+    const d = b.data;
+    const updated = await prisma.scheme.update({
+      where: { id: p.data.id },
+      data: {
+        ...d,
+        sourceUpdatedAt: d.sourceUpdatedAt !== undefined ? (d.sourceUpdatedAt ? new Date(d.sourceUpdatedAt) : null) : undefined,
+        nextReviewAt: d.nextReviewAt !== undefined ? (d.nextReviewAt ? new Date(d.nextReviewAt) : null) : undefined,
+        expiresAt: d.expiresAt !== undefined ? (d.expiresAt ? new Date(d.expiresAt) : null) : undefined,
+      },
+    });
+    await audit(req, 'content.scheme.update', p.data.id, existing, updated);
+    return reply.send({ data: updated });
+  });
+
+  fastify.delete('/content/schemes/:id', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    const existing = await prisma.scheme.findUnique({ where: { id: p.data.id }, include: { _count: { select: { videos: true } } } });
+    if (!existing) return err(reply, 404, 'Scheme not found');
+    if (existing._count.videos > 0) {
+      await prisma.shortVideo.updateMany({ where: { schemeId: p.data.id }, data: { schemeId: null } });
+    }
+    await prisma.scheme.delete({ where: { id: p.data.id } });
+    await audit(req, 'content.scheme.delete', p.data.id, existing);
+    return reply.send({ ok: true, deleted: true });
+  });
+
+  fastify.post('/content/schemes/:id/draft', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    const b = z.object({ autoGenerate: z.boolean().default(true) }).safeParse(req.body ?? {});
+    if (!p.success) return sendValidationError(reply, p.error);
+    const scheme = await prisma.scheme.findUnique({ where: { id: p.data.id } });
+    if (!scheme) return err(reply, 404, 'Scheme not found');
+    const title = scheme.nameHi ? scheme.nameHi.slice(0, 200) : scheme.officialName.slice(0, 200);
+    const video = await prisma.shortVideo.create({
+      data: {
+        kind: 'SCHEME',
+        schemeId: scheme.id,
+        title,
+        category: scheme.category,
+        region: scheme.stateCode ?? null,
+        language: scheme.language,
+        status: 'DRAFT',
+      },
+    });
+    await audit(req, 'content.scheme.draft', video.id, undefined, { schemeId: scheme.id });
+    if (b.success && b.data.autoGenerate) {
+      start(video.id).catch((e) => req.log.error({ err: e }, 'could not start auto-generation for scheme draft'));
+    }
+    return reply.status(201).send({ data: video });
+  });
+
+  fastify.post('/content/schemes/seed', guard, async (req, reply) => {
+    let created = 0;
+    let existing = 0;
+    const now = new Date();
+    for (const s of SEED_SCHEMES) {
+      const found = await prisma.scheme.findUnique({ where: { slug: s.slug } });
+      if (found) {
+        existing++;
+        continue;
+      }
+      await prisma.scheme.create({
+        data: {
+          ...s,
+          lastVerifiedAt: now,
+          lastCheckedAt: now,
+          reviewStatus: 'SOURCE_VERIFIED',
+        },
+      });
+      created++;
+    }
+    await audit(req, 'content.schemes.seed', 'schemes', undefined, { created, existing });
+    return reply.send({ ok: true, created, existing });
   });
 
   fastify.post('/content/schemes/:id/verify', guard, async (req, reply) => {

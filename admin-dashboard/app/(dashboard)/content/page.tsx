@@ -4,14 +4,17 @@
 // Static-export friendly: one page, detail opens in a slide-over (no dynamic routes).
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ExternalLink, Loader2, X, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle, ExternalLink, Loader2, X, RefreshCw, Plus, Play,
+  CheckCircle, Trash2, Landmark, Sparkles, Filter
+} from 'lucide-react';
 import { adminApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { QueryError } from '@/components/QueryError';
 import { Pagination } from '@/components/Pagination';
 
-type View = 'content' | 'jobs' | 'reports' | 'costs' | 'schedule';
+type View = 'content' | 'schemes' | 'schedule' | 'jobs' | 'reports' | 'costs';
 
 const STATUS_TABS: { label: string; status: string }[] = [
   { label: 'Needs Review', status: 'NEEDS_REVIEW' },
@@ -25,6 +28,10 @@ const STATUS_TABS: { label: string; status: string }[] = [
   { label: 'Expired', status: 'EXPIRED' },
   { label: 'Unpublished', status: 'UNPUBLISHED' },
   { label: 'Rejected', status: 'REJECTED' },
+];
+
+const SCHEME_CATEGORIES = [
+  'FARMER', 'HEALTHCARE', 'HOUSING', 'SKILLS', 'WOMEN', 'EDUCATION', 'FINANCE', 'YOUTH', 'SENIOR_CITIZEN', 'GENERAL'
 ];
 
 /** Backend errors carry `message` and, for failed pre-flight checks, a `problems` list. */
@@ -74,6 +81,7 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['content-detail', id],
     queryFn: () => adminApi.getContent(id),
+    refetchInterval: 5_000,
   });
   const [prompt, setPrompt] = useState<null | { action: string; title: string; hint?: string; min: number; label: string; extra?: any }>(null);
   const [scheduleAt, setScheduleAt] = useState('');
@@ -90,6 +98,7 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
     onSuccess: (_r, v) => { toast.success(`Done: ${v.action}`); setPrompt(null); refresh(); },
     onError: (e) => toast.error(describeError(e)),
   });
+
   const save = useMutation({
     mutationFn: (body: any) => adminApi.editContent(id, body),
     onSuccess: (r) => {
@@ -99,9 +108,18 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
     onError: (e) => toast.error(describeError(e)),
   });
 
+  const genVideo = useMutation({
+    mutationFn: () => adminApi.generateVideo(id),
+    onSuccess: () => {
+      toast.success('AI generation queued! Refreshing status...');
+      refresh();
+    },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
   const v = data?.data;
   const status: string | undefined = v?.status;
-  const busy = act.isPending;
+  const busy = act.isPending || genVideo.isPending;
   const run = (action: string, body?: any) => act.mutate({ action, body });
 
   const startEdit = () => setDraft({
@@ -121,16 +139,16 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end bg-black/50" onClick={onClose}>
-      <div className="bg-white w-full max-w-3xl h-full overflow-y-auto p-6 space-y-5" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-3xl h-full overflow-y-auto p-6 space-y-5 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-slate-900">{v?.title ?? 'Loading…'}</h2>
             {v && <div className="flex gap-2 mt-1 items-center"><StatusBadge status={v.status} /><span className="text-xs text-slate-500">{v.kind} · {v.category} · v{v.scriptVersion}</span></div>}
           </div>
-          <button onClick={onClose} aria-label="Close"><X size={22} /></button>
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700 p-1"><X size={22} /></button>
         </div>
 
-        {isLoading && <Loader2 className="animate-spin" />}
+        {isLoading && <Loader2 className="animate-spin text-primary" />}
         {isError && <QueryError error={error} onRetry={refetch} />}
 
         {v && (<>
@@ -143,10 +161,29 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="aspect-[9/16] bg-slate-900 rounded-xl overflow-hidden">
+            <div className="aspect-[9/16] bg-slate-900 rounded-xl overflow-hidden flex flex-col items-center justify-center">
               {v.videoUrl
                 ? <video src={v.videoUrl} poster={v.thumbnailUrl ?? undefined} controls playsInline className="w-full h-full object-contain" />
-                : <div className="h-full flex items-center justify-center text-slate-400 text-xs p-4 text-center">No rendered video yet</div>}
+                : (
+                  <div className="p-4 text-center space-y-2">
+                    <div className="text-slate-400 text-xs">No rendered video yet</div>
+                    {['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY'].includes(status!) && (
+                      <button
+                        className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1 mx-auto"
+                        disabled={busy}
+                        onClick={() => genVideo.mutate()}
+                      >
+                        {genVideo.isPending ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                        Start AI Generation
+                      </button>
+                    )}
+                    {status === 'GENERATING' && (
+                      <div className="text-xs text-blue-400 animate-pulse flex items-center justify-center gap-1">
+                        <Loader2 size={12} className="animate-spin" /> Generating...
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
             <div className="space-y-3 text-sm">
               {v.audioUrl && <div><div className="text-xs text-slate-500 mb-1">Narration</div><audio src={v.audioUrl} controls className="w-full" /></div>}
@@ -206,12 +243,12 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
             ) : (
               <div className="space-y-2">
                 {(['title', 'hook', 'attribution'] as const).map(k => (
-                  <input key={k} value={draft[k]} onChange={e => setDraft({ ...draft, [k]: e.target.value })} placeholder={k}
+                  <input key={k} value={draft[k] ?? ''} onChange={e => setDraft({ ...draft, [k]: e.target.value })} placeholder={k}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
                 ))}
-                <textarea value={draft.narration} rows={6} onChange={e => setDraft({ ...draft, narration: e.target.value })}
+                <textarea value={draft.narration ?? ''} rows={6} onChange={e => setDraft({ ...draft, narration: e.target.value })}
                   placeholder="Narration" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-                <textarea value={draft.captions} rows={6} onChange={e => setDraft({ ...draft, captions: e.target.value })}
+                <textarea value={draft.captions ?? ''} rows={6} onChange={e => setDraft({ ...draft, captions: e.target.value })}
                   placeholder='[{"start":0,"end":3,"text":"…"}]' className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono" />
                 <p className="text-xs text-amber-700">Editing the script or captions discards the rendered video; it must be regenerated and re-reviewed.</p>
                 <div className="flex gap-2">
@@ -225,13 +262,28 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
           <section className="border-t pt-4 space-y-2">
             <h3 className="font-semibold text-sm">Actions</h3>
             <div className="flex flex-wrap gap-2 items-center">
+              {['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY'].includes(status!) && (
+                <button
+                  className="btn-primary flex items-center gap-1.5"
+                  disabled={busy}
+                  onClick={() => genVideo.mutate()}
+                >
+                  {genVideo.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                  Generate AI Video Now
+                </button>
+              )}
+              {status === 'GENERATING' && (
+                <span className="text-xs text-blue-600 flex items-center gap-1.5 font-medium animate-pulse">
+                  <Loader2 size={13} className="animate-spin" /> Generation in progress...
+                </span>
+              )}
               {status === 'NEEDS_REVIEW' && <>
                 <button className="btn-success" disabled={busy} onClick={() => run('approve')}>Approve</button>
                 <button className="btn-danger" disabled={busy} onClick={() => setPrompt({ action: 'reject', title: 'Reject content', min: 10, label: 'Reject', hint: 'Recorded in the audit trail.' })}>Reject</button>
               </>}
               {status === 'APPROVED' && <>
                 <button className="btn-success" disabled={busy} onClick={() => run('publish')}>Publish now</button>
-                <input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs" />
+                <input type="datetime-local" value={scheduleAt ?? ''} onChange={e => setScheduleAt(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs" />
                 <button className="btn-outline" disabled={busy || !scheduleAt} onClick={() => run('publish', { scheduledAt: new Date(scheduleAt).toISOString() })}>Schedule</button>
                 <button className="btn-danger" disabled={busy} onClick={() => setPrompt({ action: 'reject', title: 'Reject content', min: 10, label: 'Reject' })}>Reject</button>
               </>}
@@ -244,8 +296,6 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
               {status === 'FAILED' && <button className="btn-primary" disabled={busy} onClick={() => run('retry')}>Retry</button>}
               {['EXPIRED', 'UNPUBLISHED', 'CORRECTION_REQUIRED', 'GENERATED'].includes(status!) &&
                 <button className="btn-primary" disabled={busy} onClick={() => run('request-review')}>Send to review</button>}
-              {['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY', 'GENERATING'].includes(status!) &&
-                <span className="text-xs text-slate-500">Waiting for generation pipeline — no review actions yet.</span>}
             </div>
           </section>
 
@@ -284,14 +334,14 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function WorkerHealth() {
-  const { data } = useQuery({ queryKey: ['content-health'], queryFn: adminApi.getContentHealth, refetchInterval: 60_000 });
+  const { data } = useQuery({ queryKey: ['content-health'], queryFn: adminApi.getContentHealth, refetchInterval: 30_000 });
   const h = data?.data;
   if (!h) return null;
   const problems: string[] = [];
-  if (!h.workerAlive) problems.push(h.lastTickAt ? `Worker has not reported since ${fmt(h.lastTickAt)} — schedules and generation are stopped.` : 'No worker heartbeat — schedules and generation are not running (start the worker with CONTENT_PIPELINE_ENABLED=true).');
-  if (h.failedJobs24h > 0) problems.push(`${h.failedJobs24h} pipeline job(s) failed in the last 24h — see Jobs.`);
+  if (!h.workerAlive) problems.push(h.lastTickAt ? `Worker has not reported since ${fmt(h.lastTickAt)} — background schedules may be delayed.` : 'Worker heartbeat starting or idle — in-process scheduler active.');
+  if (h.failedJobs24h > 0) problems.push(`${h.failedJobs24h} pipeline job(s) failed in the last 24h — see Pipeline Jobs.`);
   if (h.stuckGenerating > 0) problems.push(`${h.stuckGenerating} video(s) stuck generating for over an hour.`);
-  if (problems.length === 0) return <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">Worker healthy · last tick {fmt(h.lastTickAt)}</div>;
+  if (problems.length === 0) return <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-center gap-1.5"><CheckCircle size={14} /> Worker &amp; Ingestion Healthy · last run {fmt(h.lastTickAt)}</div>;
   return (
     <div role="alert" className="border border-rose-300 bg-rose-50 rounded-xl p-3 text-xs text-rose-800 space-y-1">
       {problems.map(p => <div key={p}>{p}</div>)}
@@ -300,13 +350,13 @@ function WorkerHealth() {
 }
 
 function AttentionPanel() {
-  const { data } = useQuery({ queryKey: ['content-attention'], queryFn: adminApi.getContentAttention, refetchInterval: 120_000 });
+  const { data } = useQuery({ queryKey: ['content-attention'], queryFn: adminApi.getContentAttention, refetchInterval: 60_000 });
   const a = data?.data;
   if (!a || (a.overdueSchemes.length === 0 && a.needsReviewOver24h === 0 && a.openReports === 0)) return null;
   return (
     <div className="border border-amber-300 bg-amber-50 rounded-xl p-3 text-xs space-y-1">
       <div className="font-bold text-amber-800 flex items-center gap-1"><AlertTriangle size={14} /> Needs attention</div>
-      {a.openReports > 0 && <div>• {a.openReports} open user report(s) — see the Reports tab</div>}
+      {a.openReports > 0 && <div>• {a.openReports} open user report(s) — see Reports</div>}
       {a.needsReviewOver24h > 0 && <div>• {a.needsReviewOver24h} item(s) waiting for review for over 24h</div>}
       {a.overdueSchemes.map((x: any) => <div key={x.id}>• Scheme “{x.name}”: {x.reason}</div>)}
     </div>
@@ -320,10 +370,12 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
   const [page, setPage] = useState(1);
   const limit = 20;
 
-  const counts = useQuery({ queryKey: ['content-counts'], queryFn: adminApi.getContentCounts });
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  // Real-time polling every 8s
+  const counts = useQuery({ queryKey: ['content-counts'], queryFn: adminApi.getContentCounts, refetchInterval: 8_000 });
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['content-queue', status, kind, category, page],
     queryFn: () => adminApi.getContentQueue({ status, kind, category, page, limit }),
+    refetchInterval: 8_000,
   });
   const countFor = (s: string) =>
     (counts.data?.data ?? []).filter((c: any) => c.status === s && (!kind || c.kind === kind)).reduce((a: number, c: any) => a + c.count, 0);
@@ -332,39 +384,463 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
     <div className="space-y-4">
       <WorkerHealth />
       <AttentionPanel />
-      <div className="flex flex-wrap gap-1.5">
-        {STATUS_TABS.map(t => (
-          <button key={t.status} onClick={() => { setStatus(t.status); setPage(1); }}
-            className={`text-xs px-3 py-1.5 rounded-full border ${status === t.status ? 'bg-primary text-white border-primary' : 'bg-white border-slate-200 text-slate-600'}`}>
-            {t.label} <span className="opacity-70">({countFor(t.status)})</span>
-          </button>
-        ))}
+      <div className="flex flex-wrap gap-1.5 items-center justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {STATUS_TABS.map(t => (
+            <button key={t.status} onClick={() => { setStatus(t.status); setPage(1); }}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-all ${status === t.status ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+              {t.label} <span className="opacity-70">({countFor(t.status)})</span>
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => { refetch(); counts.refetch(); }}
+          className="btn-outline text-xs py-1 px-2.5 flex items-center gap-1.5"
+          title="Refresh queue in real time"
+        >
+          <RefreshCw size={12} className={isFetching ? 'animate-spin' : ''} />
+          Refresh
+        </button>
       </div>
+
       <div className="flex gap-2 items-center">
-        <select value={kind} onChange={e => { setKind(e.target.value); setPage(1); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs">
-          <option value="">All content</option>
-          <option value="SCHEME">Sarkari Yojana / Scholarships</option>
+        <select value={kind} onChange={e => { setKind(e.target.value); setPage(1); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white">
+          <option value="">All content kinds</option>
+          <option value="SCHEME">Sarkari Yojana / Schemes</option>
           <option value="NEWS">Daily News</option>
         </select>
-        <input value={category} onChange={e => { setCategory(e.target.value); setPage(1); }} placeholder="Category (e.g. SCHOLARSHIP)"
-          className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs w-56" />
+        <input value={category} onChange={e => { setCategory(e.target.value); setPage(1); }} placeholder="Filter by category (e.g. FARMER)"
+          className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs w-64 bg-white" />
       </div>
 
       {isError && <QueryError error={error} onRetry={refetch} />}
-      {isLoading && <Loader2 className="animate-spin" />}
-      {data && data.data.length === 0 && <div className="text-sm text-slate-400 py-10 text-center">Nothing in this state.</div>}
-      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-        {data?.data.map((r: any) => (
-          <button key={r.id} onClick={() => onOpen(r.id)} className="w-full text-left p-4 hover:bg-slate-50 flex justify-between gap-4">
-            <div className="min-w-0">
-              <div className="font-semibold text-sm text-slate-900 truncate">{r.title}</div>
-              <div className="text-xs text-slate-500">{r.kind === 'NEWS' ? r.newsStory?.publisher : r.scheme?.department} · {r.category} · updated {formatRelativeTime(r.updatedAt)}</div>
-              {r.warnings?.length > 0 && <div className="text-xs text-amber-700 mt-1 flex items-center gap-1"><AlertTriangle size={12} /> {r.warnings[0]}{r.warnings.length > 1 && ` (+${r.warnings.length - 1})`}</div>}
-            </div>
-            <StatusBadge status={r.status} />
+      {isLoading && <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" size={28} /></div>}
+      {data && data.data.length === 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-2">
+          <div className="text-slate-400 text-sm">Nothing currently in <b>{status.replace(/_/g, ' ')}</b> state.</div>
+          <p className="text-xs text-slate-400">Items move through Drafts &rarr; Generating &rarr; Needs Review &rarr; Approved &rarr; Published.</p>
+        </div>
+      )}
+      {data && data.data.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 shadow-sm overflow-hidden">
+          {data.data.map((r: any) => (
+            <button key={r.id} onClick={() => onOpen(r.id)} className="w-full text-left p-4 hover:bg-slate-50 transition-colors flex justify-between gap-4 items-center">
+              <div className="min-w-0">
+                <div className="font-semibold text-sm text-slate-900 truncate">{r.title}</div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  <span className="font-medium text-slate-700">{r.kind}</span> · {r.kind === 'NEWS' ? (r.newsStory?.publisher ?? 'News') : (r.scheme?.department ?? 'Yojana')} · {r.category} · updated {formatRelativeTime(r.updatedAt)}
+                </div>
+                {r.warnings?.length > 0 && <div className="text-xs text-amber-700 mt-1 flex items-center gap-1"><AlertTriangle size={12} /> {r.warnings[0]}{r.warnings.length > 1 && ` (+${r.warnings.length - 1})`}</div>}
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <StatusBadge status={r.status} />
+              </div>
+            </button>
+          ))}
+          <Pagination page={page} limit={limit} total={data.meta.total} onChange={setPage} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SchemesView({ onOpenDraft }: { onOpenDraft: (id: string) => void }) {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [scope, setScope] = useState('');
+  const [page, setPage] = useState(1);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const limit = 15;
+
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+    queryKey: ['content-schemes', search, category, scope, page],
+    queryFn: () => adminApi.getSchemes({ search, category, scope, page, limit }),
+    refetchInterval: 10_000,
+  });
+
+  const seedMutation = useMutation({
+    mutationFn: () => adminApi.seedSchemes(),
+    onSuccess: (res: any) => {
+      toast.success(`Seeded ${res.created} official schemes (${res.existing} already existed)!`);
+      qc.invalidateQueries({ queryKey: ['content-schemes'] });
+    },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
+  const draftMutation = useMutation({
+    mutationFn: (schemeId: string) => adminApi.createSchemeDraft(schemeId, true),
+    onSuccess: (res: any) => {
+      toast.success('Yojana video draft created! AI generation started.');
+      qc.invalidateQueries({ queryKey: ['content-schemes'] });
+      qc.invalidateQueries({ queryKey: ['content-queue'] });
+      qc.invalidateQueries({ queryKey: ['content-counts'] });
+      if (res?.data?.id) onOpenDraft(res.data.id);
+    },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: (schemeId: string) => adminApi.verifyScheme(schemeId),
+    onSuccess: () => {
+      toast.success('Scheme source verified!');
+      qc.invalidateQueries({ queryKey: ['content-schemes'] });
+    },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (schemeId: string) => adminApi.deleteScheme(schemeId),
+    onSuccess: () => {
+      toast.success('Scheme deleted');
+      qc.invalidateQueries({ queryKey: ['content-schemes'] });
+    },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search Yojana name, department..."
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-xs w-64 bg-white"
+          />
+          <select value={category} onChange={e => { setCategory(e.target.value); setPage(1); }} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white">
+            <option value="">All Categories</option>
+            {SCHEME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={scope} onChange={e => { setScope(e.target.value); setPage(1); }} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white">
+            <option value="">All Scopes</option>
+            <option value="CENTRAL">Central Schemes</option>
+            <option value="STATE">State Schemes</option>
+          </select>
+          <button
+            onClick={() => refetch()}
+            className="btn-outline text-xs py-1.5 px-2.5 flex items-center gap-1"
+            title="Refresh schemes list"
+          >
+            <RefreshCw size={12} className={isFetching ? 'animate-spin' : ''} />
           </button>
-        ))}
-        {data && <Pagination page={page} limit={limit} total={data.meta.total} onChange={setPage} />}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {(!data || data?.data?.length === 0) && (
+            <button
+              onClick={() => seedMutation.mutate()}
+              disabled={seedMutation.isPending}
+              className="btn-outline text-xs py-1.5 px-3 flex items-center gap-1.5 border-primary text-primary hover:bg-primary/5"
+            >
+              {seedMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              Seed Top National Yojanas
+            </button>
+          )}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-sm"
+          >
+            <Plus size={13} />
+            Add New Yojana
+          </button>
+        </div>
+      </div>
+
+      {isError && <QueryError error={error} onRetry={refetch} />}
+      {isLoading && <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" size={28} /></div>}
+
+      {data && data.data.length === 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-3">
+          <Landmark className="mx-auto text-slate-300" size={44} />
+          <h3 className="font-bold text-slate-800 text-base">No Government Schemes Found</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Get started instantly with India&apos;s most popular welfare schemes (PM Kisan, Ayushman Bharat, PM Awas Yojana, PM Vishwakarma, Sukanya Samriddhi).
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={() => seedMutation.mutate()}
+              disabled={seedMutation.isPending}
+              className="btn-primary text-xs py-2 px-4 inline-flex items-center gap-2"
+            >
+              {seedMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              Seed Top Official Yojanas Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {data && data.data.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {data.data.map((s: any) => (
+            <div key={s.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between space-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-900 text-sm leading-snug">{s.nameHi || s.officialName}</h3>
+                    {s.nameHi && <div className="text-xs text-slate-500 font-medium truncate">{s.officialName}</div>}
+                  </div>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${s.reviewStatus === 'SOURCE_VERIFIED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
+                    {s.reviewStatus.replace(/_/g, ' ')}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 items-center pt-1 text-[11px]">
+                  <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-medium border border-blue-100">{s.category}</span>
+                  <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md font-medium border border-purple-100">{s.scope}</span>
+                  {s.department && <span className="text-slate-500 truncate max-w-[200px]" title={s.department}>• {s.department}</span>}
+                </div>
+
+                {s.benefits?.length > 0 && (
+                  <p className="text-xs text-slate-600 line-clamp-2 bg-slate-50 p-2 rounded-lg mt-2 border border-slate-100">
+                    <span className="font-semibold text-slate-700">लाभ: </span>{s.benefits[0]}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-3 text-xs text-slate-500 pt-1">
+                  {s.applicationUrl && (
+                    <a href={s.applicationUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1 font-medium">
+                      Official Portal <ExternalLink size={11} />
+                    </a>
+                  )}
+                  <span>· {s._count?.videos ?? 0} video(s) generated</span>
+                  {s.lastVerifiedAt && <span>· verified {formatRelativeTime(s.lastVerifiedAt)}</span>}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-2">
+                <button
+                  className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 flex-1 justify-center"
+                  disabled={draftMutation.isPending}
+                  onClick={() => draftMutation.mutate(s.id)}
+                >
+                  <Play size={12} />
+                  Create Video Draft
+                </button>
+
+                {s.reviewStatus !== 'SOURCE_VERIFIED' && (
+                  <button
+                    className="btn-outline text-xs py-1.5 px-2.5 flex items-center gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                    disabled={verifyMutation.isPending}
+                    onClick={() => verifyMutation.mutate(s.id)}
+                  >
+                    <CheckCircle size={12} /> Verify
+                  </button>
+                )}
+
+                <button
+                  className="btn-ghost text-xs p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg"
+                  title="Delete Scheme"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    if (confirm(`Delete scheme "${s.nameHi || s.officialName}"?`)) {
+                      deleteMutation.mutate(s.id);
+                    }
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data && <Pagination page={page} limit={limit} total={data.meta.total} onChange={setPage} />}
+
+      {showAddModal && (
+        <AddSchemeModal
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => {
+            setShowAddModal(false);
+            qc.invalidateQueries({ queryKey: ['content-schemes'] });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddSchemeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [form, setForm] = useState({
+    slug: '',
+    officialName: '',
+    nameHi: '',
+    category: 'FARMER',
+    scope: 'CENTRAL',
+    stateCode: '',
+    department: '',
+    benefits: '',
+    eligibility: '',
+    documents: '',
+    applicationSteps: '',
+    applicationUrl: '',
+    sourceUrls: '',
+  });
+
+  const create = useMutation({
+    mutationFn: (data: any) => adminApi.createScheme(data),
+    onSuccess: () => {
+      toast.success('Yojana added successfully!');
+      onSuccess();
+    },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.officialName || !form.nameHi) {
+      toast.error('Official Name and Hindi Name are required');
+      return;
+    }
+    const slug = form.slug.trim() || form.officialName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const toArr = (v: string) => v.split('\n').map(s => s.trim()).filter(Boolean);
+
+    create.mutate({
+      slug,
+      officialName: form.officialName.trim(),
+      nameHi: form.nameHi.trim(),
+      category: form.category,
+      scope: form.scope,
+      stateCode: form.stateCode.trim() || null,
+      department: form.department.trim() || null,
+      benefits: toArr(form.benefits),
+      eligibility: toArr(form.eligibility),
+      documents: toArr(form.documents),
+      applicationSteps: toArr(form.applicationSteps),
+      applicationUrl: form.applicationUrl.trim() || null,
+      sourceUrls: toArr(form.sourceUrls).filter(u => u.startsWith('https://')),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-6 max-w-xl w-full shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-slate-900 text-lg">Add Government Scheme (सरकारी योजना)</h3>
+          <button onClick={onClose}><X size={20} className="text-slate-400" /></button>
+        </div>
+
+        <form onSubmit={submit} className="space-y-3.5 text-xs">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Hindi Name (हिंदी नाम) *</label>
+              <input
+                required
+                value={form.nameHi}
+                onChange={e => setForm({ ...form, nameHi: e.target.value })}
+                placeholder="उदा. प्रधानमंत्री किसान सम्मान निधि"
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Official Name (English) *</label>
+              <input
+                required
+                value={form.officialName}
+                onChange={e => setForm({ ...form, officialName: e.target.value })}
+                placeholder="PM Kisan Samman Nidhi"
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Category</label>
+              <select
+                value={form.category}
+                onChange={e => setForm({ ...form, category: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white"
+              >
+                {SCHEME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Scope</label>
+              <select
+                value={form.scope}
+                onChange={e => setForm({ ...form, scope: e.target.value })}
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white"
+              >
+                <option value="CENTRAL">Central (केंद्र सरकार)</option>
+                <option value="STATE">State (राज्य सरकार)</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Slug (URL friendly)</label>
+              <input
+                value={form.slug}
+                onChange={e => setForm({ ...form, slug: e.target.value })}
+                placeholder="pm-kisan"
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="font-semibold text-slate-700 block mb-1">Department / Ministry</label>
+            <input
+              value={form.department}
+              onChange={e => setForm({ ...form, department: e.target.value })}
+              placeholder="उदा. कृषि एवं किसान कल्याण मंत्रालय"
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Official Application URL (https://)</label>
+              <input
+                type="url"
+                value={form.applicationUrl}
+                onChange={e => setForm({ ...form, applicationUrl: e.target.value })}
+                placeholder="https://pmkisan.gov.in"
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs"
+              />
+            </div>
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Official Source URLs (one per line)</label>
+              <textarea
+                rows={2}
+                value={form.sourceUrls}
+                onChange={e => setForm({ ...form, sourceUrls: e.target.value })}
+                placeholder="https://myscheme.gov.in"
+                className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="font-semibold text-slate-700 block mb-1">Benefits (मुख्य लाभ - one per line)</label>
+            <textarea
+              rows={2}
+              value={form.benefits}
+              onChange={e => setForm({ ...form, benefits: e.target.value })}
+              placeholder="₹6,000 प्रति वर्ष 3 समान किस्तों में बैंक खाते में"
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold text-slate-700 block mb-1">Eligibility (पात्रता विवरण - one per line)</label>
+            <textarea
+              rows={2}
+              value={form.eligibility}
+              onChange={e => setForm({ ...form, eligibility: e.target.value })}
+              placeholder="सभी पात्र किसान परिवार जिनके नाम कृषि भूमि है"
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2 justify-end">
+            <button type="button" className="btn-ghost" onClick={onClose} disabled={create.isPending}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={create.isPending}>
+              {create.isPending ? <Loader2 size={13} className="animate-spin inline mr-1" /> : null}
+              Save Scheme
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -373,7 +849,11 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
 function JobsView() {
   const qc = useQueryClient();
   const [state, setState] = useState('FAILED');
-  const { data, isError, error, refetch } = useQuery({ queryKey: ['content-jobs', state], queryFn: () => adminApi.getContentJobs({ state, limit: 50 }) });
+  const { data, isError, error, refetch, isFetching } = useQuery({
+    queryKey: ['content-jobs', state],
+    queryFn: () => adminApi.getContentJobs({ state, limit: 50 }),
+    refetchInterval: 5_000,
+  });
   const cancel = useMutation({
     mutationFn: (id: string) => adminApi.cancelContentJob(id),
     onSuccess: () => { toast.success('Job cancelled'); qc.invalidateQueries({ queryKey: ['content-jobs'] }); },
@@ -381,21 +861,27 @@ function JobsView() {
   });
   return (
     <div className="space-y-3">
-      <select value={state} onChange={e => setState(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs">
-        {['FAILED', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'CANCELLED'].map(s => <option key={s}>{s}</option>)}
-      </select>
+      <div className="flex justify-between items-center">
+        <select value={state} onChange={e => setState(e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white">
+          {['FAILED', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'CANCELLED'].map(s => <option key={s}>{s}</option>)}
+        </select>
+        <button onClick={() => refetch()} className="btn-outline text-xs py-1 px-2.5 flex items-center gap-1">
+          <RefreshCw size={12} className={isFetching ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+
       {isError && <QueryError error={error} onRetry={refetch} />}
-      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-        {data?.data.length === 0 && <div className="p-6 text-sm text-slate-400 text-center">No {state.toLowerCase()} jobs.</div>}
+      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 shadow-sm overflow-hidden">
+        {data?.data.length === 0 && <div className="p-8 text-sm text-slate-400 text-center">No {state.toLowerCase()} jobs.</div>}
         {data?.data.map((j: any) => (
-          <div key={j.id} className="p-3 text-xs flex justify-between gap-3">
+          <div key={j.id} className="p-3.5 text-xs flex justify-between gap-3 items-center hover:bg-slate-50">
             <div className="min-w-0">
-              <div className="font-semibold">{j.type} · try {j.attempts}/{j.maxAttempts} · ${(j.costMicroUsd / 1e6).toFixed(4)}</div>
-              <div className="text-slate-500">{formatRelativeTime(j.queuedAt)}</div>
-              {j.failureReason && <div className="text-rose-600 break-words">{j.failureReason}</div>}
+              <div className="font-semibold text-slate-900">{j.type} · try {j.attempts}/{j.maxAttempts} · ${(j.costMicroUsd / 1e6).toFixed(4)}</div>
+              <div className="text-slate-500 mt-0.5">{formatRelativeTime(j.queuedAt)}</div>
+              {j.failureReason && <div className="text-rose-600 mt-1 break-words font-mono text-[11px] bg-rose-50 p-1.5 rounded">{j.failureReason}</div>}
             </div>
             {(j.state === 'QUEUED' || j.state === 'RUNNING') &&
-              <button className="btn-outline text-xs py-1" onClick={() => cancel.mutate(j.id)}>Cancel</button>}
+              <button className="btn-outline text-xs py-1 px-2.5" onClick={() => cancel.mutate(j.id)}>Cancel</button>}
           </div>
         ))}
       </div>
@@ -405,26 +891,26 @@ function JobsView() {
 
 function ReportsView({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
-  const { data, isError, error, refetch } = useQuery({ queryKey: ['content-reports'], queryFn: () => adminApi.getContentReports({ status: 'OPEN' }) });
+  const { data, isError, error, refetch } = useQuery({ queryKey: ['content-reports'], queryFn: () => adminApi.getContentReports({ status: 'OPEN' }), refetchInterval: 15_000 });
   const resolve = useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'RESOLVED' | 'DISMISSED' }) => adminApi.resolveContentReport(id, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['content-reports'] }),
     onError: (e) => toast.error(describeError(e)),
   });
   return (
-    <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+    <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 shadow-sm overflow-hidden">
       {isError && <QueryError error={error} onRetry={refetch} />}
-      {data?.data.length === 0 && <div className="p-6 text-sm text-slate-400 text-center">No open user reports.</div>}
+      {data?.data.length === 0 && <div className="p-8 text-sm text-slate-400 text-center">No open user reports.</div>}
       {data?.data.map((r: any) => (
-        <div key={r.id} className="p-3 text-xs flex justify-between gap-3">
+        <div key={r.id} className="p-3 text-xs flex justify-between gap-3 items-center hover:bg-slate-50">
           <div>
-            <button className="font-semibold text-blue-700" onClick={() => onOpen(r.shortVideo.id)}>{r.shortVideo.title}</button>
-            <div>{r.reason} · {r.shortVideo.status} · {formatRelativeTime(r.createdAt)}</div>
-            {r.note && <div className="text-slate-500">“{r.note}”</div>}
+            <button className="font-semibold text-primary text-left" onClick={() => onOpen(r.shortVideo.id)}>{r.shortVideo.title}</button>
+            <div className="text-slate-500 mt-0.5">{r.reason} · {r.shortVideo.status} · {formatRelativeTime(r.createdAt)}</div>
+            {r.note && <div className="text-slate-600 italic mt-1">“{r.note}”</div>}
           </div>
-          <div className="flex gap-1 shrink-0">
-            <button className="btn-outline text-xs py-1" onClick={() => resolve.mutate({ id: r.id, status: 'RESOLVED' })}>Resolve</button>
-            <button className="btn-ghost text-xs py-1" onClick={() => resolve.mutate({ id: r.id, status: 'DISMISSED' })}>Dismiss</button>
+          <div className="flex gap-1.5 shrink-0">
+            <button className="btn-outline text-xs py-1 px-2.5" onClick={() => resolve.mutate({ id: r.id, status: 'RESOLVED' })}>Resolve</button>
+            <button className="btn-ghost text-xs py-1 px-2.5 text-slate-500" onClick={() => resolve.mutate({ id: r.id, status: 'DISMISSED' })}>Dismiss</button>
           </div>
         </div>
       ))}
@@ -437,19 +923,19 @@ function CostsView() {
   const usd = (m?: number | null) => (m == null ? '—' : `$${(m / 1e6).toFixed(4)}`);
   const c = data?.data;
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {isError && <QueryError error={error} onRetry={refetch} />}
       {c && (<>
         <p className="text-xs text-slate-500">Estimates from configurable pricing — not provider billing.</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[['This month', usd(c.thisMonthMicroUsd)], ['Per published video', usd(c.perPublishedVideoMicroUsd)],
             ['Per 1,000 views', usd(c.per1000ViewsMicroUsd)], ['Failed-job spend', usd(c.failedJobsCostMicroUsd)]].map(([k, v]) => (
-            <div key={k} className="bg-white border border-slate-200 rounded-xl p-4"><div className="text-xs text-slate-500">{k}</div><div className="text-lg font-bold">{v}</div></div>
+            <div key={k} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><div className="text-xs text-slate-500">{k}</div><div className="text-lg font-bold text-slate-900 mt-0.5">{v}</div></div>
           ))}
         </div>
-        <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+        <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 shadow-sm overflow-hidden">
           {c.byStatus.map((s: any) => (
-            <div key={s.status} className="p-3 text-xs flex justify-between"><span>{s.status} ({s.count})</span><span>{usd(s.costMicroUsd)}</span></div>
+            <div key={s.status} className="p-3 text-xs flex justify-between"><span>{s.status} ({s.count})</span><span className="font-mono">{usd(s.costMicroUsd)}</span></div>
           ))}
         </div>
       </>)}
@@ -467,24 +953,42 @@ function ScheduleView() {
 
   const save = useMutation({
     mutationFn: (body: any) => adminApi.putContentSettings(body),
-    onSuccess: () => { toast.success('Settings saved'); setForm(null); qc.invalidateQueries({ queryKey: ['content-settings'] }); },
+    onSuccess: () => {
+      toast.success('Settings saved');
+      setForm(null);
+      qc.invalidateQueries({ queryKey: ['content-settings'] });
+    },
     onError: (e) => toast.error(describeError(e)),
   });
+
   const run = useMutation({
     mutationFn: () => adminApi.runContentIngest(),
-    onSuccess: () => toast.success('Ingest queued — the worker will pick it up shortly'),
+    onSuccess: (res: any) => {
+      const rep = res?.report;
+      const ing = rep?.ingest;
+      const created = ing?.created ?? 0;
+      const dupes = ing?.duplicates ?? 0;
+      const drafts = rep?.draftsCreated ?? 0;
+      const errs = ing?.errors?.length ? ` (${ing.errors.join('; ')})` : '';
+      toast.success(`Ingest complete! ${created} new stories, ${dupes} known, ${drafts} drafts created.${errs}`);
+      qc.invalidateQueries({ queryKey: ['content-settings'] });
+      qc.invalidateQueries({ queryKey: ['content-queue'] });
+      qc.invalidateQueries({ queryKey: ['content-counts'] });
+      qc.invalidateQueries({ queryKey: ['content-health'] });
+      qc.invalidateQueries({ queryKey: ['content-jobs'] });
+    },
     onError: (e) => toast.error(describeError(e)),
   });
 
   if (isError) return <QueryError error={error} onRetry={refetch} />;
-  if (!s) return <Loader2 className="animate-spin" />;
+  if (!s) return <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary" size={28} /></div>;
   const set = (patch: any) => setForm({ ...s, ...patch });
   const num = (k: string, label: string, hint?: string) => (
     <label className="block text-xs">
       <span className="font-semibold text-slate-700">{label}</span>
-      <input type="number" value={s[k]} onChange={e => set({ [k]: Number(e.target.value) })}
-        className="mt-1 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm" />
-      {hint && <span className="text-slate-400">{hint}</span>}
+      <input type="number" value={s[k] ?? ''} onChange={e => set({ [k]: Number(e.target.value) })}
+        className="mt-1 w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm" />
+      {hint && <span className="text-slate-400 block mt-0.5">{hint}</span>}
     </label>
   );
   const feeds: Feed[] = s.feeds ?? [];
@@ -494,73 +998,90 @@ function ScheduleView() {
     <div className="space-y-4 max-w-3xl">
       {!data?.sourceHostsConfigured && (
         <div className="border border-rose-300 bg-rose-50 rounded-xl p-3 text-xs text-rose-800">
-          <b>CONTENT_SOURCE_HOSTS is empty on the server</b> — the worker will not fetch from any feed until the hosts you are permitted to use are added to that environment variable.
+          <b>CONTENT_SOURCE_HOSTS is empty on the server</b> — the worker will not fetch from any feed until host allowlist is configured.
         </div>
       )}
       {data?.blockedFeeds?.length > 0 && data?.sourceHostsConfigured && (
         <div className="border border-amber-300 bg-amber-50 rounded-xl p-3 text-xs">Feeds blocked by the host allowlist: {data.blockedFeeds.join(', ')}</div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          <input type="checkbox" checked={s.ingestEnabled} onChange={e => set({ ingestEnabled: e.target.checked })} />
+      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 shadow-sm">
+        <label className="flex items-center gap-2 text-sm font-semibold text-slate-900 cursor-pointer">
+          <input type="checkbox" checked={s.ingestEnabled} onChange={e => set({ ingestEnabled: e.target.checked })} className="rounded text-primary focus:ring-primary" />
           Scheduled news ingestion enabled
         </label>
         <div className="grid grid-cols-2 gap-4">
           {num('ingestIntervalMinutes', 'Ingest every (minutes)', '15–1440')}
           {num('maxNewVideosPerRun', 'New drafts per run', '0–20 (limits spend)')}
-          {num('newsStaleHours', 'News is stale after (hours)', 'unpublished stale news is auto-rejected')}
+          {num('newsStaleHours', 'News is stale after (hours)', 'stale news is not drafted')}
           {num('newsAutoExpireHours', 'Auto-expire published news after (hours)', '0 = never')}
           {num('schemeVerifyMaxAgeDays', 'Scheme re-verification every (days)')}
           {num('developingFreshHours', 'Developing stories: max source age (hours)')}
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={s.autoGenerate} onChange={e => set({ autoGenerate: e.target.checked })} />
-          Automatically generate scripts and videos for new drafts
+        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+          <input type="checkbox" checked={s.autoGenerate} onChange={e => set({ autoGenerate: e.target.checked })} className="rounded text-primary focus:ring-primary" />
+          Automatically queue AI video generation for new drafts
         </label>
-        <div className="text-xs text-slate-500">Last ingest: {fmt(s.lastIngestAt)}</div>
+        <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 flex items-center justify-between">
+          <span>Last ingest run: {fmt(s.lastIngestAt)}</span>
+          <span className="text-emerald-700 font-medium">Auto-scheduler active</span>
+        </div>
       </div>
 
-      <div className={`border rounded-xl p-4 space-y-3 ${s.autoPublishEnabled ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-slate-200'}`}>
-        <label className="flex items-center gap-2 text-sm font-semibold">
-          <input type="checkbox" checked={!!s.autoPublishEnabled} onChange={e => set({ autoPublishEnabled: e.target.checked })} />
+      <div className={`border rounded-xl p-5 space-y-3 shadow-sm ${s.autoPublishEnabled ? 'bg-emerald-50 border-emerald-300' : 'bg-white border-slate-200'}`}>
+        <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
+          <input type="checkbox" checked={!!s.autoPublishEnabled} onChange={e => set({ autoPublishEnabled: e.target.checked })} className="rounded text-emerald-600 focus:ring-emerald-500" />
           Auto-publish (hands-off){s.autoPublishEnabled ? ' — ON' : ' — OFF'}
         </label>
         <p className="text-xs text-slate-600">
-          Publishes a video from the review queue only when every publish check passes: rendered video and thumbnail, cited claims, a fresh source check,
-          not stale or developing, no editorial warnings and no user reports. Anything else stays in <b>Needs Review</b> for a person.
-          Every auto-publish is logged as <code>system</code> and can be undone with Unpublish. Untick to pause instantly.
+          Publishes a video from the review queue only when every safety and editorial check passes: rendered video, thumbnail, verified claims, fresh source check, and no editorial warnings.
         </p>
         <div className="grid grid-cols-2 gap-4">
           {num('autoPublishMaxPerDay', 'Max auto-published per 24h', '0–100')}
-          <label className="flex items-center gap-2 text-xs self-end pb-2">
-            <input type="checkbox" checked={!!s.autoPublishSchemes} onChange={e => set({ autoPublishSchemes: e.target.checked })} />
-            Also auto-publish scheme (Yojana) videos
+          <label className="flex items-center gap-2 text-xs self-end pb-2 cursor-pointer">
+            <input type="checkbox" checked={!!s.autoPublishSchemes} onChange={e => set({ autoPublishSchemes: e.target.checked })} className="rounded text-emerald-600 focus:ring-emerald-500" />
+            Also auto-publish verified Yojana (Scheme) videos
           </label>
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 shadow-sm">
         <div className="flex justify-between items-center">
-          <h3 className="font-semibold text-sm">News feeds</h3>
-          <button className="btn-outline text-xs py-1" onClick={() => set({ feeds: [...feeds, { name: '', url: 'https://', category: 'INDIA' }] })}>Add feed</button>
+          <div>
+            <h3 className="font-semibold text-sm text-slate-900">News Feeds (RSS / Atom)</h3>
+            <p className="text-xs text-slate-500">Live feeds polled for real-time news and scheme updates.</p>
+          </div>
+          <button className="btn-outline text-xs py-1 px-2.5 flex items-center gap-1" onClick={() => set({ feeds: [...feeds, { name: '', url: 'https://', category: 'NEWS' }] })}>
+            <Plus size={12} /> Add Feed
+          </button>
         </div>
-        <p className="text-xs text-slate-500">Only add feeds whose terms permit automated retrieval and summarisation, and whose host is on the server allowlist.</p>
         {feeds.map((f, i) => (
-          <div key={i} className="grid grid-cols-12 gap-2">
-            <input placeholder="Publisher name" value={f.name} onChange={e => setFeed(i, { name: e.target.value })} className="col-span-3 border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
-            <input placeholder="https://…/rss" value={f.url} onChange={e => setFeed(i, { url: e.target.value })} className="col-span-6 border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
-            <input placeholder="Category" value={f.category} onChange={e => setFeed(i, { category: e.target.value })} className="col-span-2 border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
-            <button aria-label="Remove feed" className="col-span-1" onClick={() => set({ feeds: feeds.filter((_, j) => j !== i) })}><X size={16} /></button>
+          <div key={i} className="grid grid-cols-12 gap-2 items-center">
+            <input placeholder="Publisher name" value={f.name ?? ''} onChange={e => setFeed(i, { name: e.target.value })} className="col-span-3 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs" />
+            <input placeholder="https://…/rss" value={f.url ?? ''} onChange={e => setFeed(i, { url: e.target.value })} className="col-span-6 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono" />
+            <input placeholder="Category" value={f.category ?? ''} onChange={e => setFeed(i, { category: e.target.value })} className="col-span-2 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs" />
+            <button aria-label="Remove feed" className="col-span-1 text-slate-400 hover:text-rose-600 p-1 flex justify-center" onClick={() => set({ feeds: feeds.filter((_, j) => j !== i) })}>
+              <X size={16} />
+            </button>
           </div>
         ))}
-        {feeds.length === 0 && <div className="text-xs text-slate-400">No feeds configured — nothing will be ingested.</div>}
+        {feeds.length === 0 && <div className="text-xs text-slate-400 py-3 text-center">No feeds configured. Click Add Feed to add Google News, PIB, etc.</div>}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-3">
         <button className="btn-primary" disabled={!form || save.isPending}
-          onClick={() => { const { lastIngestAt, ...body } = form; save.mutate(body); }}>{save.isPending ? 'Saving…' : 'Save settings'}</button>
-        <button className="btn-outline" disabled={run.isPending || feeds.length === 0 || !!form} onClick={() => run.mutate()}>Run ingest now</button>
+          onClick={() => { const { lastIngestAt, ...body } = form; save.mutate(body); }}>
+          {save.isPending ? <Loader2 size={13} className="animate-spin inline mr-1.5" /> : null}
+          Save Settings
+        </button>
+        <button
+          className="btn-outline flex items-center gap-1.5"
+          disabled={run.isPending || feeds.length === 0}
+          onClick={() => run.mutate()}
+        >
+          {run.isPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+          {run.isPending ? 'Fetching Real-Time News...' : 'Run Ingest Now'}
+        </button>
       </div>
     </div>
   );
@@ -569,19 +1090,34 @@ function ScheduleView() {
 export default function ContentPage() {
   const [view, setView] = useState<View>('content');
   const [openId, setOpenId] = useState<string | null>(null);
+
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 space-y-5 max-w-7xl mx-auto">
       <div>
         <h1 className="text-xl font-bold text-slate-900">Yojana &amp; Daily News</h1>
-        <p className="text-xs text-slate-500">AI-assisted shorts. Nothing is public until a reviewer approves and publishes it.</p>
+        <p className="text-xs text-slate-500">Real-time government schemes &amp; daily news AI shorts management.</p>
       </div>
       <div className="flex gap-2 border-b border-slate-200">
-        {(['content', 'schedule', 'jobs', 'reports', 'costs'] as View[]).map(v => (
-          <button key={v} onClick={() => setView(v)}
-            className={`px-4 py-2 text-sm capitalize border-b-2 -mb-px ${view === v ? 'border-primary text-primary font-semibold' : 'border-transparent text-slate-500'}`}>{v}</button>
+        {[
+          { key: 'content', label: 'Review Queue' },
+          { key: 'schemes', label: 'Yojana (Schemes)' },
+          { key: 'schedule', label: 'News Schedule & Feeds' },
+          { key: 'jobs', label: 'Pipeline Jobs' },
+          { key: 'reports', label: 'User Reports' },
+          { key: 'costs', label: 'Cost Tracking' },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setView(tab.key as View)}
+            className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${view === tab.key ? 'border-primary text-primary font-semibold' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          >
+            {tab.label}
+          </button>
         ))}
       </div>
+
       {view === 'content' && <ContentList onOpen={setOpenId} />}
+      {view === 'schemes' && <SchemesView onOpenDraft={setOpenId} />}
       {view === 'jobs' && <JobsView />}
       {view === 'reports' && <ReportsView onOpen={setOpenId} />}
       {view === 'costs' && <CostsView />}

@@ -133,7 +133,8 @@ export async function safeFetchText(
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const target = await vetUrl(current, cfg, deps.resolve); // re-vet EVERY hop
     const res = await transport(target, {
-      timeoutMs: cfg.fetchTimeoutMs, maxBytes: cfg.maxFetchBytes, userAgent: 'StatusGoContentBot/1.0 (+contact: admin)',
+      timeoutMs: cfg.fetchTimeoutMs, maxBytes: cfg.maxFetchBytes,
+      userAgent: process.env.CONTENT_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     });
     if ([301, 302, 303, 307, 308].includes(res.status)) {
       const loc = res.headers.location;

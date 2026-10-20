@@ -13,7 +13,7 @@ export function contentConfig(e: NodeJS.ProcessEnv = process.env) {
     // ── Providers ────────────────────────────────────────────
     gcpProject: e.GCP_PROJECT_ID ?? e.GCS_PROJECT_ID ?? '',
     vertexLocation: e.CONTENT_VERTEX_LOCATION ?? 'asia-south1',
-    scriptModel: e.CONTENT_SCRIPT_MODEL ?? 'gemini-2.5-flash',
+    scriptModel: e.CONTENT_SCRIPT_MODEL ?? 'gemini-3.5-flash',
     ttsVoice: e.CONTENT_TTS_VOICE ?? 'hi-IN-Neural2-A',
     ttsLanguageCode: e.CONTENT_TTS_LANGUAGE ?? 'hi-IN',
     ffmpegPath: e.FFMPEG_PATH ?? 'ffmpeg',
