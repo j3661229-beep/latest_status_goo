@@ -99,7 +99,7 @@ export async function handleChangedStories(
     });
     for (const v of videos) {
       if (v.status === 'PUBLISHED') {
-        if (await systemMove(db, v.id, 'PUBLISHED', 'CORRECTION_REQUIRED', 'source_changed', note, { correctionNote: note })) takenDown++;
+        if (await systemMove(db, v.id, 'PUBLISHED', 'CORRECTION_REQUIRED', 'source_changed', note, { correctionNote: note, videoApprovedAt: null, videoApprovedById: null })) takenDown++;
       } else if (await systemMove(db, v.id, 'APPROVED', 'NEEDS_REVIEW', 'source_changed', note)) {
         sentBack++;
       }
@@ -134,7 +134,7 @@ export async function checkPublishedSources(
       const gone = e instanceof FetchError && (e.status === 404 || e.status === 410);
       if (!gone || e instanceof UnsafeUrlError) { out.inconclusive++; continue; }
       const note = `मूल खबर का लिंक अब उपलब्ध नहीं है (HTTP ${(e as FetchError).status}) — स्रोत की पुष्टि करें`;
-      if (await systemMove(db, r.id, 'PUBLISHED', 'CORRECTION_REQUIRED', 'source_unavailable', note, { correctionNote: note })) out.takenDown++;
+      if (await systemMove(db, r.id, 'PUBLISHED', 'CORRECTION_REQUIRED', 'source_unavailable', note, { correctionNote: note, videoApprovedAt: null, videoApprovedById: null })) out.takenDown++;
     }
   }
   return out;

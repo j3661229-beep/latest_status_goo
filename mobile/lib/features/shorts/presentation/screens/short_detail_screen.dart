@@ -6,7 +6,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/api/api_error.dart';
 import '../../../../core/utils/app_actions.dart';
@@ -16,6 +15,7 @@ import '../../data/shorts_repository.dart';
 import '../providers/shorts_feed_provider.dart';
 import '../short_format.dart';
 import '../widgets/report_sheet.dart';
+import '../widgets/short_status_share_sheet.dart';
 
 class ShortDetailScreen extends ConsumerStatefulWidget {
   const ShortDetailScreen({super.key, required this.id});
@@ -41,15 +41,8 @@ class _ShortDetailScreenState extends ConsumerState<ShortDetailScreen> {
   }
 
   Future<void> _share(ShortItem item) async {
-    final link = item.primaryLink;
-    final text = [
-      item.title,
-      if (item.kind == ShortKind.scheme && link != null) 'आधिकारिक वेबसाइट: $link',
-      if (item.kind == ShortKind.news && item.news != null) 'स्रोत: ${item.news!.publisher}${link != null ? '\n$link' : ''}',
-      '— Status Go',
-    ].join('\n');
     ref.read(shortsRepositoryProvider).event(item.id, 'SHARE');
-    await Share.share(text, subject: item.title);
+    await showShortStatusShareSheet(context, item);
   }
 
   Future<void> _open(ShortItem item, String url) async {

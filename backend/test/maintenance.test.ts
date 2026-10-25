@@ -42,7 +42,6 @@ function deps(prisma: any, over: Partial<TickDeps> = {}) {
   const d: TickDeps & { unlock: any } = {
     prisma, unlock,
     lock: async () => unlock,
-    startGeneration: vi.fn().mockResolvedValue('SCRIPT'),
     now: () => NOW,
     fetchText: async () => ({ text: '' }),
     ingest: vi.fn().mockResolvedValue(ingestResult()),
@@ -51,13 +50,13 @@ function deps(prisma: any, over: Partial<TickDeps> = {}) {
   return d;
 }
 
-const story = (id: string) => ({ id, originalHeadline: `ख़बर ${id}`, category: 'INDIA', language: 'HINDI', publishedAt: new Date(NOW.getTime() - H) });
+const story = (id: string) => ({ id, originalHeadline: `ख़बर ${id}`, category: 'INDIA', language: 'HINDI', publisher: 'PIB', summary: `सारांश ${id}`, publishedAt: new Date(NOW.getTime() - H) });
 const ON = { 'content.news_ingest_enabled': 'true', 'content.news_feeds': JSON.stringify(feeds) };
 
 describe('settings', () => {
   it('defaults are the safe ones: ingestion off, no feeds', async () => {
     const s = await loadSettings(mkPrisma());
-    expect(s).toMatchObject({ ingestEnabled: false, feeds: [], autoGenerate: true, newsStaleHours: 48 });
+    expect(s).toMatchObject({ ingestEnabled: false, feeds: [], newsStaleHours: 48 });
     expect(ingestDue(s, NOW)).toBe(false);
   });
   it('tolerates corrupt values without throwing (a bad config must not kill the scheduler)', async () => {
@@ -111,27 +110,31 @@ describe('maintenance tick', () => {
     expect(d.unlock).toHaveBeenCalled();
   });
 
-  it('when due: ingests, records the run, drafts fresh stories (capped) and queues generation', async () => {
+  it('when due: ingests, records the run and drafts fresh stories as CARD_ONLY (capped) — with zero video jobs', async () => {
     const config = { ...ON, 'content.news_max_new_videos_per_run': '2' };
     const p = mkPrisma(config, [story('a'), story('b')]);
     const d = deps(p, { ingest: vi.fn().mockResolvedValue(ingestResult({ created: 3 })) as any });
     const r = await runMaintenanceTick(d);
-    expect(r).toMatchObject({ draftsCreated: 2, generationQueued: 2 });
+    expect(r).toMatchObject({ draftsCreated: 2 });
+    expect(r).not.toHaveProperty('generationQueued');
+    expect(p.contentJob.create).not.toHaveBeenCalled();
+    expect(p.contentJob.updateMany).not.toHaveBeenCalled();
     expect(p.newsStory.findMany.mock.calls[0][0]).toMatchObject({ take: 2, orderBy: { publishedAt: 'desc' } });
     expect(p.created.map((v: any) => v.newsStoryId)).toEqual(['a', 'b']);
     expect(config['content.last_ingest_at']).toBe(NOW.toISOString());
     // Drafts only: nothing is created in any state beyond DRAFT (default), and nothing is published.
     expect(p.created.every((v: any) => v.status === undefined && v.publishedAt === undefined)).toBe(true);
+    expect(p.created.every((v: any) => v.format === 'CARD_ONLY' && v.videoState === undefined)).toBe(true);
+    expect(p.created[0]).toMatchObject({ description: 'सारांश a', attribution: 'स्रोत: PIB' }); // prefilled from the stored source, for admin review
     const allUpdates = JSON.stringify(p.shortVideo.updateMany.mock.calls);
     expect(allUpdates).not.toContain('"PUBLISHED"');
   });
 
-  it('autoGenerate=false still creates drafts but spends nothing', async () => {
-    const p = mkPrisma({ ...ON, 'content.news_auto_generate': 'false' }, [story('a')]);
-    const d = deps(p);
-    const r = await runMaintenanceTick(d);
-    expect(r).toMatchObject({ draftsCreated: 1, generationQueued: 0 });
-    expect(d.startGeneration).not.toHaveBeenCalled();
+  it('the legacy auto-generate setting can no longer cause generation', async () => {
+    const p = mkPrisma({ ...ON, 'content.news_auto_generate': 'true' }, [story('a')]);
+    const r = await runMaintenanceTick(deps(p));
+    expect(r).toMatchObject({ draftsCreated: 1 });
+    expect(p.contentJob.create).not.toHaveBeenCalled();
   });
 
   it('is not due inside the interval, and runs again after it', async () => {
@@ -154,21 +157,13 @@ describe('maintenance tick', () => {
     expect(d2.ingest).not.toHaveBeenCalled();
   });
 
-  it('failed feeds create no drafts and queue no generation (no fabricated news)', async () => {
+  it('failed feeds create no drafts (no fabricated news)', async () => {
     const p = mkPrisma({ ...ON }, []); // nothing fresh and undrafted
     const d = deps(p, { ingest: vi.fn().mockResolvedValue(ingestResult({ errors: ['PIB: HTTP 403'] })) as any });
     const r = await runMaintenanceTick(d);
     expect(r.ingest?.errors).toEqual(['PIB: HTTP 403']);
-    expect(r).toMatchObject({ draftsCreated: 0, generationQueued: 0 });
+    expect(r).toMatchObject({ draftsCreated: 0 });
     expect(p.shortVideo.create).not.toHaveBeenCalled();
-  });
-
-  it('one failing generation enqueue does not abort the others', async () => {
-    const p = mkPrisma({ ...ON }, [story('a'), story('b')]);
-    const start = vi.fn().mockRejectedValueOnce(new Error('redis down')).mockResolvedValue('SCRIPT');
-    const r = await runMaintenanceTick(deps(p, { startGeneration: start }));
-    expect(start).toHaveBeenCalledTimes(2);
-    expect(r).toMatchObject({ draftsCreated: 2, generationQueued: 1 });
   });
 
   it('releases the lock even when ingestion throws', async () => {

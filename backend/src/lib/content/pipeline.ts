@@ -1,13 +1,17 @@
 // src/lib/content/pipeline.ts
-// Shared generation pipeline for scheme and news shorts. Each stage is a pure-ish function over
+// Shared VIDEO generation pipeline for scheme and news items. Each stage is a pure-ish function over
 // injected dependencies (DB, providers, storage, exec) so it can be tested with mocks and run from
-// a BullMQ worker. Stages never publish: they end at NEEDS_REVIEW.
-//   SCRIPT    sources → validated structured script          (DRAFT/SOURCE_VERIFIED/SCRIPT_READY → SCRIPT_READY)
-//   NARRATION Hindi TTS (cached per script version)          (SCRIPT_READY → GENERATING)
-//   RENDER    ffmpeg render + thumbnail + upload             (GENERATING → GENERATED → NEEDS_REVIEW)
+// a BullMQ worker.
+//
+// The pipeline only ever acts on `videoState` — never on the card's editorial `status` — and only
+// after an admin explicitly requested a video (videoState QUEUED/GENERATING). A failed video sets
+// videoState = FAILED and leaves the card (status, text, publication) untouched. Stages never
+// publish and never approve: a READY video still needs an explicit admin approval to be playable.
+//   SCRIPT    sources → validated structured script          (QUEUED → GENERATING)
+//   NARRATION Hindi TTS (cached per script version)          (GENERATING)
+//   RENDER    ffmpeg render + thumbnail + upload             (GENERATING → READY, awaiting approval)
 import type { ContentJobType, Prisma, PrismaClient } from '@prisma/client';
 import { contentConfig, ContentConfig } from './config';
-import { assertTransition } from './lifecycle';
 import { ScriptProvider, generateValidatedScript, ScriptValidationError, SourceDoc, Script } from './script';
 import { TtsProvider, narrate } from './tts';
 import { renderShort, Exec, defaultExec } from './render';
@@ -90,17 +94,31 @@ async function finishJob(d: PipelineDeps, jobId: string, data: { costMicroUsd: n
   });
 }
 
-/** Called by the worker on a failed attempt. `final` = no more retries → video becomes FAILED. */
+/** Admin-facing failure text: never leaks URLs, paths, keys or provider internals. */
+export function sanitizeFailure(err: Error): string {
+  if (!(err instanceof PermanentError)) return 'Video generation failed because of a temporary service problem. Please try again.';
+  const msg = err.message
+    .replace(/https?:\/\/\S+/gi, '[link]')
+    .replace(/[A-Za-z]:\\\S+|\/(?:[\w.-]+\/)+[\w.-]+/g, '[path]')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return msg.slice(0, 200) || 'Video generation failed.';
+}
+
+/** Called by the worker on a failed attempt. `final` = no more retries → the VIDEO becomes FAILED (the card is untouched). */
 export async function recordFailure(d: PipelineDeps, type: Stage, videoId: string, err: Error, final: boolean) {
-  const v = await d.prisma.shortVideo.findUnique({ where: { id: videoId }, select: { scriptVersion: true, status: true } });
+  const v = await d.prisma.shortVideo.findUnique({ where: { id: videoId }, select: { scriptVersion: true } });
   if (!v) return;
   const key = idempotencyKey(type, videoId, v.scriptVersion);
   await d.prisma.contentJob.updateMany({
     where: { idempotencyKey: key, state: { not: 'CANCELLED' } },
     data: { state: 'FAILED', failureReason: err.message.slice(0, 1000), finishedAt: (d.now ?? (() => new Date()))() },
   });
-  if (final && v.status !== 'FAILED' && v.status !== 'PUBLISHED') {
-    await d.prisma.shortVideo.updateMany({ where: { id: videoId, status: v.status }, data: { status: 'FAILED' } });
+  if (final) {
+    await d.prisma.shortVideo.updateMany({
+      where: { id: videoId, videoState: { in: ['QUEUED', 'GENERATING'] } },
+      data: { videoState: 'FAILED', videoFailureReason: sanitizeFailure(err) },
+    });
   }
 }
 
@@ -114,14 +132,19 @@ async function load(d: PipelineDeps, id: string): Promise<Video> {
   return v;
 }
 
-/** Atomic status change; fails if someone else moved the item meanwhile. */
-async function setStatus(d: PipelineDeps, v: Pick<Video, 'id' | 'status'>, to: Video['status'], data: Prisma.ShortVideoUpdateInput = {}) {
-  if (v.status !== to) {
-    assertTransition(v.status, to);
-    const r = await d.prisma.shortVideo.updateMany({ where: { id: v.id, status: v.status }, data: { status: to } });
-    if (r.count === 0) throw new SkippedError('Content changed state concurrently');
+/**
+ * Gate for every stage: the work must have been explicitly requested by an admin and not since
+ * cancelled/reset. This is what guarantees nothing renders for CARD_ONLY or un-requested items.
+ */
+function assertRequested(v: Pick<Video, 'format' | 'videoState'>) {
+  if (v.format !== 'CARD_WITH_VIDEO' || (v.videoState !== 'QUEUED' && v.videoState !== 'GENERATING')) {
+    throw new SkippedError(`Video not requested (format ${v.format}, state ${v.videoState})`);
   }
-  if (Object.keys(data).length) await d.prisma.shortVideo.update({ where: { id: v.id }, data });
+}
+
+/** QUEUED → GENERATING when the first stage starts (no-op if already generating). */
+async function markGenerating(d: PipelineDeps, id: string) {
+  await d.prisma.shortVideo.updateMany({ where: { id, videoState: 'QUEUED' }, data: { videoState: 'GENERATING' } });
 }
 
 // ── Stage 1: sources + script ────────────────────────────────
@@ -170,12 +193,12 @@ export async function collectSources(d: PipelineDeps, v: Video): Promise<SourceD
 export async function runScriptStage(d: PipelineDeps, videoId: string) {
   const cfg = d.cfg ?? contentConfig();
   const v = await load(d, videoId);
-  if (!['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY'].includes(v.status)) throw new SkippedError(`Not in a scriptable state: ${v.status}`);
+  assertRequested(v);
   const job = await beginJob(d, 'SCRIPT', v);
   if (!job) throw new SkippedError('Script stage already done or running');
+  await markGenerating(d, videoId);
   try {
     const sources = await collectSources(d, v);
-    if (v.status === 'DRAFT') await setStatus(d, v, 'SOURCE_VERIFIED');
     if (await isCancelled(d, job.id)) throw new SkippedError('Cancelled');
 
     const known = v.scheme ? [v.scheme.applicationUrl].filter(Boolean) as string[] : [];
@@ -184,9 +207,12 @@ export async function runScriptStage(d: PipelineDeps, videoId: string) {
     }, cfg, known);
 
     const cur = await load(d, videoId);
-    await setStatus(d, cur, 'SCRIPT_READY', {
-      title: r.script.title, hook: r.script.hook, description: r.script.description,
-      attribution: r.script.attributionText,
+    assertRequested(cur);
+    // The card's text is admin-owned: the generated script only fills card fields that are still empty.
+    await d.prisma.shortVideo.update({ where: { id: videoId }, data: {
+      ...(!cur.hook?.trim() && { hook: r.script.hook }),
+      ...(!cur.description?.trim() && { description: r.script.description }),
+      ...(!cur.attribution?.trim() && { attribution: r.script.attributionText }),
       script: r.script as unknown as Prisma.InputJsonValue,
       captions: r.script.scenes.map((sc, i) => ({ i, text: sc.caption })) as unknown as Prisma.InputJsonValue,
       claims: r.script.claims as unknown as Prisma.InputJsonValue,
@@ -195,7 +221,7 @@ export async function runScriptStage(d: PipelineDeps, videoId: string) {
       costMicroUsd: { increment: r.costMicroUsd },
       // Regenerating an existing script invalidates old media and starts a new version.
       ...(cur.script ? { scriptVersion: { increment: 1 }, videoKey: null, audioKey: null, thumbnailKey: null } : {}),
-    });
+    } });
     await finishJob(d, job.id, { costMicroUsd: r.costMicroUsd });
     return { next: 'NARRATION' as Stage, costMicroUsd: r.costMicroUsd };
   } catch (e) {
@@ -208,18 +234,19 @@ export async function runScriptStage(d: PipelineDeps, videoId: string) {
 export async function runNarrationStage(d: PipelineDeps, videoId: string) {
   const cfg = d.cfg ?? contentConfig();
   const v = await load(d, videoId);
+  assertRequested(v);
   const script = v.script as unknown as Script | null;
   if (!script?.narration) throw new PermanentError('No script to narrate');
   const meta = (v.aiMeta ?? {}) as Record<string, any>;
 
   // Cache: audio is generated once per script version.
   if (v.audioKey && meta.tts?.scriptVersion === v.scriptVersion) {
-    if (v.status === 'SCRIPT_READY') await setStatus(d, v, 'GENERATING');
+    await markGenerating(d, videoId);
     return { next: 'RENDER' as Stage, costMicroUsd: 0, cached: true };
   }
-  if (!['SCRIPT_READY', 'GENERATING'].includes(v.status)) throw new SkippedError(`Not narratable in state ${v.status}`);
   const job = await beginJob(d, 'NARRATION', v);
   if (!job) throw new SkippedError('Narration already done or running');
+  await markGenerating(d, videoId);
 
   const r = await narrate(d.tts, script.narration, cfg);
   if (await isCancelled(d, job.id)) throw new SkippedError('Cancelled');
@@ -227,7 +254,7 @@ export async function runNarrationStage(d: PipelineDeps, videoId: string) {
   await d.storage.put(key, r.audio, 'audio/mpeg');
 
   const cur = await load(d, videoId);
-  if (cur.status === 'SCRIPT_READY') await setStatus(d, cur, 'GENERATING');
+  assertRequested(cur);
   await d.prisma.shortVideo.update({
     where: { id: v.id },
     data: {
@@ -244,11 +271,12 @@ export async function runNarrationStage(d: PipelineDeps, videoId: string) {
 export async function runRenderStage(d: PipelineDeps, videoId: string) {
   const cfg = d.cfg ?? contentConfig();
   const v = await load(d, videoId);
-  if (v.status !== 'GENERATING') throw new SkippedError(`Not renderable in state ${v.status}`);
+  assertRequested(v);
   const script = v.script as unknown as Script | null;
   if (!script || !v.audioKey) throw new PermanentError('Script or narration audio missing');
   const job = await beginJob(d, 'RENDER', v);
   if (!job) throw new SkippedError('Render already done or running');
+  await markGenerating(d, videoId);
 
   const audio = await d.storage.get(v.audioKey);
   const endCard = v.kind === 'SCHEME'
@@ -270,13 +298,17 @@ export async function runRenderStage(d: PipelineDeps, videoId: string) {
   await d.storage.put(vKey, rendered.video, 'video/mp4');
   await d.storage.put(tKey, rendered.thumbnail, 'image/jpeg');
 
-  const cur = await load(d, videoId);
-  await setStatus(d, cur, 'GENERATED', {
-    videoKey: vKey, thumbnailKey: tKey, durationSec: rendered.durationSec,
-    costMicroUsd: { increment: rendered.costMicroUsd },
+  // Atomic: only if the video is still wanted (not cancelled / reset by an admin while rendering).
+  // A fresh render is never auto-approved: an admin must preview and approve it.
+  const done = await d.prisma.shortVideo.updateMany({
+    where: { id: videoId, format: 'CARD_WITH_VIDEO', videoState: { in: ['QUEUED', 'GENERATING'] }, scriptVersion: v.scriptVersion },
+    data: {
+      videoKey: vKey, thumbnailKey: tKey, durationSec: rendered.durationSec,
+      videoState: 'READY', videoFailureReason: null, videoApprovedAt: null, videoApprovedById: null,
+      costMicroUsd: { increment: rendered.costMicroUsd },
+    },
   });
-  const gen = await load(d, videoId);
-  await setStatus(d, gen, 'NEEDS_REVIEW'); // human review is mandatory; nothing here publishes
+  if (done.count === 0) throw new SkippedError('Video request was cancelled or changed during rendering');
   await finishJob(d, job.id, { costMicroUsd: rendered.costMicroUsd });
   return { next: null, costMicroUsd: rendered.costMicroUsd };
 }

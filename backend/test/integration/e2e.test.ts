@@ -104,7 +104,7 @@ run('end-to-end (real Postgres, faked providers)', () => {
 
   let videoId = '';
 
-  it('scheme: manual entry → verify → draft → pipeline → review → publish → public feed', async () => {
+  it('scheme: manual entry → verify → card draft → explicit video request → pipeline → review → publish card → approve video → public feed', async () => {
     // creators cannot do any of this
     expect((await api('POST', '/admin/content/schemes', 'CREATOR', {})).statusCode).toBe(403);
 
@@ -117,22 +117,31 @@ run('end-to-end (real Postgres, faked providers)', () => {
     const schemeId = created.json().data.id;
     expect((await api('POST', '/admin/content/schemes', 'MANAGER', { slug: 'pm-kisan-e2e', officialName: 'dup dup', nameHi: 'डुप', category: 'FARMER' })).statusCode).toBe(409);
 
-    // Pipeline refuses an unverified scheme.
+    // A new draft is a plain card: CARD_ONLY, no video job, text prefilled from the stored source.
     const draft = await api('POST', '/admin/content/drafts', 'MANAGER', { kind: 'SCHEME', schemeId, title: 'पीएम किसान', category: 'FARMER' });
     expect(draft.statusCode).toBe(201);
     videoId = draft.json().data.id;
-    const unverified = await runStage(deps, 'SCRIPT', videoId).catch((e) => e);
-    expect(String(unverified.message)).toMatch(/verified/);
-    await recordFailure(deps, 'SCRIPT', videoId, unverified, false); // what the worker's 'failed' handler does
-    expect((await prisma.contentJob.findFirstOrThrow({ where: { shortVideoId: videoId } })).state).toBe('FAILED');
+    expect(draft.json().data).toMatchObject({ format: 'CARD_ONLY', videoState: 'NOT_REQUESTED' });
+    expect(await prisma.contentJob.count({ where: { shortVideoId: videoId } })).toBe(0);
+
+    // The stages refuse to run for a card that nobody asked a video for.
+    await expect(runStage(deps, 'SCRIPT', videoId)).rejects.toThrow(/not requested/);
+
+    // Requesting a video needs the Card + Video format, and an unverified scheme is not eligible.
+    expect((await api('POST', `/admin/content/${videoId}/video/generate`)).statusCode).toBe(422);
+    expect((await api('PATCH', `/admin/content/${videoId}/format`, 'MANAGER', { format: 'CARD_WITH_VIDEO' })).statusCode).toBe(200);
+    expect((await api('POST', `/admin/content/${videoId}/video/generate`)).statusCode).toBe(422);
 
     expect((await api('POST', `/admin/content/schemes/${schemeId}/verify`)).statusCode).toBe(200);
+    const queued = await api('POST', `/admin/content/${videoId}/video/generate`);
+    expect(queued.statusCode).toBe(202);
+    expect((await api('POST', `/admin/content/${videoId}/video/generate`)).json()).toMatchObject({ duplicate: true });
     await runStage(deps, 'SCRIPT', videoId);
     await runStage(deps, 'NARRATION', videoId);
     await runStage(deps, 'RENDER', videoId);
 
     const v = await prisma.shortVideo.findUniqueOrThrow({ where: { id: videoId } });
-    expect(v.status).toBe('NEEDS_REVIEW');
+    expect(v).toMatchObject({ status: 'DRAFT', videoState: 'READY', videoApprovedAt: null }); // rendered, NOT approved, card untouched
     expect(v.costMicroUsd).toBeGreaterThan(0);
     expect(v.videoKey).toBe(`content/video/${videoId}/v1.mp4`);
     expect(storage.has(v.videoKey!)).toBe(true);
@@ -142,8 +151,9 @@ run('end-to-end (real Postgres, faked providers)', () => {
     expect((await publicGet('/schemes')).json().data).toHaveLength(0);
     expect((await publicGet(`/shorts/${videoId}`)).statusCode).toBe(404);
 
-    // Publishing before approval is impossible.
+    // Publishing before review/approval is impossible.
     expect((await api('POST', `/admin/content/${videoId}/publish`)).statusCode).toBe(409);
+    expect((await api('POST', `/admin/content/${videoId}/request-review`)).statusCode).toBe(200);
 
     // Two reviewers approve at the same moment: exactly one decision is recorded.
     const [a, b] = await Promise.all([api('POST', `/admin/content/${videoId}/approve`), api('POST', `/admin/content/${videoId}/approve`)]);
@@ -152,9 +162,14 @@ run('end-to-end (real Postgres, faked providers)', () => {
     expect(await prisma.contentReview.count({ where: { shortVideoId: videoId, action: 'approve' } })).toBe(1);
 
     expect((await api('POST', `/admin/content/${videoId}/publish`)).statusCode).toBe(200);
+    // The card is live, but the video is NOT playable until an admin approves it.
+    const cardOnly = (await publicGet('/schemes')).json();
+    expect(cardOnly.data).toHaveLength(1);
+    expect(cardOnly.data[0]).toMatchObject({ id: videoId, videoUrl: null, thumbnailUrl: null, durationSec: null });
+    expect((await api('POST', `/admin/content/${videoId}/video/approve`)).statusCode).toBe(200);
     const feed = (await publicGet('/schemes')).json();
     expect(feed.data).toHaveLength(1);
-    expect(feed.data[0]).toMatchObject({ id: videoId, kind: 'SCHEME', title: 'पीएम किसान सम्मान निधि' });
+    expect(feed.data[0]).toMatchObject({ id: videoId, kind: 'SCHEME', title: 'पीएम किसान सम्मान निधि', format: 'CARD_WITH_VIDEO' });
     expect(feed.data[0].videoUrl).toContain(`content/video/${videoId}/v1.mp4`);
     expect(feed.data[0]).not.toHaveProperty('costMicroUsd');
     expect(feed.data[0].disclaimer).toMatch(/AI-assisted/);
@@ -202,14 +217,15 @@ run('end-to-end (real Postgres, faked providers)', () => {
     const edit = await api('PATCH', `/admin/content/${videoId}`, 'MANAGER', { script: { narration: 'यह सुधारी हुई कथा है, पर्याप्त लंबी है।' } });
     expect(edit.statusCode).toBe(200);
     const v = await prisma.shortVideo.findUniqueOrThrow({ where: { id: videoId } });
-    expect(v).toMatchObject({ status: 'SCRIPT_READY', videoKey: null, audioKey: null, scriptVersion: 2 });
-    // Approval is impossible until it has been regenerated and reviewed again.
+    expect(v).toMatchObject({ status: 'CORRECTION_REQUIRED', videoState: 'NOT_REQUESTED', videoKey: null, audioKey: null, videoApprovedAt: null, scriptVersion: 2 });
+    // Approval is impossible until the card is back in review.
     expect((await api('POST', `/admin/content/${videoId}/approve`)).statusCode).toBe(409);
 
-    // Regenerate from the edited script: narration cached by version, render again, back in review.
+    // Regenerate from the edited script: an explicit request, narration cached by version, render again.
+    expect((await api('POST', `/admin/content/${videoId}/video/generate`)).statusCode).toBe(202);
     await runStage(deps, 'NARRATION', videoId);
     await runStage(deps, 'RENDER', videoId);
-    expect((await prisma.shortVideo.findUniqueOrThrow({ where: { id: videoId } })).status).toBe('NEEDS_REVIEW');
+    expect((await prisma.shortVideo.findUniqueOrThrow({ where: { id: videoId } })).videoState).toBe('READY');
     expect((await prisma.shortVideo.findUniqueOrThrow({ where: { id: videoId } })).videoKey).toBe(`content/video/${videoId}/v2.mp4`);
 
     const trail = await prisma.contentReview.findMany({ where: { shortVideoId: videoId }, orderBy: { createdAt: 'asc' } });
@@ -232,7 +248,7 @@ run('end-to-end (real Postgres, faked providers)', () => {
       `<item><title>${title}</title><link>${link}</link><pubDate>${new Date(Date.now() - ageH * 3_600_000).toUTCString()}</pubDate><description>${'विवरण '.repeat(30)}</description></item>`;
     const rss = (...items: string[]) => `<rss><channel>${items.join('')}</channel></rss>`;
     const tickDeps = (xml: string | (() => never), extra: any = {}) => ({
-      prisma, cfg: contentConfig({} as any), lock: async () => async () => {}, startGeneration: vi.fn().mockResolvedValue('SCRIPT'),
+      prisma, cfg: contentConfig({} as any), lock: async () => async () => {},
       fetchText: async () => { if (typeof xml === 'function') xml(); return { text: xml as string }; }, ...extra,
     });
 
@@ -247,10 +263,12 @@ run('end-to-end (real Postgres, faked providers)', () => {
       await saveSettings(prisma, { ingestEnabled: true }, 'admin-it');
       const r = await runMaintenanceTick(d as any);
       expect(r.ingest).toMatchObject({ created: 3, rejected: 1 });
-      expect(r).toMatchObject({ draftsCreated: 2, generationQueued: 2 }); // capped at 2, newest first
+      expect(r).toMatchObject({ draftsCreated: 2 }); // capped at 2, newest first
       const videos = await prisma.shortVideo.findMany({ where: { kind: 'NEWS' }, include: { newsStory: true } });
       expect(videos.map((x) => x.newsStory!.originalHeadline).sort()).toEqual(['दूसरी ख़बर', 'पहली ख़बर']);
       expect(videos.every((x) => x.status === 'DRAFT' && x.publishedAt === null)).toBe(true);
+      expect(videos.every((x) => x.format === 'CARD_ONLY' && x.videoState === 'NOT_REQUESTED')).toBe(true); // ingestion never requests a video
+      expect(await prisma.contentJob.count({ where: { type: { in: ['SCRIPT', 'NARRATION', 'RENDER'] } } })).toBe(0);
 
       // Interval not elapsed → no second ingest; the undrafted third story is picked up on a later due run.
       const again = await runMaintenanceTick(d as any);
@@ -311,7 +329,7 @@ run('end-to-end (real Postgres, faked providers)', () => {
         data: { originalHeadline: 'gate', publisher: 'PIB', canonicalUrl: 'https://pib.gov.in/gate', dedupeKey: 'gate', category: 'INDIA', publishedAt: new Date(Date.now() - 3_600_000), lastVerifiedAt: new Date(Date.now() - 20 * 3_600_000) },
       });
       const v = await prisma.shortVideo.create({
-        data: { kind: 'NEWS', newsStoryId: story.id, title: 'gate video', category: 'INDIA', status: 'APPROVED', videoKey: 'v', thumbnailKey: 't', attribution: 'a', claims: [{ text: 'x', sourceUrl: 'https://pib.gov.in/gate' }] },
+        data: { kind: 'NEWS', newsStoryId: story.id, title: 'gate video', description: 'सारांश', category: 'INDIA', status: 'APPROVED', videoKey: 'v', thumbnailKey: 't', attribution: 'a', claims: [{ text: 'x', sourceUrl: 'https://pib.gov.in/gate' }] },
       });
       const blocked = await api('POST', `/admin/content/${v.id}/publish`);
       expect(blocked.statusCode).toBe(422);

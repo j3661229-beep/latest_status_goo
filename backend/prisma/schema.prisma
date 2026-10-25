@@ -532,6 +532,21 @@ enum ContentKind {
   NEWS
 }
 
+/// How an item is presented. CARD_ONLY never has a video job; CARD_WITH_VIDEO only after an explicit admin request.
+enum ContentFormat {
+  CARD_ONLY
+  CARD_WITH_VIDEO
+}
+
+/// Video render lifecycle, independent of the card's editorial `status`.
+enum VideoState {
+  NOT_REQUESTED
+  QUEUED
+  GENERATING
+  READY
+  FAILED
+}
+
 enum ContentStatus {
   DRAFT
   SOURCE_VERIFIED
@@ -692,6 +707,16 @@ model ShortVideo {
   reportCount    Int           @default(0)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+
+  // Admin-controlled format. The video is publicly playable only when
+  // format = CARD_WITH_VIDEO && videoState = READY && videoApprovedAt is set.
+  format             ContentFormat @default(CARD_ONLY)
+  videoState         VideoState    @default(NOT_REQUESTED)
+  videoRequestedAt   DateTime?
+  videoRequestedById String?
+  videoApprovedAt    DateTime?
+  videoApprovedById  String?
+  videoFailureReason String? // sanitized; shown to admins only
 
   scheme    Scheme?          @relation(fields: [schemeId], references: [id], onDelete: SetNull)
   newsStory NewsStory?       @relation(fields: [newsStoryId], references: [id], onDelete: SetNull)

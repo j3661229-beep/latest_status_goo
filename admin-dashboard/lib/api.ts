@@ -170,8 +170,12 @@ export const adminApi = {
   updateScheme: (id: string, body: Record<string, any>) => api.put(`/admin/content/schemes/${id}`, body).then(r => r.data),
   deleteScheme: (id: string) => api.delete(`/admin/content/schemes/${id}`).then(r => r.data),
   verifyScheme: (id: string) => api.post(`/admin/content/schemes/${id}/verify`).then(r => r.data),
-  createSchemeDraft: (id: string, autoGenerate = true) =>
-    api.post(`/admin/content/schemes/${id}/draft`, { autoGenerate }).then(r => r.data),
+  // Creating a draft never generates a video (drafts are CARD_ONLY).
+  createSchemeDraft: (id: string) => api.post(`/admin/content/schemes/${id}/draft`, {}).then(r => r.data),
   seedSchemes: () => api.post('/admin/content/schemes/seed').then(r => r.data),
-  generateVideo: (shortVideoId: string) => api.post('/admin/content/generate', { shortVideoId }).then(r => r.data),
+  // Format + video (explicit admin actions only)
+  setContentFormat: (id: string, format: 'CARD_ONLY' | 'CARD_WITH_VIDEO') =>
+    api.patch(`/admin/content/${id}/format`, { format }).then(r => r.data),
+  publishCard: (id: string, body: Record<string, any> = {}) => api.post(`/admin/content/${id}/publish-card`, body).then(r => r.data),
+  generateVideo: (id: string) => api.post(`/admin/content/${id}/video/generate`).then(r => r.data),
 };

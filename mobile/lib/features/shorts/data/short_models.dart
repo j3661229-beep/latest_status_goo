@@ -6,6 +6,16 @@
 
 enum ShortKind { news, scheme }
 
+/// How the admin chose to present an item. `null` on a [ShortItem] means an older API
+/// record without the field (treated as "show a video if the server sent one").
+enum ContentFormat { cardOnly, cardWithVideo }
+
+ContentFormat? _format(dynamic v) => switch (v) {
+      'CARD_ONLY' => ContentFormat.cardOnly,
+      'CARD_WITH_VIDEO' => ContentFormat.cardWithVideo,
+      _ => null,
+    };
+
 extension ShortKindX on ShortKind {
   String get apiValue => this == ShortKind.news ? 'NEWS' : 'SCHEME';
   String get label => this == ShortKind.news ? 'दैनिक समाचार' : 'योजना और छात्रवृत्ति';
@@ -113,7 +123,9 @@ class ShortItem {
   final ShortKind kind;
   final String title;
   final String? hook;
+  final String? summary; // card text (~60 words)
   final String category;
+  final ContentFormat? format;
   final String? videoUrl;
   final String? thumbnailUrl;
   final double? durationSec;
@@ -135,7 +147,9 @@ class ShortItem {
     required this.kind,
     required this.title,
     required this.category,
+    this.format,
     this.hook,
+    this.summary,
     this.videoUrl,
     this.thumbnailUrl,
     this.durationSec,
@@ -152,12 +166,16 @@ class ShortItem {
     this.warnings = const [],
   });
 
+  /// True only for an approved, playable admin-generated video. The server omits `videoUrl`
+  /// until then; a CARD_ONLY item never shows a video even if a stale URL slipped through.
+  bool get hasVideo => videoUrl != null && format != ContentFormat.cardOnly;
+
   /// The one link a user should follow: official application page for schemes,
   /// the publisher's article for news.
   String? get primaryLink => kind == ShortKind.scheme ? scheme?.applicationUrl : news?.url;
 
   ShortItem copyWith({bool? isSaved}) => ShortItem(
-        id: id, kind: kind, title: title, category: category, hook: hook, videoUrl: videoUrl,
+        id: id, kind: kind, title: title, category: category, format: format, hook: hook, summary: summary, videoUrl: videoUrl,
         thumbnailUrl: thumbnailUrl, durationSec: durationSec, attribution: attribution,
         publishedAt: publishedAt, correctionNote: correctionNote, disclaimer: disclaimer,
         isSaved: isSaved ?? this.isSaved, news: news, scheme: scheme, description: description,
@@ -172,7 +190,9 @@ class ShortItem {
       kind: j['kind'] == 'NEWS' ? ShortKind.news : ShortKind.scheme,
       title: (j['title'] as String?) ?? '',
       hook: j['hook'] as String?,
+      summary: (j['summary'] as String?)?.trim().isEmpty == true ? null : j['summary'] as String?,
       category: (j['category'] as String?) ?? '',
+      format: _format(j['format']),
       videoUrl: safeHttpsUrl(j['videoUrl']),
       thumbnailUrl: safeHttpsUrl(j['thumbnailUrl']),
       durationSec: (j['durationSec'] as num?)?.toDouble(),

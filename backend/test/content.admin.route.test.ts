@@ -189,7 +189,8 @@ describe('correction / unpublish', () => {
 });
 
 describe('edit', () => {
-  it('editing the script invalidates the render and returns to SCRIPT_READY', async () => {
+  it('editing the script of an item with a finished video drops the render and its approval; the card status is untouched', async () => {
+    prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ format: 'CARD_WITH_VIDEO', videoState: 'READY', videoApprovedAt: new Date() }));
     const app = await build();
     const r = await app.inject({
       method: 'PATCH', url: '/admin/content/v1', headers: h,
@@ -198,7 +199,22 @@ describe('edit', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json().needsRerender).toBe(true);
     const data = prisma.shortVideo.update.mock.calls[0][0].data;
-    expect(data).toMatchObject({ videoKey: null, audioKey: null, status: 'SCRIPT_READY' });
+    expect(data).toMatchObject({ videoKey: null, audioKey: null, videoState: 'NOT_REQUESTED', videoApprovedAt: null });
+    expect(data.status).toBeUndefined();
+  });
+  it('editing a card-only item never touches video state', async () => {
+    prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ format: 'CARD_ONLY', videoState: 'NOT_REQUESTED' }));
+    const app = await build();
+    const r = await app.inject({ method: 'PATCH', url: '/admin/content/v1', headers: h, payload: { title: 'नया शीर्षक' } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().needsRerender).toBe(false);
+    expect(prisma.shortVideo.update.mock.calls[0][0].data).not.toHaveProperty('videoState');
+  });
+  it('refuses render-affecting edits while a video is generating', async () => {
+    prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ format: 'CARD_WITH_VIDEO', videoState: 'GENERATING' }));
+    const app = await build();
+    const r = await app.inject({ method: 'PATCH', url: '/admin/content/v1', headers: h, payload: { title: 'नया शीर्षक' } });
+    expect(r.statusCode).toBe(409);
   });
   it('refuses to edit published content', async () => {
     prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ status: 'PUBLISHED' }));
@@ -217,15 +233,15 @@ describe('edit', () => {
 });
 
 describe('retry', () => {
-  it('moves FAILED content back and requeues failed jobs', async () => {
-    prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ status: 'FAILED' }));
+  it('retries a FAILED video: back to QUEUED and failed jobs re-armed', async () => {
+    prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ format: 'CARD_WITH_VIDEO', videoState: 'FAILED' }));
     const app = await build();
     const r = await post(app, '/content/v1/retry');
-    expect(r.statusCode).toBe(200);
+    expect(r.statusCode).toBe(202);
     expect(prisma.contentJob.updateMany.mock.calls[0][0].data).toMatchObject({ state: 'QUEUED', attempts: 0 });
   });
   it('enforces the retry limit', async () => {
-    prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ status: 'FAILED' }));
+    prisma.shortVideo.findUnique.mockResolvedValue(schemeVideo({ format: 'CARD_WITH_VIDEO', videoState: 'FAILED' }));
     prisma.contentJob.count.mockResolvedValue(5);
     const app = await build();
     const r = await post(app, '/content/v1/retry');

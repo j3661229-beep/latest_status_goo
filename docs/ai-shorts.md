@@ -3,10 +3,35 @@
 Hindi short-video explainers for government schemes/scholarships and daily news, generated from
 **cited source material**, reviewed by a human, then published to the app's **Shorts** tab.
 
-> By default nothing is published automatically: every video passes `NEEDS_REVIEW → APPROVED → PUBLISHED`
+> **Content formats.** Every item is a normal Inshorts-style **news card** (`CARD_ONLY`, the default). A video exists only
+> if an admin sets the item to `CARD_WITH_VIDEO` and presses **Generate video**; it becomes playable only after the admin
+> previews and approves it (see §0). Ingestion, cron ticks, drafting and publishing never queue a video.
+>
+> By default nothing is published automatically: every card passes `NEEDS_REVIEW → APPROVED → PUBLISHED`
 > through an authenticated MANAGER / SUPER_ADMIN. Creators have no access.
 > **Optional hands-off mode** (Admin → Yojana & News → Schedule → *Auto-publish*, off by default, see §6a) lets the
 > worker publish items that pass every gate; anything with a warning, report or failed check stays in review.
+
+## 0. Content formats (admin-controlled)
+
+| | `CARD_ONLY` (default) | `CARD_WITH_VIDEO` |
+|---|---|---|
+| Card (headline, image, summary, source, time, save/share/report) | yes | yes |
+| Video job | **never** | only after an explicit admin *Generate video* |
+| Card can be published without the video | yes | yes — a failed/pending video never blocks or unpublishes the card |
+| Video visible in the app | no | only when `videoState = READY` **and** an admin approved it |
+
+* **Card lifecycle** (`status`): `DRAFT → NEEDS_REVIEW → APPROVED → PUBLISHED` (or *Publish as News Card* in one step).
+  New drafts are prefilled from the stored source (RSS excerpt / scheme benefits) — an admin edits the summary before publishing.
+* **Video lifecycle** (`videoState`): `NOT_REQUESTED → QUEUED → GENERATING → READY` (or `FAILED`, with a sanitized reason; retry is safe).
+  A finished video is *not* public until **Approve video**. Editing the title/script, a correction or a withdrawal revokes the approval.
+* **Only code path that queues a video:** `POST /admin/content/:id/video/generate` (MANAGER / SUPER_ADMIN). It checks eligibility
+  (Card+Video format, valid source, verified scheme), wins an atomic compare-and-set to `QUEUED`, then enqueues once —
+  repeated or concurrent requests are no-ops. The worker refuses any stage unless the item is `CARD_WITH_VIDEO` and `QUEUED/GENERATING`.
+* Admin endpoints: `PATCH /content/:id/format`, `POST /content/:id/publish-card`, `POST /content/:id/video/{generate,retry,approve,unapprove,discard}`.
+* Public API adds `format`; `videoUrl`, `thumbnailUrl` and `durationSec` are `null` unless the video is public; list items include a ≤420-char `summary`.
+* Migration `20261025000000_content_format` is additive; existing videos are backfilled as `CARD_WITH_VIDEO`/`READY` and, if published, approved.
+* The old "automatically queue AI video generation" setting no longer exists (the stored value is ignored).
 
 ## 1. Architecture
 

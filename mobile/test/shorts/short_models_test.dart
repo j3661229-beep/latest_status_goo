@@ -69,6 +69,37 @@ void main() {
       expect(s.videoUrl, isNull);
     });
 
+    group('content format / video availability', () {
+      test('CARD_ONLY never has a video, even if a stale URL is present', () {
+        final s = ShortItem.fromJson(newsJson(over: {'format': 'CARD_ONLY'}));
+        expect(s.format, ContentFormat.cardOnly);
+        expect(s.hasVideo, isFalse);
+      });
+      test('CARD_WITH_VIDEO has a video only when the server sent an approved URL', () {
+        final withUrl = ShortItem.fromJson(newsJson(over: {'format': 'CARD_WITH_VIDEO'}));
+        expect(withUrl.hasVideo, isTrue);
+        final noUrl = ShortItem.fromJson(newsJson(over: {'format': 'CARD_WITH_VIDEO', 'videoUrl': null}));
+        expect(noUrl.hasVideo, isFalse);
+        final insecure = ShortItem.fromJson(newsJson(over: {'format': 'CARD_WITH_VIDEO', 'videoUrl': 'http://x/v.mp4'}));
+        expect(insecure.hasVideo, isFalse);
+      });
+      test('older API records without a format keep working (video iff URL)', () {
+        final legacy = ShortItem.fromJson(newsJson());
+        expect(legacy.format, isNull);
+        expect(legacy.hasVideo, isTrue);
+        final legacyText = ShortItem.fromJson(newsJson(over: {'videoUrl': null, 'thumbnailUrl': null}));
+        expect(legacyText.hasVideo, isFalse);
+      });
+      test('unknown / wrong-typed format and null video fields are tolerated', () {
+        expect(ShortItem.fromJson(newsJson(over: {'format': 'HOLOGRAM'})).format, isNull);
+        expect(ShortItem.fromJson(newsJson(over: {'format': 5, 'durationSec': null, 'videoUrl': null})).hasVideo, isFalse);
+      });
+      test('format survives copyWith (saving a card keeps its format)', () {
+        final s = ShortItem.fromJson(newsJson(over: {'format': 'CARD_ONLY'})).copyWith(isSaved: true);
+        expect(s.format, ContentFormat.cardOnly);
+      });
+    });
+
     test('copyWith toggles saved only', () {
       final s = ShortItem.fromJson(newsJson());
       final t = s.copyWith(isSaved: true);

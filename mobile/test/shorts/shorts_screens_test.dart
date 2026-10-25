@@ -71,13 +71,14 @@ void main() {
   }
 
   group('ShortsScreen', () {
-    testWidgets('shows title, publisher, relative time, AI disclaimer and actions', (t) async {
-      final repo = FakeRepo(onList: (f, c, p) async => ShortPage([mkNews('1', video: 'https://cdn.test/1.mp4')], false));
+    testWidgets('shows an Inshorts-style card: title, summary, publisher, relative time, AI disclaimer and actions', (t) async {
+      final repo = FakeRepo(onList: (f, c, p) async => ShortPage([mkNews('1', video: 'https://cdn.test/1.mp4', summary: 'यह साठ शब्दों का सारांश है।')], false));
       await pumpFeed(t, repo);
       expect(find.text('ख़बर 1'), findsOneWidget);
+      expect(find.text('यह साठ शब्दों का सारांश है।'), findsOneWidget);
       expect(find.textContaining('PIB · 3 घंटे पहले'), findsOneWidget);
       expect(find.textContaining('AI-सहायता प्राप्त सारांश'), findsOneWidget);
-      for (final tip in ['सहेजें', 'शेयर', 'रिपोर्ट', 'म्यूट करें']) {
+      for (final tip in ['सहेजें', 'शेयर', 'रिपोर्ट']) {
         expect(find.byTooltip(tip), findsOneWidget, reason: tip);
       }
       expect(find.text('विवरण और स्रोत'), findsOneWidget);
@@ -93,7 +94,7 @@ void main() {
 
     testWidgets('empty state', (t) async {
       await pumpFeed(t, FakeRepo(onList: (f, c, p) async => const ShortPage([], false)));
-      expect(find.text('अभी कोई वीडियो नहीं'), findsOneWidget);
+      expect(find.text('अभी कोई खबर नहीं'), findsOneWidget);
     });
 
     testWidgets('error state with retry that recovers', (t) async {
@@ -145,6 +146,9 @@ void main() {
 
       repo.onSave = (id, s) async {};
       await t.pump(const Duration(seconds: 5));
+      for (var i = 0; i < 4; i++) {
+        await t.pump(const Duration(seconds: 1)); // snackbar exit animation (it covers the action row)
+      }
       await t.tap(find.byTooltip('सहेजें'));
       await settle(t);
       expect(find.byTooltip('सहेजा गया'), findsOneWidget);
@@ -169,42 +173,86 @@ void main() {
       expect(sent, '1|OUTDATED');
     });
 
-    testWidgets('opening details pauses playback, and returning resumes it', (t) async {
+    testWidgets('a video never autoplays; it plays only in the viewer after tapping the play button, and is released on close', (t) async {
       final repo = FakeRepo(onList: (f, c, p) async => ShortPage([mkNews('1', video: 'https://cdn.test/1.mp4')], false));
-      final visited = await pumpFeed(t, repo);
+      await pumpFeed(t, repo);
+      expect(stats.created, 0, reason: 'cards must not load video on their own');
+      expect(platform.playing, isEmpty);
+
+      await t.tap(find.byIcon(Icons.play_arrow_rounded));
+      await settle(t);
+      expect(stats.created, 1);
       expect(platform.playing, isNotEmpty);
 
+      await t.tap(find.byTooltip('बंद करें'));
+      await settle(t);
+      await settle(t);
+      expect(stats.outstanding, 0);
+    });
+
+    testWidgets('CARD_ONLY shows no play button or duration and never creates a player, even with a stale video URL', (t) async {
+      final repo = FakeRepo(onList: (f, c, p) async => ShortPage(
+          [mkNews('1', video: 'https://cdn.test/1.mp4', format: 'CARD_ONLY', duration: 25, summary: 'सारांश')], false));
+      await pumpFeed(t, repo);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+      expect(find.text('25 सेकंड'), findsNothing);
+      expect(find.text('सारांश'), findsOneWidget);
+      expect(stats.created, 0);
+    });
+
+    testWidgets('CARD_WITH_VIDEO shows the play button and duration; nothing loads until the user taps play', (t) async {
+      final repo = FakeRepo(onList: (f, c, p) async => ShortPage(
+          [mkNews('1', video: 'https://cdn.test/1.mp4', format: 'CARD_WITH_VIDEO', duration: 25)], false));
+      await pumpFeed(t, repo);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      expect(find.text('25 सेकंड'), findsOneWidget);
+      expect(stats.created, 0);
+    });
+
+    testWidgets('CARD_WITH_VIDEO whose video is not yet approved (no URL) is a plain card', (t) async {
+      final repo = FakeRepo(onList: (f, c, p) async => ShortPage([mkNews('1', format: 'CARD_WITH_VIDEO')], false));
+      await pumpFeed(t, repo);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+      expect(find.text('ख़बर 1'), findsOneWidget);
+    });
+
+    testWidgets('a text-only card (no summary, no image, no video) still renders with all actions', (t) async {
+      final repo = FakeRepo(onList: (f, c, p) async => ShortPage([mkNews('1', format: 'CARD_ONLY')], false));
+      await pumpFeed(t, repo);
+      expect(find.text('ख़बर 1'), findsOneWidget);
+      for (final tip in ['सहेजें', 'शेयर', 'रिपोर्ट']) {
+        expect(find.byTooltip(tip), findsOneWidget, reason: tip);
+      }
+    });
+
+    testWidgets('a card without a video shows no play button', (t) async {
+      final repo = FakeRepo(onList: (f, c, p) async => ShortPage([mkNews('1')], false));
+      await pumpFeed(t, repo);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    });
+
+    testWidgets('opening details navigates to the detail route', (t) async {
+      final repo = FakeRepo(onList: (f, c, p) async => ShortPage([mkNews('1')], false));
+      final visited = await pumpFeed(t, repo);
       await t.tap(find.text('विवरण और स्रोत'));
       await settle(t);
       expect(visited, ['1']);
       expect(find.text('DETAIL'), findsOneWidget);
-      expect(platform.playing, isEmpty, reason: 'feed video must pause while another route covers it');
-
-      await t.pageBack();
-      await settle(t);
-      expect(platform.playing, isNotEmpty);
     });
 
-    testWidgets('swiping loads the next item with a single live decoder and releases all on leave', (t) async {
+    testWidgets('swiping shows the next card and counts its view without loading any video', (t) async {
       final repo = FakeRepo(onList: (f, c, p) async => ShortPage([
             mkNews('1', video: 'https://cdn.test/1.mp4'),
             mkNews('2', video: 'https://cdn.test/2.mp4'),
             mkNews('3', video: 'https://cdn.test/3.mp4'),
           ], false));
       await pumpFeed(t, repo);
-      expect(stats.created, 1, reason: 'neighbouring pages must not be preloaded');
 
       await t.fling(find.byType(PageView), const Offset(0, -600), 1500);
       await settle(t);
       expect(find.text('ख़बर 2'), findsOneWidget);
-      expect(stats.created, 2);
-      expect(stats.outstanding, 1, reason: 'previous page controller must have been released');
+      expect(stats.created, 0);
       expect(repo.events, containsAll(['1:VIEW', '2:VIEW']));
-
-      // Leave the screen entirely (tab switch): everything must be disposed.
-      await t.pumpWidget(const SizedBox());
-      await settle(t);
-      expect(stats.outstanding, 0, reason: 'leaving the tab must release every controller');
     });
   });
 

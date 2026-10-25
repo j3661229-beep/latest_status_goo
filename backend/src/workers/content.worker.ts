@@ -5,7 +5,7 @@ import { Worker, UnrecoverableError } from 'bullmq';
 import IORedis from 'ioredis';
 import type { PrismaClient } from '@prisma/client';
 import { contentConfig } from '../lib/content/config';
-import { CONTENT_QUEUE, HEARTBEAT_KEY, MAINTENANCE_QUEUE, enqueueStage, registerMaintenanceTick, startGeneration } from '../lib/content/queue';
+import { CONTENT_QUEUE, HEARTBEAT_KEY, MAINTENANCE_QUEUE, enqueueStage, registerMaintenanceTick } from '../lib/content/queue';
 import { redisLocker, runMaintenanceTick } from '../lib/content/maintenance';
 import { PermanentError, SkippedError, PipelineDeps, Stage, runStage, recordFailure } from '../lib/content/pipeline';
 import { VertexGeminiProvider } from '../lib/content/script';
@@ -65,7 +65,6 @@ export function startContentWorker(prisma: PrismaClient, redisUrl: string) {
         {
           prisma, cfg,
           lock: redisLocker(lockRedis),
-          startGeneration: (id) => startGeneration(prisma, id),
           log: deps.log,
         },
         { forceIngest: job.name === 'ingest-now' },

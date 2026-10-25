@@ -12,6 +12,7 @@ const row = (over: any = {}) => ({
   id: 's1', kind: 'SCHEME', title: 'T', hook: null, category: 'FARMER', region: null, language: 'HINDI',
   videoKey: 'v.mp4', thumbnailKey: 't.jpg', durationSec: 25, captions: [], attribution: 'src',
   publishedAt: new Date('2026-10-01'), correctionNote: null, description: null, claims: [], warnings: [],
+  format: 'CARD_WITH_VIDEO', videoState: 'READY', videoApprovedAt: new Date('2026-10-02'),
   costMicroUsd: 5, aiMeta: { m: 1 }, scheme: null, newsStory: null, ...over,
 });
 
@@ -56,6 +57,22 @@ beforeEach(() => {
 });
 
 describe('feed', () => {
+  it('adds a trimmed card summary from the description, falling back to the narration', async () => {
+    const long = 'शब्द '.repeat(200);
+    prisma.shortVideo.findMany.mockResolvedValue([
+      row({ id: 'a', description: long }),
+      row({ id: 'b', description: null, script: { narration: 'छोटा सारांश' } }),
+      row({ id: 'c' }),
+    ]);
+    const app = await build(prisma);
+    const res = await app.inject({ method: 'GET', url: '/shorts' });
+    const [a, b, c] = res.json().data;
+    expect(a.summary.length).toBeLessThanOrEqual(421);
+    expect(a.summary.endsWith('…')).toBe(true);
+    expect(b.summary).toBe('छोटा सारांश');
+    expect(c.summary).toBeNull();
+  });
+
   it('only queries PUBLISHED, non-expired content and paginates', async () => {
     const app = await build(prisma);
     const res = await app.inject({ url: '/shorts?page=2&limit=10&kind=NEWS&category=FARMER' });
@@ -85,9 +102,29 @@ describe('feed', () => {
     const app = await build(prisma);
     const item = (await app.inject({ url: '/shorts' })).json().data[0];
     expect(item.videoUrl).toBe('https://cdn.test/v.mp4');
+    expect(item.format).toBe('CARD_WITH_VIDEO');
     expect(item).not.toHaveProperty('costMicroUsd');
+    expect(item).not.toHaveProperty('videoFailureReason');
+    expect(item).not.toHaveProperty('videoRequestedById');
     expect(item).not.toHaveProperty('aiMeta');
     expect(item.disclaimer).toMatch(/AI-assisted/);
+  });
+
+  it.each([
+    ['card-only', { format: 'CARD_ONLY', videoState: 'NOT_REQUESTED', videoApprovedAt: null }],
+    ['video not approved', { videoApprovedAt: null }],
+    ['video still generating', { videoState: 'GENERATING', videoApprovedAt: null }],
+    ['video failed', { videoState: 'FAILED', videoApprovedAt: null }],
+    ['approved video but switched back to card-only', { format: 'CARD_ONLY' }],
+    ['ready+approved but no uploaded file', { videoKey: null }],
+  ])('exposes NO video or video frame for %s (the card is still served)', async (_n, over) => {
+    prisma.shortVideo.findMany.mockResolvedValue([row({ description: 'सारांश', ...over })]);
+    const app = await build(prisma);
+    const item = (await app.inject({ url: '/shorts' })).json().data[0];
+    expect(item.videoUrl).toBeNull();
+    expect(item.thumbnailUrl).toBeNull();
+    expect(item.durationSec).toBeNull();
+    expect(item.summary).toBe('सारांश');
   });
 
   it('detail includes a text alternative (narration, key facts) but list items do not', async () => {

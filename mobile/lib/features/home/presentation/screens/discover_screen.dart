@@ -142,6 +142,70 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                 ),
               ),
 
+              // ── Sarkari Yojana Mitra Banner ──────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page, vertical: AppSpacing.xs),
+                  child: InkWell(
+                    onTap: () => context.push('/scheme-finder'),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFE65100), Color(0xFFBF360C)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2)),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.calculate_rounded, color: Colors.white, size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text('🎯 योजना मित्र — पात्रता कैलकुलेटर',
+                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text('NEW', style: TextStyle(color: Color(0xFFE65100), fontWeight: FontWeight.w900, fontSize: 9)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                const Text('अपनी सरकारी योजनाएं, लाभ राशि व जरूरी कागजात देखें',
+                                    style: TextStyle(color: Colors.white70, fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
               // ── Categories ───────────────────────────────────────────────────
               if (categories.isNotEmpty)
                 SliverToBoxAdapter(

@@ -10,7 +10,6 @@ export interface FeedConfig { name: string; url: string; category: string }
 export interface ContentSettings {
   ingestEnabled: boolean;
   ingestIntervalMinutes: number;
-  autoGenerate: boolean;
   autoPublishEnabled: boolean;
   autoPublishSchemes: boolean;
   autoPublishMaxPerDay: number;
@@ -34,7 +33,6 @@ export const DEFAULT_FEEDS: FeedConfig[] = [
 export const DEFAULTS: ContentSettings = {
   ingestEnabled: false,
   ingestIntervalMinutes: 180,
-  autoGenerate: true,
   autoPublishEnabled: false,
   autoPublishSchemes: false,
   autoPublishMaxPerDay: 10,
@@ -50,7 +48,6 @@ export const DEFAULTS: ContentSettings = {
 const KEYS = {
   ingestEnabled: 'content.news_ingest_enabled',
   ingestIntervalMinutes: 'content.news_ingest_interval_minutes',
-  autoGenerate: 'content.news_auto_generate',
   autoPublishEnabled: 'content.auto_publish_enabled',
   autoPublishSchemes: 'content.auto_publish_schemes',
   autoPublishMaxPerDay: 'content.auto_publish_max_per_day',
@@ -67,7 +64,6 @@ export const SettingsPatchSchema = z
   .object({
     ingestEnabled: z.boolean(),
     ingestIntervalMinutes: z.number().int().min(15).max(1440),
-    autoGenerate: z.boolean(),
     autoPublishEnabled: z.boolean(),
     autoPublishSchemes: z.boolean(),
     autoPublishMaxPerDay: z.number().int().min(0).max(100),
@@ -109,7 +105,6 @@ export async function loadSettings(prisma: Pick<PrismaClient, 'appConfig'>): Pro
   return {
     ingestEnabled: bool(get(KEYS.ingestEnabled), DEFAULTS.ingestEnabled),
     ingestIntervalMinutes: int(get(KEYS.ingestIntervalMinutes), DEFAULTS.ingestIntervalMinutes, 15),
-    autoGenerate: bool(get(KEYS.autoGenerate), DEFAULTS.autoGenerate),
     autoPublishEnabled: bool(get(KEYS.autoPublishEnabled), DEFAULTS.autoPublishEnabled),
     autoPublishSchemes: bool(get(KEYS.autoPublishSchemes), DEFAULTS.autoPublishSchemes),
     autoPublishMaxPerDay: int(get(KEYS.autoPublishMaxPerDay), DEFAULTS.autoPublishMaxPerDay, 0),

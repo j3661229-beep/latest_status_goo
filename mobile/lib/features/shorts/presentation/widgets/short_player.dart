@@ -80,6 +80,16 @@ class ShortPlaybackController extends ChangeNotifier with WidgetsBindingObserver
     }
   }
 
+  /// Release the active video (the card feed only plays when the user opens the viewer).
+  void stop() {
+    if (_disposed) return;
+    _generation++;
+    _activeId = null;
+    _error = null;
+    _release();
+    _notify();
+  }
+
   void togglePlay() {
     final c = _controller;
     if (c == null) return;

@@ -155,7 +155,12 @@ export function htmlToText(html: string): string {
   return html
     .replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&(?:apos|#0*39);/g, "'")
+    // Numeric entities (&#8217; ’, &#038; &) — WordPress sites (PIB, NewsOnAir) emit these; left undecoded, a model's
+    // verbatim sourceQuote can never match the source text and the grounding gate rejects every script.
+    .replace(/&#(\d+);/g, (m, d) => { const cp = Number(d); return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m; })
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => { const cp = parseInt(h, 16); return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m; })
+    .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
 }

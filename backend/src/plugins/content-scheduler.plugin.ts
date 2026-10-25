@@ -7,7 +7,7 @@ import fp from 'fastify-plugin';
 import { FastifyPluginAsync } from 'fastify';
 import { contentConfig } from '../lib/content/config';
 import { redisLocker, runMaintenanceTick } from '../lib/content/maintenance';
-import { HEARTBEAT_KEY, startGeneration } from '../lib/content/queue';
+import { HEARTBEAT_KEY } from '../lib/content/queue';
 
 const contentSchedulerPlugin: FastifyPluginAsync = async (fastify) => {
   const cfg = contentConfig();
@@ -19,7 +19,6 @@ const contentSchedulerPlugin: FastifyPluginAsync = async (fastify) => {
         prisma: fastify.prisma,
         cfg,
         lock: locker,
-        startGeneration: (id) => startGeneration(fastify.prisma, id),
         log: (m, x) => fastify.log.debug({ extra: x }, `[content-tick:${reason}] ${m}`),
       });
 

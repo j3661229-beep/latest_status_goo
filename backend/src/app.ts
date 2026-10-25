@@ -28,6 +28,7 @@ import { adminRoutes } from './modules/admin/admin.route';
 import { uploadRoutes } from './modules/upload/upload.route';
 import { shortsRoutes, schemeFeedRoutes, newsFeedRoutes } from './modules/shorts/shorts.route';
 import { contentAdminRoutes } from './modules/content-admin/content.admin.route';
+import { dailyContentRoutes } from './modules/daily-content/daily-content.route';
 
 // Global JSON fallback for BigInt (e.g. un-cast COUNT(*) from $queryRaw) — without
 // this JSON.stringify throws "Do not know how to serialize a BigInt" → 500.
@@ -186,6 +187,7 @@ export async function buildApp() {
   await app.register(shortsRoutes,        { prefix: `${V1}/shorts` });
   await app.register(schemeFeedRoutes,    { prefix: `${V1}/schemes` });
   await app.register(newsFeedRoutes,      { prefix: `${V1}/news` });
+  await app.register(dailyContentRoutes,  { prefix: `${V1}/daily-content` });
 
   // Fallback for plan list
   app.get(`${V1}/plans`, async (_req, reply) => {

@@ -25,6 +25,7 @@ import '../../features/support/presentation/screens/about_screen.dart';
 import '../../features/support/presentation/screens/not_found_screen.dart';
 import '../../features/shorts/presentation/screens/short_detail_screen.dart';
 import '../../features/shorts/presentation/screens/shorts_screen.dart';
+import '../../features/shorts/presentation/screens/scheme_finder_screen.dart';
 import 'app_shell.dart';
 import '../../core/auth/session_store.dart';
 import '../../core/services/notification_service.dart';
@@ -99,6 +100,10 @@ GoRouter appRouter(AppRouterRef ref) {
       GoRoute(
         path: '/shorts/:id',
         builder: (ctx, state) => ShortDetailScreen(id: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/scheme-finder',
+        builder: (ctx, state) => const SchemeFinderScreen(),
       ),
       GoRoute(
         path: '/template/:id',

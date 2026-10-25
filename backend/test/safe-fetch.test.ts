@@ -1,8 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
-import { isPrivateAddress, vetUrl, safeFetchText, UnsafeUrlError, FetchError, hostAllowed, Transport } from '../src/lib/content/safe-fetch';
+import { isPrivateAddress, vetUrl, safeFetchText, UnsafeUrlError, FetchError, hostAllowed, Transport, htmlToText } from '../src/lib/content/safe-fetch';
 
 const cfg = { sourceHosts: ['pib.gov.in', 'example.org'], maxFetchBytes: 1000, fetchTimeoutMs: 1000 };
 const pub = async () => ['93.184.216.34'];
+
+describe('htmlToText', () => {
+  it('decodes numeric and named entities so verbatim source quotes can match (WordPress feeds use &#8217; etc.)', () => {
+    const html = '<p>the government&#8217;s plan &#038; &#x201C;Sagarmala&#x201D; &amp; more &#039;ok&#039; &copy;</p><script>x&#8217;</script>';
+    expect(htmlToText(html)).toBe('the government’s plan & “Sagarmala” & more \'ok\' &copy;');
+  });
+  it('does not double-decode &amp;#8217; (literal text) and leaves invalid code points alone', () => {
+    expect(htmlToText('a &amp;#8217; b &#0; c')).toBe('a &#8217; b &#0; c');
+  });
+});
 
 describe('isPrivateAddress', () => {
   it.each(['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', 'fc00::1', 'fe80::1', '::ffff:10.0.0.1', 'not-an-ip'])(

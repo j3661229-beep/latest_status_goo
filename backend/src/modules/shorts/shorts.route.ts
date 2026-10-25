@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { optionalEnum, optionalString, parsePagination, sendValidationError } from '../../lib/http/validation';
 import { serializeShort, shortInclude } from './shorts.serializer';
+import { checkSchemeEligibility, EligibilityInputSchema } from './schemes.calculator';
 
 const KINDS = ['SCHEME', 'NEWS'] as const;
 
@@ -217,5 +218,37 @@ async function registerRoutes(fastify: FastifyInstance, forcedKind?: 'SCHEME' | 
 }
 
 export const shortsRoutes = (f: FastifyInstance) => registerRoutes(f);
-export const schemeFeedRoutes = (f: FastifyInstance) => registerRoutes(f, 'SCHEME');
+export const schemeFeedRoutes = async (f: FastifyInstance) => {
+  await registerRoutes(f, 'SCHEME');
+
+  // POST /api/v1/schemes/check-eligibility (Public)
+  f.post('/check-eligibility', async (req, reply) => {
+    const parsed = EligibilityInputSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return sendValidationError(reply, parsed.error);
+    const result = await checkSchemeEligibility(f.prisma, parsed.data);
+    return reply.send({ data: result });
+  });
+
+  // GET /api/v1/schemes/catalog (Public)
+  f.get('/catalog', async (_req, reply) => {
+    const schemes = await f.prisma.scheme.findMany({
+      where: { reviewStatus: { in: ['PUBLISHED', 'SOURCE_VERIFIED', 'NEEDS_REVIEW'] } },
+      select: {
+        id: true,
+        slug: true,
+        nameHi: true,
+        officialName: true,
+        category: true,
+        scope: true,
+        stateCode: true,
+        benefits: true,
+        documents: true,
+        applicationMode: true,
+        applicationUrl: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return reply.send({ data: schemes, total: schemes.length });
+  });
+};
 export const newsFeedRoutes = (f: FastifyInstance) => registerRoutes(f, 'NEWS');

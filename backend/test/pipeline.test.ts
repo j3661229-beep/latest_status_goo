@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   captionTexts, runScriptStage, runNarrationStage, runRenderStage, runStage, recordFailure, assertWithinLimits,
-  PermanentError, SkippedError, PipelineDeps,
+  PermanentError, SkippedError, PipelineDeps, sanitizeFailure,
 } from '../src/lib/content/pipeline';
 import { contentConfig } from '../src/lib/content/config';
 import { RenderError } from '../src/lib/content/render';
@@ -35,6 +35,12 @@ function fakePrisma(initial: any) {
       updateMany: vi.fn(async ({ where, data }: any) => {
         const v = videos.get(where.id);
         if (!v || (where.status && v.status !== where.status)) return { count: 0 };
+        if (where.format && v.format !== where.format) return { count: 0 };
+        if (where.scriptVersion !== undefined && v.scriptVersion !== where.scriptVersion) return { count: 0 };
+        if (where.videoState) {
+          const ok = typeof where.videoState === 'string' ? v.videoState === where.videoState : where.videoState.in.includes(v.videoState);
+          if (!ok) return { count: 0 };
+        }
         apply(v, data); return { count: 1 };
       }),
       update: vi.fn(async ({ where, data }: any) => { apply(videos.get(where.id), data); return videos.get(where.id); }),
@@ -61,7 +67,7 @@ function fakePrisma(initial: any) {
 }
 
 const baseVideo = (over: any = {}) => ({
-  id: 'v1', kind: 'SCHEME', status: 'DRAFT', category: 'FARMER', scriptVersion: 1, script: null, audioKey: null, videoKey: null,
+  id: 'v1', kind: 'SCHEME', status: 'DRAFT', format: 'CARD_WITH_VIDEO', videoState: 'QUEUED', category: 'FARMER', scriptVersion: 1, script: null, audioKey: null, videoKey: null,
   aiMeta: null, costMicroUsd: 0, newsStory: null, newsStoryId: null, schemeId: 's1',
   scheme: {
     officialName: 'PM Kisan', nameHi: 'पीएम किसान', department: 'कृषि विभाग', benefits: [SRC_LINE], eligibility: [], documents: [], applicationSteps: [],
@@ -105,11 +111,12 @@ function setup(video: any, over: Partial<PipelineDeps> = {}) {
 beforeEach(() => vi.clearAllMocks());
 
 describe('script stage', () => {
-  it('turns a verified scheme into SCRIPT_READY with claims, attribution and cost', async () => {
+  it('turns a verified scheme into a script with claims, attribution and cost, leaving the card status alone', async () => {
     setup(baseVideo());
     const r = await runScriptStage(deps, 'v1');
     const v = db.videos.get('v1');
-    expect(v.status).toBe('SCRIPT_READY');
+    expect(v.status).toBe('DRAFT');
+    expect(v.videoState).toBe('GENERATING');
     expect(v.claims).toHaveLength(1);
     expect(v.attribution).toMatch(/pmkisan/);
     expect(v.costMicroUsd).toBeGreaterThan(0);
@@ -128,6 +135,14 @@ describe('script stage', () => {
     expect(deps.scriptProvider.generate).not.toHaveBeenCalled();
     expect(db.videos.get('v1').status).toBe('DRAFT');
   });
+  it('never touches admin-written card text', async () => {
+    setup(baseVideo({ description: 'एडमिन का सारांश', attribution: 'स्रोत: PIB', hook: null }));
+    await runScriptStage(deps, 'v1');
+    const v = db.videos.get('v1');
+    expect(v.description).toBe('एडमिन का सारांश');
+    expect(v.attribution).toBe('स्रोत: PIB');
+    expect(v.hook).toBeTruthy(); // only empty fields are filled
+  });
   it('invalid model output becomes a permanent (non-retried) error and nothing is stored', async () => {
     setup(baseVideo());
     deps.scriptProvider.generate.mockResolvedValue({ raw: { title: 'x' }, inputTokens: 10, outputTokens: 10, model: 'm' });
@@ -143,12 +158,12 @@ describe('script stage', () => {
 });
 
 describe('narration stage', () => {
-  const scripted = () => baseVideo({ status: 'SCRIPT_READY', script: goodScript() });
-  it('synthesises, stores audio privately and moves to GENERATING', async () => {
+  const scripted = () => baseVideo({ videoState: 'GENERATING', script: goodScript() });
+  it('synthesises and stores audio privately', async () => {
     setup(scripted());
     const r = await runNarrationStage(deps, 'v1');
     const v = db.videos.get('v1');
-    expect(v.status).toBe('GENERATING');
+    expect(v.videoState).toBe('GENERATING');
     expect(v.audioKey).toBe('content/audio/v1/v1.mp3');
     expect(v.aiMeta.tts).toMatchObject({ provider: 'mock-tts', voice: 'hi-IN-X', scriptVersion: 1 });
     expect(r.cached).toBe(false);
@@ -170,26 +185,28 @@ describe('narration stage', () => {
     setup(scripted());
     deps.storage.put.mockRejectedValue(new Error('GCS 503'));
     await expect(runNarrationStage(deps, 'v1')).rejects.toThrow('GCS 503');
-    expect(db.videos.get('v1').status).toBe('SCRIPT_READY');
+    expect(db.videos.get('v1').audioKey).toBeNull();
   });
 });
 
 describe('render stage', () => {
-  const narrated = () => baseVideo({ status: 'GENERATING', script: goodScript(), audioKey: 'content/audio/v1/v1.mp3' });
+  const narrated = () => baseVideo({ videoState: 'GENERATING', script: goodScript(), audioKey: 'content/audio/v1/v1.mp3' });
   const withAudio = () => { storageStore.set('content/audio/v1/v1.mp3', Buffer.alloc(3000, 2)); };
 
-  it('renders, uploads video + thumbnail and lands in NEEDS_REVIEW (never published)', async () => {
+  it('renders, uploads video + thumbnail and becomes READY but NOT approved or published', async () => {
     setup(narrated()); withAudio();
     await runRenderStage(deps, 'v1');
     const v = db.videos.get('v1');
-    expect(v.status).toBe('NEEDS_REVIEW');
+    expect(v.status).toBe('DRAFT');
+    expect(v.videoState).toBe('READY');
+    expect(v.videoApprovedAt).toBeNull();
     expect(v.videoKey).toBe('content/video/v1/v1.mp4');
     expect(v.thumbnailKey).toBe('content/thumb/v1/v1.jpg');
     expect(v.durationSec).toBeCloseTo(28.5);
     expect(v.publishedAt).toBeUndefined();
     expect(deps.storage.put).toHaveBeenCalledWith('content/video/v1/v1.mp4', expect.any(Buffer), 'video/mp4');
   });
-  it('ffmpeg failure leaves the item un-reviewable (no video key, not NEEDS_REVIEW)', async () => {
+  it('ffmpeg failure leaves no video (the card is untouched)', async () => {
     setup(narrated()); withAudio();
     const real = deps.exec as any;
     deps.exec = vi.fn(async (f: string, a: string[], o: any) => {
@@ -199,13 +216,15 @@ describe('render stage', () => {
     await expect(runRenderStage(deps, 'v1')).rejects.toThrow(/boom/);
     const v = db.videos.get('v1');
     expect(v.videoKey).toBeNull();
-    expect(v.status).toBe('GENERATING');
+    expect(v.videoState).toBe('GENERATING');
+    expect(v.status).toBe('DRAFT');
   });
   it('upload failure after render does not advance state', async () => {
     setup(narrated()); withAudio();
     deps.storage.put.mockRejectedValue(new Error('upload down'));
     await expect(runRenderStage(deps, 'v1')).rejects.toThrow('upload down');
-    expect(db.videos.get('v1').status).toBe('GENERATING');
+    expect(db.videos.get('v1').videoState).toBe('GENERATING');
+    expect(db.videos.get('v1').videoKey).toBeNull();
   });
   it('rejects wrong output dimensions', async () => {
     setup(narrated()); withAudio();
@@ -225,6 +244,16 @@ describe('render stage', () => {
     setup(narrated());
     await expect(runRenderStage(deps, 'v1')).rejects.toThrow('missing');
   });
+  it('a render that finishes after the admin cancelled/changed the request is discarded', async () => {
+    setup(narrated()); withAudio();
+    const realExec = deps.exec as any;
+    deps.exec = vi.fn(async (f: string, a: string[], o: any) => {
+      db.videos.get('v1').videoState = 'NOT_REQUESTED'; // admin cancelled mid-render
+      return realExec(f, a, o);
+    }) as any;
+    await expect(runRenderStage(deps, 'v1')).rejects.toBeInstanceOf(SkippedError);
+    expect(db.videos.get('v1').videoKey).toBeNull();
+  });
 });
 
 describe('cost limits and failure recording', () => {
@@ -243,27 +272,48 @@ describe('cost limits and failure recording', () => {
     db.jobs.set('old2', { id: 'old2', costMicroUsd: 2_000_000, queuedAt: new Date() });
     await expect(assertWithinLimits(deps)).rejects.toThrow(/budget exhausted/);
   });
-  it('final failure marks the item FAILED with the reason on the job; non-final does not', async () => {
-    setup(baseVideo({ status: 'GENERATING', script: goodScript(), audioKey: 'a' }));
+  it('final failure marks only the VIDEO failed, with a sanitized reason; the card status is preserved', async () => {
+    setup(baseVideo({ status: 'PUBLISHED', videoState: 'GENERATING', script: goodScript(), audioKey: 'a' }));
     db.jobs.set('RENDER-v1-v1', { id: 'j9', state: 'RUNNING', startedAt: new Date() });
-    await recordFailure(deps, 'RENDER', 'v1', new Error('ffmpeg exploded'), false);
-    expect(db.videos.get('v1').status).toBe('GENERATING');
-    expect(db.jobs.get('RENDER-v1-v1').failureReason).toBe('ffmpeg exploded');
-    await recordFailure(deps, 'RENDER', 'v1', new Error('ffmpeg exploded'), true);
-    expect(db.videos.get('v1').status).toBe('FAILED');
+    await recordFailure(deps, 'RENDER', 'v1', new Error('ffmpeg exploded at /srv/x/y.mp4'), false);
+    expect(db.videos.get('v1').videoState).toBe('GENERATING');
+    expect(db.jobs.get('RENDER-v1-v1').failureReason).toContain('ffmpeg exploded');
+    await recordFailure(deps, 'RENDER', 'v1', new Error('ffmpeg exploded at /srv/x/y.mp4'), true);
+    const v = db.videos.get('v1');
+    expect(v.videoState).toBe('FAILED');
+    expect(v.status).toBe('PUBLISHED'); // an otherwise publishable/published card is never invalidated
+    expect(v.videoFailureReason).not.toMatch(/ffmpeg|\/srv/); // unknown errors → generic message, no internals
+  });
+  it('sanitizeFailure strips links and paths from permanent errors', () => {
+    expect(sanitizeFailure(new PermanentError('Source https://secret.example/a?token=1 failed at /var/app/x.js')))
+      .toBe('Source [link] failed at [path]');
+    expect(sanitizeFailure(new Error('boom'))).toMatch(/temporary service problem/);
+  });
+  it('stages refuse to run for CARD_ONLY or un-requested items (no implicit video work)', async () => {
+    for (const over of [{ format: 'CARD_ONLY' }, { videoState: 'NOT_REQUESTED' }, { videoState: 'READY' }, { videoState: 'FAILED' }]) {
+      setup(baseVideo(over));
+      for (const stage of ['SCRIPT', 'NARRATION', 'RENDER'] as const) {
+        await expect(runStage(deps, stage, 'v1')).rejects.toBeInstanceOf(SkippedError);
+      }
+      expect(deps.scriptProvider.generate).not.toHaveBeenCalled();
+      expect(deps.tts.synthesize).not.toHaveBeenCalled();
+      expect(db.jobs.size).toBe(0);
+    }
   });
   it('a cancelled job is skipped instead of re-run', async () => {
     setup(baseVideo());
     db.jobs.set('SCRIPT-v1-v1', { id: 'jc', state: 'CANCELLED' });
     await expect(runStage(deps, 'SCRIPT', 'v1')).rejects.toBeInstanceOf(SkippedError);
   });
-  it('full happy path ends at NEEDS_REVIEW, not PUBLISHED', async () => {
+  it('full happy path ends at READY awaiting approval, not published or approved', async () => {
     setup(baseVideo());
     await runStage(deps, 'SCRIPT', 'v1');
     await runStage(deps, 'NARRATION', 'v1');
     await runStage(deps, 'RENDER', 'v1');
     const v = db.videos.get('v1');
-    expect(v.status).toBe('NEEDS_REVIEW');
+    expect(v.status).toBe('DRAFT');
+    expect(v.videoState).toBe('READY');
+    expect(v.videoApprovedAt).toBeNull();
     expect(v.costMicroUsd).toBeGreaterThan(0);
   });
 });
@@ -282,7 +332,7 @@ describe('captions drive the render', () => {
     expect(db.videos.get('v1').captions).toEqual([{ i: 0, text: 'पीएम किसान' }, { i: 1, text: 'प्रति वर्ष 6000 रुपये' }]);
   });
   it('rendering does not overwrite reviewer-edited captions', async () => {
-    setup(baseVideo({ status: 'GENERATING', script: goodScript(), audioKey: 'content/audio/v1/v1.mp3', captions: [{ text: 'मेरा कैप्शन' }] }));
+    setup(baseVideo({ videoState: 'GENERATING', script: goodScript(), audioKey: 'content/audio/v1/v1.mp3', captions: [{ text: 'मेरा कैप्शन' }] }));
     storageStore.set('content/audio/v1/v1.mp3', Buffer.alloc(3000, 2));
     await runRenderStage(deps, 'v1');
     expect(db.videos.get('v1').captions).toEqual([{ text: 'मेरा कैप्शन' }]);

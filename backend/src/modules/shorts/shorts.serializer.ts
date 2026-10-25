@@ -1,6 +1,7 @@
 // src/modules/shorts/shorts.serializer.ts
 import type { Prisma } from '@prisma/client';
 import { resolveAssetUrl } from '../../lib/content/assets';
+import { isVideoPublic } from '../../lib/content/lifecycle';
 
 export const shortInclude = {
   scheme: true,
@@ -9,20 +10,37 @@ export const shortInclude = {
 
 export type ShortWithRelations = Prisma.ShortVideoGetPayload<{ include: typeof shortInclude }>;
 
+const SUMMARY_MAX_CHARS = 420; // ~60 words: Inshorts-style card text
+
+/** Card text for the feed: the admin-reviewed description, else the narration, trimmed on a word boundary. */
+export function cardSummary(v: ShortWithRelations): string | null {
+  const text = (v.description || (v.script as { narration?: string } | null)?.narration || '').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  if (text.length <= SUMMARY_MAX_CHARS) return text;
+  const cut = text.slice(0, SUMMARY_MAX_CHARS);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), SUMMARY_MAX_CHARS / 2))}…`;
+}
+
 /** Public-safe projection: no internal ids of reviewers, costs, AI metadata or job state. */
 export async function serializeShort(v: ShortWithRelations, opts: { detail?: boolean; saved?: boolean } = {}) {
-  const [videoUrl, thumbnailUrl] = await Promise.all([resolveAssetUrl(v.videoKey), resolveAssetUrl(v.thumbnailKey)]);
+  // A video (and the frame taken from it) is public only once it is rendered, validated, uploaded AND approved.
+  const videoPublic = isVideoPublic(v);
+  const [videoUrl, thumbnailUrl] = videoPublic
+    ? await Promise.all([resolveAssetUrl(v.videoKey), resolveAssetUrl(v.thumbnailKey)])
+    : [null, null];
   const base = {
     id: v.id,
     kind: v.kind,
     title: v.title,
     hook: v.hook,
+    summary: cardSummary(v),
     category: v.category,
     region: v.region,
     language: v.language,
+    format: v.format,
     videoUrl,
     thumbnailUrl,
-    durationSec: v.durationSec,
+    durationSec: videoPublic ? v.durationSec : null,
     captions: v.captions,
     attribution: v.attribution,
     publishedAt: v.publishedAt,

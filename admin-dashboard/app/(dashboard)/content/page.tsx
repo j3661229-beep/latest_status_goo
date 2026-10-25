@@ -1,6 +1,6 @@
 'use client';
 
-// Yojana & News — editorial console for AI-generated shorts.
+// Yojana & News — editorial console: news cards by default, AI video only on explicit request.
 // Static-export friendly: one page, detail opens in a slide-over (no dynamic routes).
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -19,8 +19,6 @@ type View = 'content' | 'schemes' | 'schedule' | 'jobs' | 'reports' | 'costs';
 const STATUS_TABS: { label: string; status: string }[] = [
   { label: 'Needs Review', status: 'NEEDS_REVIEW' },
   { label: 'Drafts', status: 'DRAFT' },
-  { label: 'Script Ready', status: 'SCRIPT_READY' },
-  { label: 'Generating', status: 'GENERATING' },
   { label: 'Approved', status: 'APPROVED' },
   { label: 'Published', status: 'PUBLISHED' },
   { label: 'Failed', status: 'FAILED' },
@@ -76,6 +74,24 @@ function PromptModal({ title, hint, minLength, confirmLabel, onConfirm, onCancel
   );
 }
 
+const FORMAT_LABEL: Record<string, string> = { CARD_ONLY: 'Card only', CARD_WITH_VIDEO: 'Card + Video' };
+const VIDEO_LABEL: Record<string, string> = {
+  NOT_REQUESTED: 'No video', QUEUED: 'Video queued', GENERATING: 'Generating video', READY: 'Video ready', FAILED: 'Video failed',
+};
+
+function FormatBadge({ format }: { format?: string }) {
+  return <span className={format === 'CARD_WITH_VIDEO' ? 'badge-pending' : 'badge-draft'}>{FORMAT_LABEL[format ?? 'CARD_ONLY'] ?? format}</span>;
+}
+
+/** Hidden for plain cards that never asked for a video. */
+function VideoStateBadge({ item }: { item: any }) {
+  if (item.format !== 'CARD_WITH_VIDEO') return null;
+  const st: string = item.videoState ?? 'NOT_REQUESTED';
+  const cls = st === 'FAILED' ? 'badge-rejected' : st === 'READY' && item.videoApprovedAt ? 'badge-approved' : 'badge-pending';
+  const label = st === 'READY' ? (item.videoApprovedAt ? 'Video live' : 'Video awaiting approval') : VIDEO_LABEL[st] ?? st;
+  return <span className={cls}>{label}</span>;
+}
+
 function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient();
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -85,7 +101,7 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
   });
   const [prompt, setPrompt] = useState<null | { action: string; title: string; hint?: string; min: number; label: string; extra?: any }>(null);
   const [scheduleAt, setScheduleAt] = useState('');
-  const [draft, setDraft] = useState<null | { title: string; hook: string; narration: string; attribution: string; captions: string }>(null);
+  const [draft, setDraft] = useState<null | { title: string; hook: string; narration: string; attribution: string; captions: string; description: string }>(null);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['content-detail', id] });
@@ -102,7 +118,7 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const save = useMutation({
     mutationFn: (body: any) => adminApi.editContent(id, body),
     onSuccess: (r) => {
-      toast.success(r.needsRerender ? 'Saved — video must be regenerated before approval' : 'Saved');
+      toast.success(r.needsRerender ? 'Saved — the old video was discarded; request a new one if needed' : 'Saved');
       setDraft(null); refresh();
     },
     onError: (e) => toast.error(describeError(e)),
@@ -110,31 +126,54 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
 
   const genVideo = useMutation({
     mutationFn: () => adminApi.generateVideo(id),
-    onSuccess: () => {
-      toast.success('AI generation queued! Refreshing status...');
+    onSuccess: (r) => {
+      toast.success(r?.duplicate ? 'Video is already queued' : 'Video generation queued');
       refresh();
     },
     onError: (e) => toast.error(describeError(e)),
   });
 
+  const setFormat = useMutation({
+    mutationFn: (format: 'CARD_ONLY' | 'CARD_WITH_VIDEO') => adminApi.setContentFormat(id, format),
+    onSuccess: () => { toast.success('Format updated'); refresh(); },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
+  const publishCard = useMutation({
+    mutationFn: (body: Record<string, any> = {}) => adminApi.publishCard(id, body),
+    onSuccess: () => { toast.success('Published as news card'); refresh(); },
+    onError: (e) => toast.error(describeError(e)),
+  });
+
   const v = data?.data;
   const status: string | undefined = v?.status;
-  const busy = act.isPending || genVideo.isPending;
+  const busy = act.isPending || genVideo.isPending || setFormat.isPending || publishCard.isPending;
+  const videoState: string = v?.videoState ?? 'NOT_REQUESTED';
+  const withVideo = v?.format === 'CARD_WITH_VIDEO';
+  const activeJob = (data?.jobs ?? []).find((j: any) => j.state === 'QUEUED' || j.state === 'RUNNING');
+  const CARD_STATES = ['DRAFT', 'SOURCE_VERIFIED', 'NEEDS_REVIEW', 'APPROVED'];
   const run = (action: string, body?: any) => act.mutate({ action, body });
 
   const startEdit = () => setDraft({
-    title: v.title ?? '', hook: v.hook ?? '', attribution: v.attribution ?? '',
+    title: v.title ?? '', hook: v.hook ?? '', attribution: v.attribution ?? '', description: v.description ?? '',
     narration: v.script?.narration ?? '',
     captions: JSON.stringify(v.captions ?? [], null, 2),
   });
   const submitEdit = () => {
     if (!draft) return;
-    let captions: any;
-    try { captions = JSON.parse(draft.captions || '[]'); } catch { toast.error('Captions must be valid JSON'); return; }
-    save.mutate({
-      title: draft.title, hook: draft.hook || null, attribution: draft.attribution || null,
-      script: { ...(v.script ?? {}), narration: draft.narration }, captions,
-    });
+    const body: Record<string, any> = {
+      title: draft.title, hook: draft.hook || null, attribution: draft.attribution || null, description: draft.description || null,
+    };
+    // Script/captions only exist for items that have (or want) a video.
+    if (v.script || withVideo) {
+      let captions: any;
+      try { captions = JSON.parse(draft.captions || '[]'); } catch { toast.error('Captions must be valid JSON'); return; }
+      if (draft.narration.trim().length >= 10) {
+        body.script = { ...(v.script ?? {}), narration: draft.narration };
+        body.captions = captions;
+      }
+    }
+    save.mutate(body);
   };
 
   return (
@@ -143,7 +182,7 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-slate-900">{v?.title ?? 'Loading…'}</h2>
-            {v && <div className="flex gap-2 mt-1 items-center"><StatusBadge status={v.status} /><span className="text-xs text-slate-500">{v.kind} · {v.category} · v{v.scriptVersion}</span></div>}
+            {v && <div className="flex gap-2 mt-1 items-center flex-wrap"><StatusBadge status={v.status} /><FormatBadge format={v.format} /><VideoStateBadge item={v} /><span className="text-xs text-slate-500">{v.kind} · {v.category} · v{v.scriptVersion}</span></div>}
           </div>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700 p-1"><X size={22} /></button>
         </div>
@@ -160,26 +199,35 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
             </div>
           )}
 
+          <section className="border border-slate-200 rounded-xl p-3 space-y-2">
+            <h3 className="font-semibold text-sm">Content format</h3>
+            <div className="flex flex-wrap gap-2">
+              {(['CARD_ONLY', 'CARD_WITH_VIDEO'] as const).map(f => (
+                <label key={f} className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border cursor-pointer ${v.format === f ? 'border-primary bg-primary/5' : 'border-slate-200'} ${busy || ['QUEUED', 'GENERATING'].includes(videoState) ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                  <input type="radio" name="format" checked={v.format === f}
+                    disabled={busy || ['QUEUED', 'GENERATING'].includes(videoState) || v.status === 'REJECTED'}
+                    onChange={() => setFormat.mutate(f)} />
+                  {FORMAT_LABEL[f]}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500">
+              {withVideo
+                ? 'The card is published normally. A video is only made when you press “Generate video”, and only plays for users after you approve it.'
+                : 'A normal news card (headline, summary, source). No video is generated.'}
+            </p>
+          </section>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="aspect-[9/16] bg-slate-900 rounded-xl overflow-hidden flex flex-col items-center justify-center">
               {v.videoUrl
                 ? <video src={v.videoUrl} poster={v.thumbnailUrl ?? undefined} controls playsInline className="w-full h-full object-contain" />
                 : (
                   <div className="p-4 text-center space-y-2">
-                    <div className="text-slate-400 text-xs">No rendered video yet</div>
-                    {['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY'].includes(status!) && (
-                      <button
-                        className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1 mx-auto"
-                        disabled={busy}
-                        onClick={() => genVideo.mutate()}
-                      >
-                        {genVideo.isPending ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                        Start AI Generation
-                      </button>
-                    )}
-                    {status === 'GENERATING' && (
+                    <div className="text-slate-400 text-xs">{withVideo ? 'No rendered video yet' : 'News card only — no video'}</div>
+                    {['QUEUED', 'GENERATING'].includes(videoState) && (
                       <div className="text-xs text-blue-400 animate-pulse flex items-center justify-center gap-1">
-                        <Loader2 size={12} className="animate-spin" /> Generating...
+                        <Loader2 size={12} className="animate-spin" /> {videoState === 'QUEUED' ? 'Queued…' : 'Generating…'}
                       </div>
                     )}
                   </div>
@@ -231,13 +279,15 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
 
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-sm">Script &amp; captions</h3>
+              <h3 className="font-semibold text-sm">Card text{withVideo || v.script ? ' & video script' : ''}</h3>
               {!draft && <button className="btn-outline text-xs py-1" onClick={startEdit}>Edit</button>}
             </div>
             {!draft ? (
               <div className="text-sm bg-slate-50 rounded-lg p-3 whitespace-pre-wrap">
                 {v.hook && <div className="font-semibold mb-1">{v.hook}</div>}
-                {v.script?.narration ?? <span className="text-slate-400">No script yet</span>}
+                <div className="text-xs text-slate-500">Card summary (shown to users)</div>
+                {v.description ?? <span className="text-slate-400">No summary yet — add one before publishing</span>}
+                {v.script?.narration && <><div className="text-xs text-slate-500 mt-2">Video narration</div>{v.script.narration}</>}
                 {v.attribution && <div className="text-xs text-slate-500 mt-2">Attribution: {v.attribution}</div>}
               </div>
             ) : (
@@ -246,11 +296,15 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
                   <input key={k} value={draft[k] ?? ''} onChange={e => setDraft({ ...draft, [k]: e.target.value })} placeholder={k}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
                 ))}
-                <textarea value={draft.narration ?? ''} rows={6} onChange={e => setDraft({ ...draft, narration: e.target.value })}
-                  placeholder="Narration" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-                <textarea value={draft.captions ?? ''} rows={6} onChange={e => setDraft({ ...draft, captions: e.target.value })}
-                  placeholder='[{"start":0,"end":3,"text":"…"}]' className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono" />
-                <p className="text-xs text-amber-700">Editing the script or captions discards the rendered video; it must be regenerated and re-reviewed.</p>
+                <textarea value={draft.description ?? ''} rows={4} onChange={e => setDraft({ ...draft, description: e.target.value })}
+                  placeholder="Card summary (about 60 words) — this is what users read" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                {(v.script || withVideo) && <>
+                  <textarea value={draft.narration ?? ''} rows={6} onChange={e => setDraft({ ...draft, narration: e.target.value })}
+                    placeholder="Video narration" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+                  <textarea value={draft.captions ?? ''} rows={6} onChange={e => setDraft({ ...draft, captions: e.target.value })}
+                    placeholder='[{"start":0,"end":3,"text":"…"}]' className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono" />
+                  <p className="text-xs text-amber-700">Editing the title, narration or captions discards an existing video (and its approval); request a new one if needed.</p>
+                </>}
                 <div className="flex gap-2">
                   <button className="btn-ghost" onClick={() => setDraft(null)}>Cancel</button>
                   <button className="btn-primary" disabled={save.isPending} onClick={submitEdit}>{save.isPending ? 'Saving…' : 'Save'}</button>
@@ -259,45 +313,81 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
             )}
           </section>
 
-          <section className="border-t pt-4 space-y-2">
-            <h3 className="font-semibold text-sm">Actions</h3>
+          <section className="border-t pt-4 space-y-3">
+            <h3 className="font-semibold text-sm">Card actions</h3>
             <div className="flex flex-wrap gap-2 items-center">
-              {['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY'].includes(status!) && (
-                <button
-                  className="btn-primary flex items-center gap-1.5"
-                  disabled={busy}
-                  onClick={() => genVideo.mutate()}
-                >
-                  {genVideo.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                  Generate AI Video Now
+              {CARD_STATES.includes(status!) && (
+                <button className="btn-primary" disabled={busy} onClick={() => publishCard.mutate({})}>
+                  {publishCard.isPending ? 'Publishing…' : 'Publish as News Card'}
                 </button>
               )}
-              {status === 'GENERATING' && (
-                <span className="text-xs text-blue-600 flex items-center gap-1.5 font-medium animate-pulse">
-                  <Loader2 size={13} className="animate-spin" /> Generation in progress...
-                </span>
-              )}
+              {['DRAFT', 'SOURCE_VERIFIED'].includes(status!) &&
+                <button className="btn-outline" disabled={busy} onClick={() => run('request-review')}>Send to review</button>}
               {status === 'NEEDS_REVIEW' && <>
                 <button className="btn-success" disabled={busy} onClick={() => run('approve')}>Approve</button>
-                <button className="btn-danger" disabled={busy} onClick={() => setPrompt({ action: 'reject', title: 'Reject content', min: 10, label: 'Reject', hint: 'Recorded in the audit trail.' })}>Reject</button>
               </>}
               {status === 'APPROVED' && <>
-                <button className="btn-success" disabled={busy} onClick={() => run('publish')}>Publish now</button>
                 <input type="datetime-local" value={scheduleAt ?? ''} onChange={e => setScheduleAt(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs" />
-                <button className="btn-outline" disabled={busy || !scheduleAt} onClick={() => run('publish', { scheduledAt: new Date(scheduleAt).toISOString() })}>Schedule</button>
-                <button className="btn-danger" disabled={busy} onClick={() => setPrompt({ action: 'reject', title: 'Reject content', min: 10, label: 'Reject' })}>Reject</button>
+                <button className="btn-outline" disabled={busy || !scheduleAt} onClick={() => publishCard.mutate({ scheduledAt: new Date(scheduleAt).toISOString() })}>Schedule</button>
               </>}
+              {['DRAFT', 'SOURCE_VERIFIED', 'NEEDS_REVIEW', 'APPROVED', 'FAILED'].includes(status!) &&
+                <button className="btn-danger" disabled={busy} onClick={() => setPrompt({ action: 'reject', title: 'Reject content', min: 10, label: 'Reject', hint: 'Recorded in the audit trail.' })}>Reject</button>}
               {status === 'PUBLISHED' && <>
                 <button className="btn-outline" disabled={busy} onClick={() => setPrompt({ action: 'correct', title: 'Take down for correction', min: 10, label: 'Take down', hint: 'Removes it from the feed until corrected and re-reviewed.' })}>Correct</button>
                 <button className="btn-danger" disabled={busy} onClick={() => setPrompt({ action: 'correct', title: 'Withdraw content', min: 10, label: 'Withdraw', hint: 'Unpublishes and marks the source as withdrawn.', extra: { withdraw: true } })}>Withdraw</button>
                 <button className="btn-outline" disabled={busy} onClick={() => setPrompt({ action: 'unpublish', title: 'Unpublish', min: 10, label: 'Unpublish' })}>Unpublish</button>
                 <button className="btn-outline" disabled={busy} onClick={() => setPrompt({ action: 'expire', title: 'Mark expired', min: 10, label: 'Expire' })}>Expire</button>
               </>}
-              {status === 'FAILED' && <button className="btn-primary" disabled={busy} onClick={() => run('retry')}>Retry</button>}
-              {['EXPIRED', 'UNPUBLISHED', 'CORRECTION_REQUIRED', 'GENERATED'].includes(status!) &&
+              {['EXPIRED', 'UNPUBLISHED', 'CORRECTION_REQUIRED'].includes(status!) &&
                 <button className="btn-primary" disabled={busy} onClick={() => run('request-review')}>Send to review</button>}
             </div>
+            {withVideo && videoState !== 'NOT_REQUESTED' && videoState !== 'READY' && status !== 'PUBLISHED' && v.publishBlockers?.length === 0 && (
+              <p className="text-xs text-slate-500">The card can be published now — it does not wait for the video.</p>
+            )}
           </section>
+
+          {withVideo && (
+            <section className="border-t pt-4 space-y-3">
+              <h3 className="font-semibold text-sm flex items-center gap-2">Video <VideoStateBadge item={v} /></h3>
+              <div className="flex flex-wrap gap-2 items-center">
+                {videoState === 'NOT_REQUESTED' && (
+                  <button className="btn-primary flex items-center gap-1.5" disabled={busy || status === 'REJECTED' || status === 'EXPIRED'} onClick={() => genVideo.mutate()}>
+                    {genVideo.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                    Generate Video
+                  </button>
+                )}
+                {(videoState === 'QUEUED' || videoState === 'GENERATING') && <>
+                  <span className="text-xs text-blue-600 flex items-center gap-1.5 font-medium animate-pulse">
+                    <Loader2 size={13} className="animate-spin" /> {videoState === 'QUEUED' ? 'Waiting for the worker…' : 'Generating — this can take a few minutes'}
+                  </span>
+                  {activeJob && <button className="btn-outline text-xs" disabled={busy}
+                    onClick={() => adminApi.cancelContentJob(activeJob.id).then(() => { toast.success('Video request cancelled'); refresh(); }).catch((e: any) => toast.error(describeError(e)))}>
+                    Cancel
+                  </button>}
+                </>}
+                {videoState === 'READY' && !v.videoApprovedAt && <>
+                  <button className="btn-success" disabled={busy} onClick={() => run('video/approve')}>Approve video</button>
+                  <span className="text-xs text-slate-500">Preview it above. Users will not see the video until you approve it.</span>
+                </>}
+                {videoState === 'READY' && v.videoApprovedAt && (
+                  <button className="btn-outline" disabled={busy} onClick={() => run('video/unapprove')}>Remove video from the feed</button>
+                )}
+                {videoState === 'READY' && (
+                  <button className="btn-ghost text-xs" disabled={busy} onClick={() => run('video/discard')}>Discard video</button>
+                )}
+                {videoState === 'FAILED' && <>
+                  <button className="btn-primary" disabled={busy} onClick={() => run('video/retry')}>Retry video</button>
+                  <button className="btn-ghost text-xs" disabled={busy} onClick={() => run('video/discard')}>Discard</button>
+                </>}
+              </div>
+              {videoState === 'FAILED' && (
+                <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                  {v.videoFailureReason || 'Video generation failed.'} The card is not affected{status === 'PUBLISHED' ? ' and stays published' : ' and can still be published'}.
+                </div>
+              )}
+              {v.videoRequestedAt && <div className="text-xs text-slate-400">Requested {formatRelativeTime(v.videoRequestedAt)}{v.videoApprovedAt ? ` · approved ${formatRelativeTime(v.videoApprovedAt)}` : ''}</div>}
+            </section>
+          )}
 
           <section className="space-y-1">
             <h3 className="font-semibold text-sm">Audit trail</h3>
@@ -367,14 +457,16 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
   const [status, setStatus] = useState('NEEDS_REVIEW');
   const [kind, setKind] = useState('');
   const [category, setCategory] = useState('');
+  const [format, setFormatFilter] = useState('');
+  const [videoState, setVideoStateFilter] = useState('');
   const [page, setPage] = useState(1);
   const limit = 20;
 
   // Real-time polling every 8s
   const counts = useQuery({ queryKey: ['content-counts'], queryFn: adminApi.getContentCounts, refetchInterval: 8_000 });
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ['content-queue', status, kind, category, page],
-    queryFn: () => adminApi.getContentQueue({ status, kind, category, page, limit }),
+    queryKey: ['content-queue', status, kind, category, format, videoState, page],
+    queryFn: () => adminApi.getContentQueue({ status, kind, category, format, videoState, page, limit }),
     refetchInterval: 8_000,
   });
   const countFor = (s: string) =>
@@ -409,6 +501,15 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
           <option value="SCHEME">Sarkari Yojana / Schemes</option>
           <option value="NEWS">Daily News</option>
         </select>
+        <select value={format} onChange={e => { setFormatFilter(e.target.value); setPage(1); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white">
+          <option value="">All formats</option>
+          <option value="CARD_ONLY">Card only</option>
+          <option value="CARD_WITH_VIDEO">Card + Video</option>
+        </select>
+        <select value={videoState} onChange={e => { setVideoStateFilter(e.target.value); setPage(1); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white">
+          <option value="">Any video state</option>
+          {Object.entries(VIDEO_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
         <input value={category} onChange={e => { setCategory(e.target.value); setPage(1); }} placeholder="Filter by category (e.g. FARMER)"
           className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs w-64 bg-white" />
       </div>
@@ -418,7 +519,7 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
       {data && data.data.length === 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center space-y-2">
           <div className="text-slate-400 text-sm">Nothing currently in <b>{status.replace(/_/g, ' ')}</b> state.</div>
-          <p className="text-xs text-slate-400">Items move through Drafts &rarr; Generating &rarr; Needs Review &rarr; Approved &rarr; Published.</p>
+          <p className="text-xs text-slate-400">New items start as plain news cards: Drafts &rarr; Needs Review &rarr; Approved &rarr; Published. A video is only made if you request one.</p>
         </div>
       )}
       {data && data.data.length > 0 && (
@@ -432,7 +533,9 @@ function ContentList({ onOpen }: { onOpen: (id: string) => void }) {
                 </div>
                 {r.warnings?.length > 0 && <div className="text-xs text-amber-700 mt-1 flex items-center gap-1"><AlertTriangle size={12} /> {r.warnings[0]}{r.warnings.length > 1 && ` (+${r.warnings.length - 1})`}</div>}
               </div>
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                <FormatBadge format={r.format} />
+                <VideoStateBadge item={r} />
                 <StatusBadge status={r.status} />
               </div>
             </button>
@@ -469,9 +572,9 @@ function SchemesView({ onOpenDraft }: { onOpenDraft: (id: string) => void }) {
   });
 
   const draftMutation = useMutation({
-    mutationFn: (schemeId: string) => adminApi.createSchemeDraft(schemeId, true),
+    mutationFn: (schemeId: string) => adminApi.createSchemeDraft(schemeId),
     onSuccess: (res: any) => {
-      toast.success('Yojana video draft created! AI generation started.');
+      toast.success('Yojana card draft created. Review it, then publish it as a news card or request a video.');
       qc.invalidateQueries({ queryKey: ['content-schemes'] });
       qc.invalidateQueries({ queryKey: ['content-queue'] });
       qc.invalidateQueries({ queryKey: ['content-counts'] });
@@ -603,7 +706,7 @@ function SchemesView({ onOpenDraft }: { onOpenDraft: (id: string) => void }) {
                       Official Portal <ExternalLink size={11} />
                     </a>
                   )}
-                  <span>· {s._count?.videos ?? 0} video(s) generated</span>
+                  <span>· {s._count?.videos ?? 0} card(s) drafted</span>
                   {s.lastVerifiedAt && <span>· verified {formatRelativeTime(s.lastVerifiedAt)}</span>}
                 </div>
               </div>
@@ -1012,16 +1115,15 @@ function ScheduleView() {
         </label>
         <div className="grid grid-cols-2 gap-4">
           {num('ingestIntervalMinutes', 'Ingest every (minutes)', '15–1440')}
-          {num('maxNewVideosPerRun', 'New drafts per run', '0–20 (limits spend)')}
+          {num('maxNewVideosPerRun', 'New card drafts per run', '0–20')}
           {num('newsStaleHours', 'News is stale after (hours)', 'stale news is not drafted')}
           {num('newsAutoExpireHours', 'Auto-expire published news after (hours)', '0 = never')}
           {num('schemeVerifyMaxAgeDays', 'Scheme re-verification every (days)')}
           {num('developingFreshHours', 'Developing stories: max source age (hours)')}
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-          <input type="checkbox" checked={s.autoGenerate} onChange={e => set({ autoGenerate: e.target.checked })} className="rounded text-primary focus:ring-primary" />
-          Automatically queue AI video generation for new drafts
-        </label>
+        <p className="text-xs text-slate-500">
+          New stories always arrive as plain news-card drafts. Videos are never generated automatically — open an item, choose “Card + Video” and press “Generate video”.
+        </p>
         <div className="text-xs text-slate-500 pt-1 border-t border-slate-100 flex items-center justify-between">
           <span>Last ingest run: {fmt(s.lastIngestAt)}</span>
           <span className="text-emerald-700 font-medium">Auto-scheduler active</span>

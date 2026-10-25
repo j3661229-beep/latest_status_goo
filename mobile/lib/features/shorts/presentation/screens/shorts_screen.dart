@@ -1,18 +1,20 @@
 // lib/features/shorts/presentation/screens/shorts_screen.dart
 //
-// "Shorts" tab: Daily News / Yojana & Scholarships / Saved, as a vertical pager.
-// One VideoPlayerController for the whole feed (see ShortPlaybackController).
+// "Shorts" tab: Daily News / Yojana & Scholarships / Saved, as an Inshorts-style vertical
+// pager of cards (image + headline + ~60-word summary). Only admin-published items are served.
+// A video is never auto-played: cards with an admin-generated video show a "watch video"
+// button that opens a full-screen viewer (one VideoPlayerController, see ShortPlaybackController).
 // No RefreshIndicator / Transform around the PageView (invalid SliverGeometry crash
 // documented in PROJECT_AUDIT.md) — refresh is an explicit button + error retry.
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/api/api_error.dart';
-import '../../../../core/router/app_shell.dart';
 import '../../../../core/widgets/app_ui.dart';
 import '../../data/short_models.dart';
 import '../../data/shorts_repository.dart';
@@ -20,6 +22,7 @@ import '../providers/shorts_feed_provider.dart';
 import '../short_format.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/short_player.dart';
+import '../widgets/short_status_share_sheet.dart';
 
 class ShortsScreen extends ConsumerStatefulWidget {
   const ShortsScreen({super.key, this.controllerFactory});
@@ -49,15 +52,11 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _playback = ShortPlaybackController(factory: widget.controllerFactory);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) AppShell.immersive.value = true;
-    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    AppShell.immersive.value = false;
     _pager.dispose();
     _playback.dispose();
     super.dispose();
@@ -98,16 +97,26 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
     WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
   }
 
-  /// Make the playback controller follow the visible page. Safe to call from build.
+  /// Count a view for the visible card (no video is loaded). Safe to call from build.
   void _syncActive(List<ShortItem> items) {
     if (items.isEmpty) return;
-    final i = _index.clamp(0, items.length - 1);
-    final item = items[i];
+    final item = items[_index.clamp(0, items.length - 1)];
+    if (_viewed.contains(item.id)) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _playback.activate(item.id, item.videoUrl);
-      if (_viewed.add(item.id)) ref.read(shortsRepositoryProvider).event(item.id, 'VIEW');
+      if (mounted && _viewed.add(item.id)) ref.read(shortsRepositoryProvider).event(item.id, 'VIEW');
     });
+  }
+
+  /// Full-screen player, opened only when the reader asks for the video.
+  Future<void> _watchVideo(ShortItem item) async {
+    if (!item.hasVideo) return;
+    HapticFeedback.selectionClick();
+    unawaited(_playback.activate(item.id, item.videoUrl));
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => _VideoViewer(item: item, playback: _playback),
+    ));
+    _playback.stop();
   }
 
   void _onPageChanged(int i, ShortsFeedNotifier notifier, int length) {
@@ -119,33 +128,14 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
     if (i >= length - 3) notifier.loadMore();
   }
 
-  Future<void> _openDetail(ShortItem item) async {
-    _playback.suspend();
-    await context.push('/shorts/${item.id}');
-    if (mounted) _playback.resume();
-  }
+  Future<void> _openDetail(ShortItem item) => context.push('/shorts/${item.id}');
 
   Future<void> _share(ShortItem item) async {
-    final link = item.primaryLink;
-    final text = [
-      item.title,
-      if (link != null) link,
-      '— Status Go',
-    ].join('\n');
     ref.read(shortsRepositoryProvider).event(item.id, 'SHARE');
-    _playback.suspend();
-    try {
-      await Share.share(text, subject: item.title);
-    } finally {
-      if (mounted) _playback.resume();
-    }
+    await showShortStatusShareSheet(context, item);
   }
 
-  Future<void> _report(ShortItem item) async {
-    _playback.suspend();
-    await showReportSheet(context, item.id);
-    if (mounted) _playback.resume();
-  }
+  Future<void> _report(ShortItem item) => showReportSheet(context, item.id);
 
   Future<void> _toggleSave(ShortItem item, ShortsFeedNotifier notifier) async {
     try {
@@ -162,29 +152,26 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
     final topInset = MediaQuery.of(context).padding.top;
     _syncActive(state.items);
 
-    return Theme(
-      data: AppTheme.immersive,
-      child: Material(
-        color: AppColors.inkSurface,
-        child: Stack(
-          children: [
-            Positioned.fill(child: _content(state, notifier, topInset)),
-            Positioned(top: 0, left: 0, right: 0, child: _TopBar(
-              topInset: topInset,
-              feed: _feed,
-              category: _category,
-              onFeed: _selectFeed,
-              onCategory: _selectCategory,
-              onRefresh: notifier.refresh,
-            )),
-          ],
-        ),
+    return Material(
+      color: context.palette.bg,
+      child: Column(
+        children: [
+          _TopBar(
+            topInset: topInset,
+            feed: _feed,
+            category: _category,
+            onFeed: _selectFeed,
+            onCategory: _selectCategory,
+            onRefresh: notifier.refresh,
+          ),
+          Expanded(child: _content(state, notifier)),
+        ],
       ),
     );
   }
 
-  Widget _content(ShortsFeedState state, ShortsFeedNotifier notifier, double topInset) {
-    final pad = EdgeInsets.only(top: topInset + 110);
+  Widget _content(ShortsFeedState state, ShortsFeedNotifier notifier) {
+    const pad = EdgeInsets.only(top: 24);
     if (state.loading && state.items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -204,11 +191,11 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
       return Padding(
         padding: pad,
         child: EmptyState(
-          icon: _feed == ShortsFeed.saved ? Icons.bookmark_border_rounded : Icons.video_library_outlined,
-          title: _feed == ShortsFeed.saved ? 'कुछ भी सहेजा नहीं गया' : 'अभी कोई वीडियो नहीं',
+          icon: _feed == ShortsFeed.saved ? Icons.bookmark_border_rounded : Icons.newspaper_rounded,
+          title: _feed == ShortsFeed.saved ? 'कुछ भी सहेजा नहीं गया' : 'अभी कोई खबर नहीं',
           message: _feed == ShortsFeed.saved
-              ? 'पसंद आने वाले वीडियो को बुकमार्क करें।'
-              : 'समीक्षित सामग्री प्रकाशित होते ही यहाँ दिखेगी।',
+              ? 'पसंद आने वाली खबर या योजना को बुकमार्क करें।'
+              : 'एडमिन द्वारा प्रकाशित खबरें और योजनाएँ यहाँ दिखेंगी।',
           actionLabel: 'रीफ़्रेश करें',
           onAction: notifier.refresh,
         ),
@@ -227,8 +214,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
         return _ShortPage(
           key: ValueKey(item.id),
           item: item,
-          playback: _playback,
-          topInset: topInset,
+          onWatch: () => _watchVideo(item),
           onDetail: () => _openDetail(item),
           onSave: () => _toggleSave(item, notifier),
           onShare: () => _share(item),
@@ -243,11 +229,11 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
         Positioned(
           left: 0,
           right: 0,
-          top: topInset + 112,
+          top: 8,
           child: Center(
             child: ActionChip(
               avatar: const Icon(Icons.refresh_rounded, size: 18, color: Colors.white),
-              label: Text('और वीडियो लोड नहीं हुए — दोबारा कोशिश करें',
+              label: Text('और खबरें लोड नहीं हुईं — दोबारा कोशिश करें',
                   style: AppText.body(size: 13.5, weight: FontWeight.w700, color: Colors.white)),
               backgroundColor: Colors.black.withValues(alpha: 0.6),
               side: BorderSide.none,
@@ -279,15 +265,12 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final cats = feed == ShortsFeed.news ? kNewsCategories : kSchemeCategories;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.black.withValues(alpha: 0.65), Colors.transparent],
-        ),
-      ),
+    return Material(
+      color: p.surface,
+      elevation: 1,
+      shadowColor: Colors.black26,
       child: Padding(
         padding: EdgeInsets.only(top: topInset + 4, bottom: 8),
         child: Column(
@@ -311,10 +294,20 @@ class _TopBar extends StatelessWidget {
                     ),
                   ),
                 ),
+                FilledButton.tonalIcon(
+                  onPressed: () => context.push('/scheme-finder'),
+                  icon: const Icon(Icons.calculate_outlined, size: 16),
+                  label: const Text('योजना मित्र', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 IconButton(
                   tooltip: 'रीफ़्रेश करें',
                   onPressed: onRefresh,
-                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                  icon: Icon(Icons.refresh_rounded, color: p.textPrimary),
                 ),
               ],
             ),
@@ -338,9 +331,9 @@ class _TopBar extends StatelessWidget {
                         selected: sel,
                         onSelected: (_) => onCategory(value),
                         showCheckmark: false,
-                        labelStyle: AppText.body(size: 14, weight: FontWeight.w700, color: sel ? Colors.white : AppColors.onDarkMuted),
+                        labelStyle: AppText.body(size: 14, weight: FontWeight.w700, color: sel ? Colors.white : p.textSecondary),
                         selectedColor: AppColors.primary,
-                        backgroundColor: Colors.black.withValues(alpha: 0.35),
+                        backgroundColor: p.surfaceMuted,
                         side: BorderSide.none,
                       ),
                     );
@@ -360,39 +353,52 @@ class _Tab extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        selected: selected,
-        label: label,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Center(
-                child: Text(
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
                   label,
                   style: AppText.heading(
                     size: selected ? 18 : 16,
                     weight: selected ? FontWeight.w800 : FontWeight.w600,
-                    color: selected ? Colors.white : AppColors.onDarkMuted,
+                    color: selected ? p.primary : p.textMuted,
                   ),
                 ),
-              ),
+                const SizedBox(height: 2),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  height: 3,
+                  width: selected ? 22 : 0,
+                  decoration: BoxDecoration(color: p.primary, borderRadius: BorderRadius.circular(2)),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
+/// One Inshorts-style news card: image, headline, ~60-word summary, source, actions.
 class _ShortPage extends StatelessWidget {
   const _ShortPage({
     super.key,
     required this.item,
-    required this.playback,
-    required this.topInset,
+    required this.onWatch,
     required this.onDetail,
     required this.onSave,
     required this.onShare,
@@ -400,8 +406,7 @@ class _ShortPage extends StatelessWidget {
   });
 
   final ShortItem item;
-  final ShortPlaybackController playback;
-  final double topInset;
+  final VoidCallback onWatch;
   final VoidCallback onDetail;
   final VoidCallback onSave;
   final VoidCallback onShare;
@@ -423,124 +428,251 @@ class _ShortPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final stale = item.kind == ShortKind.news && isStaleNews(item.news?.publishedAt);
-    final poster = item.thumbnailUrl == null
-        ? const ColoredBox(color: AppColors.inkSurface)
-        : CachedNetworkImage(
-            imageUrl: item.thumbnailUrl!,
-            fit: BoxFit.cover,
-            errorWidget: (_, __, ___) => const ColoredBox(color: AppColors.inkSurface),
-          );
+    final summary = item.summary ?? item.hook;
+    final hasVideo = item.hasVideo;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Video + tap to pause/play
-        Semantics(
-          button: true,
-          label: 'वीडियो चलाएं या रोकें',
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: playback.togglePlay,
-            child: ShortVideoSurface(playback: playback, id: item.id, placeholder: poster),
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: p.border),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Image (+ optional admin-generated video behind a button)
+              AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _Poster(url: item.thumbnailUrl, kind: item.kind),
+                    Positioned(
+                      left: 10,
+                      top: 10,
+                      child: _Pill(item.kind == ShortKind.scheme ? 'सरकारी योजना' : 'समाचार', color: AppColors.primary),
+                    ),
+                    if (hasVideo)
+                      Center(
+                        child: Semantics(
+                          button: true,
+                          label: 'वीडियो देखें',
+                          child: Material(
+                            color: Colors.black54,
+                            shape: const CircleBorder(),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: onWatch,
+                              child: const SizedBox(
+                                width: 64,
+                                height: 64,
+                                child: Icon(Icons.play_arrow_rounded, size: 44, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (hasVideo && item.durationSec != null)
+                      Positioned(
+                        right: 10,
+                        bottom: 4,
+                        child: _Pill('${item.durationSec!.round()} सेकंड', color: Colors.black54),
+                      ),
+                  ],
+                ),
+              ),
+              // Headline + summary (clipped, never overflows on small screens)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: ClipRect(
+                    child: SingleChildScrollView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(spacing: 6, children: [
+                            if (stale) const _Pill('पुरानी खबर', color: AppColors.accentDark),
+                            if (item.correctionNote != null) const _Pill('सुधार किया गया', color: AppColors.accentDark),
+                          ]),
+                          Text(
+                            item.title,
+                            style: AppText.heading(size: 20, weight: FontWeight.w800, color: p.textPrimary, height: 1.35),
+                          ),
+                          if (summary != null) ...[
+                            const SizedBox(height: 10),
+                            Text(summary, style: AppText.body(size: 16, color: p.textSecondary, height: 1.6)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Source + disclaimer
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_sourceLine.isNotEmpty)
+                      Text(_sourceLine,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.body(size: 13.5, weight: FontWeight.w700, color: p.textMuted)),
+                    Text(item.disclaimer,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(size: 12, color: p.textMuted)),
+                  ],
+                ),
+              ),
+              // Actions
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: FilledButton.icon(
+                          onPressed: onDetail,
+                          icon: const Icon(Icons.article_outlined),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(item.kind == ShortKind.scheme ? 'पात्रता, दस्तावेज़ और आवेदन' : 'विवरण और स्रोत'),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _Action(
+                      icon: item.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      label: item.isSaved ? 'सहेजा गया' : 'सहेजें',
+                      onTap: onSave,
+                    ),
+                    _Action(icon: Icons.share_rounded, label: 'शेयर', onTap: onShare),
+                    _Action(icon: Icons.flag_outlined, label: 'रिपोर्ट', onTap: onReport),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        // Bottom scrim for text legibility (contrast)
-        const Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.center,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Color(0xE6000000)],
+      ),
+    );
+  }
+}
+
+class _Poster extends StatelessWidget {
+  const _Poster({required this.url, required this.kind});
+  final String? url;
+  final ShortKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = DecoratedBox(
+      decoration: const BoxDecoration(gradient: AppColors.brandGradient),
+      child: Center(
+        child: Icon(kind == ShortKind.scheme ? Icons.account_balance_rounded : Icons.newspaper_rounded,
+            size: 56, color: Colors.white70),
+      ),
+    );
+    if (url == null) return fallback;
+    return CachedNetworkImage(
+      imageUrl: url!,
+      fit: BoxFit.cover,
+      placeholder: (_, __) => fallback,
+      errorWidget: (_, __, ___) => fallback,
+    );
+  }
+}
+
+/// Full-screen player for the one admin-generated video behind a card.
+class _VideoViewer extends StatelessWidget {
+  const _VideoViewer({required this.item, required this.playback});
+  final ShortItem item;
+  final ShortPlaybackController playback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: AppTheme.immersive,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Semantics(
+              button: true,
+              label: 'वीडियो चलाएं या रोकें',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: playback.togglePlay,
+                child: ShortVideoSurface(
+                  playback: playback,
+                  id: item.id,
+                  placeholder: const ColoredBox(color: Colors.black),
                 ),
               ),
             ),
-          ),
-        ),
-        // Paused / loading / error indicator
-        Center(
-          child: ListenableBuilder(
-            listenable: playback,
-            builder: (_, __) {
-              if (playback.activeId != item.id) return const SizedBox.shrink();
-              if (playback.error != null) {
-                return const _Badge(icon: Icons.error_outline_rounded, text: 'वीडियो नहीं चल सका — विवरण देखें');
-              }
-              final c = playback.controller;
-              if (c == null) return const CircularProgressIndicator();
-              return ValueListenableBuilder(
-                valueListenable: c,
-                builder: (_, v, __) => v.isPlaying || v.isBuffering
-                    ? (v.isBuffering ? const CircularProgressIndicator() : const SizedBox.shrink())
-                    : const Icon(Icons.play_arrow_rounded, size: 72, color: Colors.white70),
-              );
-            },
-          ),
-        ),
-        // Info + actions
-        Positioned(
-          left: 16,
-          right: 76,
-          bottom: 16,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (stale)
-                const _Pill('पुरानी खबर', color: AppColors.accentDark),
-              if (item.correctionNote != null) const _Pill('सुधार किया गया', color: AppColors.accentDark),
-              Text(
-                item.title,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.heading(size: 21, weight: FontWeight.w800, color: Colors.white, height: 1.35),
-              ),
-              const SizedBox(height: 6),
-              if (_sourceLine.isNotEmpty)
-                Text(_sourceLine, maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: AppText.body(size: 14, weight: FontWeight.w600, color: AppColors.onDarkMuted)),
-              const SizedBox(height: 4),
-              Text(item.disclaimer, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: AppText.body(size: 12.5, color: AppColors.onDarkMuted)),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 48,
-                child: FilledButton.icon(
-                  onPressed: onDetail,
-                  icon: const Icon(Icons.article_outlined),
-                  label: Text(item.kind == ShortKind.scheme ? 'पात्रता, दस्तावेज़ और आवेदन' : 'विवरण और स्रोत'),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Positioned(
-          right: 4,
-          bottom: 16,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _Action(
-                icon: item.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                label: item.isSaved ? 'सहेजा गया' : 'सहेजें',
-                onTap: onSave,
-              ),
-              _Action(icon: Icons.share_rounded, label: 'शेयर', onTap: onShare),
-              ListenableBuilder(
+            Center(
+              child: ListenableBuilder(
                 listenable: playback,
-                builder: (_, __) => _Action(
-                  icon: playback.muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                  label: playback.muted ? 'आवाज़ चालू करें' : 'म्यूट करें',
-                  onTap: playback.toggleMute,
+                builder: (_, __) {
+                  if (playback.activeId != item.id) return const SizedBox.shrink();
+                  if (playback.error != null) {
+                    return const _Badge(icon: Icons.error_outline_rounded, text: 'वीडियो नहीं चल सका');
+                  }
+                  final c = playback.controller;
+                  if (c == null) return const CircularProgressIndicator();
+                  return ValueListenableBuilder(
+                    valueListenable: c,
+                    builder: (_, v, __) => v.isBuffering
+                        ? const CircularProgressIndicator()
+                        : v.isPlaying
+                            ? const SizedBox.shrink()
+                            : const Icon(Icons.play_arrow_rounded, size: 72, color: Colors.white70),
+                  );
+                },
+              ),
+            ),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'बंद करें',
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    ),
+                    Expanded(
+                      child: Text(item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.heading(size: 16, weight: FontWeight.w700, color: Colors.white)),
+                    ),
+                    ListenableBuilder(
+                      listenable: playback,
+                      builder: (_, __) => IconButton(
+                        tooltip: playback.muted ? 'आवाज़ चालू करें' : 'म्यूट करें',
+                        onPressed: playback.toggleMute,
+                        icon: Icon(playback.muted ? Icons.volume_off_rounded : Icons.volume_up_rounded, color: Colors.white),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              _Action(icon: Icons.flag_outlined, label: 'रिपोर्ट', onTap: onReport),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -554,9 +686,9 @@ class _Action extends StatelessWidget {
   Widget build(BuildContext context) => IconButton(
         tooltip: label,
         onPressed: onTap,
-        iconSize: 28,
-        constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
-        icon: Icon(icon, color: Colors.white),
+        iconSize: 26,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        icon: Icon(icon, color: context.palette.textSecondary),
       );
 }
 

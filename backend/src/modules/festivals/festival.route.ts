@@ -7,8 +7,8 @@ import { clampInt } from '../../lib/http/validation';
 export async function festivalRoutes(fastify: FastifyInstance) {
   const cache = new CacheService(fastify.redis);
 
-  // GET /festivals/upcoming?days=30
-  fastify.get('/upcoming', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  // GET /festivals/upcoming?days=30 (Public)
+  fastify.get('/upcoming', async (req, reply) => {
     const daysAhead = clampInt((req.query as any)?.days, 30, 1, 365);
     const cacheKey = CK.festivals(daysAhead);
 

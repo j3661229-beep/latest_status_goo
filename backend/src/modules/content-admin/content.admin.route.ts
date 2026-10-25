@@ -12,7 +12,9 @@ import { contentConfig } from '../../lib/content/config';
 import { hostAllowed } from '../../lib/content/safe-fetch';
 import { collectAttention } from '../../lib/content/freshness';
 import { loadSettings, saveSettings, SettingsPatchSchema } from '../../lib/content/settings';
-import { canTransition, publishBlockers } from '../../lib/content/lifecycle';
+import { canTransition, publishBlockers, videoApprovalBlockers } from '../../lib/content/lifecycle';
+import { requestVideoGeneration } from '../../lib/content/video-request';
+import { newsCardDefaults, schemeCardDefaults } from '../../lib/content/card-defaults';
 import {
   contentWarnings, newsFreshnessBlocker, DEFAULT_THRESHOLDS, WarningThresholds,
 } from '../../lib/content/warnings';
@@ -30,6 +32,8 @@ const OptReasonBody = z.object({ reason: z.string().trim().max(1000).optional() 
 
 const QueueQuery = z.object({
   status: optionalEnum([...STATUSES]),
+  format: optionalEnum(['CARD_ONLY', 'CARD_WITH_VIDEO']),
+  videoState: optionalEnum(['NOT_REQUESTED', 'QUEUED', 'GENERATING', 'READY', 'FAILED']),
   kind: optionalEnum(['SCHEME', 'NEWS']),
   category: optionalString(64),
   search: optionalString(100),
@@ -52,6 +56,8 @@ const EditBody = z
   })
   .partial()
   .refine((b) => Object.keys(b).length > 0, { message: 'No fields to update' });
+
+const FormatBody = z.object({ format: z.enum(['CARD_ONLY', 'CARD_WITH_VIDEO']) });
 
 const PublishBody = z.object({
   reason: z.string().trim().max(1000).optional(),
@@ -190,10 +196,10 @@ type Full = Prisma.ShortVideoGetPayload<{ include: typeof fullInclude }>;
 /** Fields whose change invalidates already-rendered audio/video. */
 const RENDER_AFFECTING = ['script', 'captions', 'title', 'hook'] as const;
 /** States where the script/claims may be edited. */
-const EDITABLE: ContentStatus[] = ['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY', 'NEEDS_REVIEW', 'CORRECTION_REQUIRED', 'FAILED'];
+const EDITABLE: ContentStatus[] = ['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY', 'NEEDS_REVIEW', 'APPROVED', 'CORRECTION_REQUIRED', 'FAILED'];
 
 export interface ContentAdminOptions {
-  /** Queues the next pipeline stage; defaults to BullMQ. Injectable so tests need no Redis. */
+  /** Queues the next video pipeline stage (only ever from an explicit admin video request); defaults to BullMQ. Injectable so tests need no Redis. */
   startGeneration?: (videoId: string) => Promise<string | null>;
   /** Asks the worker to ingest now; defaults to BullMQ. */
   requestIngest?: () => Promise<void>;
@@ -283,6 +289,8 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
     const where: Prisma.ShortVideoWhereInput = {
       status: q.data.status ?? 'NEEDS_REVIEW',
+      ...(q.data.format && { format: q.data.format }),
+      ...(q.data.videoState && { videoState: q.data.videoState }),
       ...(q.data.kind && { kind: q.data.kind }),
       ...(q.data.category && { category: q.data.category }),
       ...(q.data.search && { title: { contains: q.data.search, mode: 'insensitive' } }),
@@ -394,7 +402,6 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
           prisma,
           cfg,
           lock: locker,
-          startGeneration: (id) => start(id),
           log: (m, x) => req.log.info({ extra: x }, `[content-ingest] ${m}`),
         },
         { forceIngest: true },
@@ -433,7 +440,7 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     const since = new Date(Date.now() - 24 * 3_600_000);
     const [failedJobs24h, stuckGenerating] = await Promise.all([
       prisma.contentJob.count({ where: { state: 'FAILED', queuedAt: { gte: since } } }),
-      prisma.shortVideo.count({ where: { status: 'GENERATING', updatedAt: { lt: new Date(Date.now() - 3_600_000) } } }),
+      prisma.shortVideo.count({ where: { videoState: { in: ['QUEUED', 'GENERATING'] }, updatedAt: { lt: new Date(Date.now() - 3_600_000) } } }),
     ]);
     return reply.send({
       data: {
@@ -565,7 +572,6 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
 
   fastify.post('/content/schemes/:id/draft', guard, async (req, reply) => {
     const p = IdParams.safeParse(req.params);
-    const b = z.object({ autoGenerate: z.boolean().default(true) }).safeParse(req.body ?? {});
     if (!p.success) return sendValidationError(reply, p.error);
     const scheme = await prisma.scheme.findUnique({ where: { id: p.data.id } });
     if (!scheme) return err(reply, 404, 'Scheme not found');
@@ -579,12 +585,11 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
         region: scheme.stateCode ?? null,
         language: scheme.language,
         status: 'DRAFT',
+        format: 'CARD_ONLY',
+        ...schemeCardDefaults(scheme),
       },
     });
     await audit(req, 'content.scheme.draft', video.id, undefined, { schemeId: scheme.id });
-    if (b.success && b.data.autoGenerate) {
-      start(video.id).catch((e) => req.log.error({ err: e }, 'could not start auto-generation for scheme draft'));
-    }
     return reply.status(201).send({ data: video });
   });
 
@@ -632,11 +637,15 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     if (!b.success) return sendValidationError(reply, b.error);
     const d = b.data;
     const src = d.kind === 'SCHEME'
-      ? await prisma.scheme.findUnique({ where: { id: d.schemeId! }, select: { id: true } })
-      : await prisma.newsStory.findUnique({ where: { id: d.newsStoryId! }, select: { id: true } });
+      ? await prisma.scheme.findUnique({ where: { id: d.schemeId! } })
+      : await prisma.newsStory.findUnique({ where: { id: d.newsStoryId! } });
     if (!src) return err(reply, 404, 'Source record not found');
+    const defaults = d.kind === 'SCHEME' ? schemeCardDefaults(src as any) : newsCardDefaults(src as any);
     const v = await prisma.shortVideo.create({
-      data: { kind: d.kind, schemeId: d.schemeId, newsStoryId: d.newsStoryId, title: d.title, category: d.category, region: d.region ?? null },
+      data: {
+        kind: d.kind, schemeId: d.schemeId, newsStoryId: d.newsStoryId, title: d.title, category: d.category,
+        region: d.region ?? null, format: 'CARD_ONLY', ...defaults,
+      },
     });
     await audit(req, 'content.draft.create', v.id, undefined, { kind: d.kind });
     return reply.status(201).send({ data: v });
@@ -654,6 +663,10 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
 
     const d = b.data;
     const needsRerender = RENDER_AFFECTING.some((k) => d[k] !== undefined);
+    const hasVideoWork = v.videoState !== 'NOT_REQUESTED';
+    if (needsRerender && hasVideoWork && (v.videoState === 'QUEUED' || v.videoState === 'GENERATING')) {
+      return err(reply, 409, 'A video is being generated for this item — cancel it before editing the script, captions or title');
+    }
     const data: Prisma.ShortVideoUpdateInput = {
       ...(d.title !== undefined && { title: d.title }),
       ...(d.hook !== undefined && { hook: d.hook }),
@@ -664,11 +677,11 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
       ...(d.captions !== undefined && { captions: toJson(d.captions) }),
       ...(d.claims !== undefined && { claims: toJson(d.claims) }),
       ...(d.expiresAt !== undefined && { expiresAt: d.expiresAt ? new Date(d.expiresAt) : null }),
-      ...(needsRerender && {
+      // The old render no longer matches the edited text: drop it (and its approval). The card is unaffected.
+      ...(needsRerender && hasVideoWork && {
         scriptVersion: { increment: 1 },
-        // Old render no longer matches the edited text: force regeneration before it can be approved.
-        videoKey: null, audioKey: null,
-        status: v.status === 'DRAFT' || v.status === 'SOURCE_VERIFIED' ? v.status : 'SCRIPT_READY',
+        videoKey: null, audioKey: null, thumbnailKey: null,
+        videoState: 'NOT_REQUESTED' as const, videoApprovedAt: null, videoApprovedById: null, videoFailureReason: null,
       }),
     };
     const updated = await prisma.$transaction(async (tx) => {
@@ -685,7 +698,7 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     });
     if (!updated) return err(reply, 409, 'Content was changed by someone else — reload and retry');
     await audit(req, 'content.edit', v.id, undefined, { fields: Object.keys(d), needsRerender });
-    return reply.send({ data: await present(updated), needsRerender });
+    return reply.send({ data: await present(updated), needsRerender: needsRerender && hasVideoWork });
   });
 
   // ── Lifecycle actions ────────────────────────────────────────
@@ -776,7 +789,8 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     const v = await prisma.shortVideo.findUnique({ where: { id: p.data.id }, select: { newsStoryId: true } });
     const res = await move(req, reply, p.data.id, b.data.withdraw ? 'UNPUBLISHED' : 'CORRECTION_REQUIRED', b.data.withdraw ? 'withdraw' : 'correct', {
       reason: b.data.note,
-      data: { correctionNote: b.data.note },
+      // A correction/withdrawal also revokes the video approval: the video must be re-approved after re-review.
+      data: { correctionNote: b.data.note, videoApprovedAt: null, videoApprovedById: null },
     });
     if (reply.statusCode < 300 && v?.newsStoryId) {
       await prisma.newsStory.update({ where: { id: v.newsStoryId }, data: { correctionStatus: b.data.withdraw ? 'WITHDRAWN' : 'CORRECTED' } });
@@ -784,44 +798,175 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     return res;
   });
 
-  /** Queue generation (script → narration → render). Idempotent: duplicate requests share one queued job. */
-  fastify.post('/content/generate', { ...guard, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const b = z.object({ shortVideoId: z.string().min(1).max(64) }).safeParse(req.body ?? {});
-    if (!b.success) return sendValidationError(reply, b.error);
-    const v = await prisma.shortVideo.findUnique({ where: { id: b.data.shortVideoId }, select: { id: true, status: true } });
-    if (!v) return err(reply, 404, 'Content not found');
-    if (!['DRAFT', 'SOURCE_VERIFIED', 'SCRIPT_READY', 'GENERATING'].includes(v.status)) {
-      return err(reply, 409, `Cannot generate from status ${v.status}`);
-    }
-    try {
-      const stage = await start(v.id);
-      await audit(req, 'content.generate', v.id, undefined, { stage });
-      return reply.status(202).send({ queued: true, stage });
-    } catch (e) {
-      req.log.error({ err: e }, 'failed to enqueue generation');
-      return err(reply, 503, 'Generation queue unavailable');
-    }
-  });
+  // ── Content format + card publishing (never enqueue anything) ──
+  const heavy = { ...guard, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } };
 
-  /** Failed content → back to SCRIPT_READY, and its failed jobs back to QUEUED (worker enqueues in Phase 3). */
-  fastify.post('/content/:id/retry', guard, async (req, reply) => {
-    const p = IdParams.safeParse(req.params);
+  /** Choose Card only / Card + Video. Changing the format never starts a job. */
+  fastify.patch('/content/:id/format', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params); const b = FormatBody.safeParse(req.body ?? {});
     if (!p.success) return sendValidationError(reply, p.error);
-    const res = await move(req, reply, p.data.id, 'SCRIPT_READY', 'retry', {
-      check: async () => {
-        const maxRetries = Number((await prisma.appConfig.findUnique({ where: { key: 'content.max_manual_retries' } }))?.value) || 5;
-        const failed = await prisma.contentJob.count({ where: { shortVideoId: p.data.id, state: 'FAILED' } });
-        return failed >= maxRetries ? [`Retry limit reached (${maxRetries} failed jobs) — edit or reject the content`] : [];
+    if (!b.success) return sendValidationError(reply, b.error);
+    const v = await prisma.shortVideo.findUnique({ where: { id: p.data.id }, include: fullInclude });
+    if (!v) return err(reply, 404, 'Content not found');
+    if (v.format === b.data.format) return reply.send({ data: await present(v), unchanged: true });
+    if (v.videoState === 'QUEUED' || v.videoState === 'GENERATING') {
+      return err(reply, 409, 'A video is being generated — cancel the job before changing the format');
+    }
+    if (v.status === 'REJECTED') return err(reply, 409, 'Rejected content cannot be changed');
+    const res = await prisma.shortVideo.updateMany({
+      where: { id: v.id, format: v.format, videoState: v.videoState },
+      data: {
+        format: b.data.format,
+        // Leaving video mode pulls any video out of the public feed; it must be re-approved if ever re-enabled.
+        ...(b.data.format === 'CARD_ONLY' && { videoApprovedAt: null, videoApprovedById: null }),
       },
     });
-    if (reply.statusCode < 300) {
-      start(p.data.id).catch((e) => req.log.error({ err: e }, 'retry enqueue failed'));
-      await prisma.contentJob.updateMany({
-        where: { shortVideoId: p.data.id, state: 'FAILED' },
-        data: { state: 'QUEUED', attempts: 0, failureReason: null, startedAt: null, finishedAt: null },
-      });
+    if (res.count === 0) return err(reply, 409, 'Content was changed by someone else — reload and retry');
+    await prisma.contentReview.create({
+      data: { shortVideoId: v.id, actorId: actor(req), action: 'set_format', before: { format: v.format }, after: { format: b.data.format } },
+    });
+    await audit(req, 'content.format', v.id, { format: v.format }, { format: b.data.format });
+    return reply.send({ data: await present((await prisma.shortVideo.findUnique({ where: { id: v.id }, include: fullInclude }))!) });
+  });
+
+  /** Publish as a normal news card in one step (review → approve → publish). Enqueues NO job. */
+  fastify.post('/content/:id/publish-card', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params); const b = PublishBody.safeParse(req.body ?? {});
+    if (!p.success) return sendValidationError(reply, p.error);
+    if (!b.success) return sendValidationError(reply, b.error);
+    const v = await prisma.shortVideo.findUnique({ where: { id: p.data.id }, include: fullInclude });
+    if (!v) return err(reply, 404, 'Content not found');
+    if (v.status === 'PUBLISHED') return reply.send({ data: await present(v), unchanged: true });
+    const FROM: ContentStatus[] = ['DRAFT', 'SOURCE_VERIFIED', 'NEEDS_REVIEW', 'APPROVED'];
+    if (!FROM.includes(v.status)) return err(reply, 409, `Cannot publish a card from status ${v.status}`);
+
+    const at = b.data.scheduledAt ? new Date(b.data.scheduledAt) : new Date();
+    if (b.data.scheduledAt && at.getTime() < Date.now() - 60_000) return err(reply, 422, 'scheduledAt must be in the future');
+    const t = await thresholds();
+    const problems = publishBlockers(v as any);
+    if (v.expiresAt && v.expiresAt <= new Date()) problems.push('Content has already expired');
+    if (v.kind === 'NEWS' && v.newsStory) {
+      const f = newsFreshnessBlocker(v.newsStory, t);
+      if (f) problems.push(f);
     }
-    return res;
+    if (problems.length) return err(reply, 422, 'Content failed pre-flight checks', { problems });
+
+    const actorId = actor(req);
+    const updated = await prisma.$transaction(async (tx) => {
+      const res = await tx.shortVideo.updateMany({
+        where: { id: v.id, status: v.status },
+        data: { status: 'PUBLISHED', approvedById: actorId, publishedById: actorId, publishedAt: at, scheduledAt: b.data.scheduledAt ? at : null },
+      });
+      if (res.count === 0) return null;
+      await tx.contentReview.create({
+        data: { shortVideoId: v.id, actorId, action: b.data.scheduledAt ? 'schedule' : 'publish_card', reason: b.data.reason ?? null,
+                before: { status: v.status }, after: { status: 'PUBLISHED', format: v.format } },
+      });
+      return tx.shortVideo.findUnique({ where: { id: v.id }, include: fullInclude });
+    });
+    if (!updated) return err(reply, 409, 'Content was changed by someone else — reload and retry');
+    await audit(req, 'content.publish_card', v.id, { status: v.status }, { status: 'PUBLISHED', format: v.format });
+    return reply.send({ data: await present(updated) });
+  });
+
+  // ── Video (explicit admin actions only) ───────────────────────
+  async function videoRequest(req: FastifyRequest, reply: FastifyReply, id: string, action: string) {
+    const maxManualRetries = Number((await prisma.appConfig.findUnique({ where: { key: 'content.max_manual_retries' } }))?.value) || 5;
+    const r = await requestVideoGeneration({ prisma, start, maxManualRetries }, id, actor(req));
+    if (!r.ok) {
+      if (r.code === 503) req.log.error('failed to enqueue video generation');
+      return err(reply, r.code, r.message, r.problems ? { problems: r.problems } : {});
+    }
+    if (r.queued) await audit(req, action, id, undefined, { stage: r.stage });
+    return reply.status(r.queued ? 202 : 200).send({ queued: r.queued, duplicate: r.duplicate, videoState: r.state, stage: r.stage ?? null });
+  }
+
+  /** The only way to request a video. Idempotent: repeated clicks never create a second job. */
+  fastify.post('/content/:id/video/generate', heavy, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    return videoRequest(req, reply, p.data.id, 'content.video.generate');
+  });
+
+  fastify.post('/content/:id/video/retry', heavy, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    const v = await prisma.shortVideo.findUnique({ where: { id: p.data.id }, select: { videoState: true } });
+    if (!v) return err(reply, 404, 'Content not found');
+    if (v.videoState !== 'FAILED') return err(reply, 409, 'Only a failed video can be retried');
+    return videoRequest(req, reply, p.data.id, 'content.video.retry');
+  });
+
+  /** Approve a finished video so it becomes publicly playable (after previewing it). */
+  fastify.post('/content/:id/video/approve', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    const v = await prisma.shortVideo.findUnique({ where: { id: p.data.id }, include: fullInclude });
+    if (!v) return err(reply, 404, 'Content not found');
+    if (v.videoApprovedAt && v.videoState === 'READY' && v.format === 'CARD_WITH_VIDEO') {
+      return reply.send({ data: await present(v), unchanged: true });
+    }
+    const problems = videoApprovalBlockers(v as any);
+    if (problems.length) return err(reply, 422, 'Video cannot be approved', { problems });
+    const res = await prisma.shortVideo.updateMany({
+      where: { id: v.id, format: 'CARD_WITH_VIDEO', videoState: 'READY', videoKey: v.videoKey },
+      data: { videoApprovedAt: new Date(), videoApprovedById: actor(req) },
+    });
+    if (res.count === 0) return err(reply, 409, 'Video changed — reload and retry');
+    await prisma.contentReview.create({
+      data: { shortVideoId: v.id, actorId: actor(req), action: 'video_approve', before: { videoApproved: false }, after: { videoApproved: true } },
+    });
+    await audit(req, 'content.video.approve', v.id);
+    return reply.send({ data: await present((await prisma.shortVideo.findUnique({ where: { id: v.id }, include: fullInclude }))!) });
+  });
+
+  /** Pull a video out of the public feed (the card stays published). */
+  fastify.post('/content/:id/video/unapprove', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    const res = await prisma.shortVideo.updateMany({
+      where: { id: p.data.id, videoApprovedAt: { not: null } },
+      data: { videoApprovedAt: null, videoApprovedById: null },
+    });
+    if (res.count > 0) {
+      await prisma.contentReview.create({
+        data: { shortVideoId: p.data.id, actorId: actor(req), action: 'video_unapprove', before: { videoApproved: true }, after: { videoApproved: false } },
+      });
+      await audit(req, 'content.video.unapprove', p.data.id);
+    }
+    return reply.send({ ok: true, changed: res.count > 0 });
+  });
+
+  /** Throw a finished/failed video away so a new one can be requested. Never touches the card. */
+  fastify.post('/content/:id/video/discard', guard, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    const v = await prisma.shortVideo.findUnique({ where: { id: p.data.id }, select: { videoState: true } });
+    if (!v) return err(reply, 404, 'Content not found');
+    if (v.videoState === 'QUEUED' || v.videoState === 'GENERATING') return err(reply, 409, 'Cancel the running job first');
+    if (v.videoState === 'NOT_REQUESTED') return reply.send({ ok: true, changed: false });
+    await prisma.shortVideo.updateMany({
+      where: { id: p.data.id, videoState: { in: ['READY', 'FAILED'] } },
+      data: {
+        videoState: 'NOT_REQUESTED', videoKey: null, audioKey: null, thumbnailKey: null, durationSec: null,
+        videoApprovedAt: null, videoApprovedById: null, videoFailureReason: null, scriptVersion: { increment: 1 },
+      },
+    });
+    await audit(req, 'content.video.discard', p.data.id);
+    return reply.send({ ok: true, changed: true });
+  });
+
+  /** Back-compat alias for older clients: same explicit, idempotent video request. */
+  fastify.post('/content/generate', heavy, async (req, reply) => {
+    const b = z.object({ shortVideoId: z.string().min(1).max(64) }).safeParse(req.body ?? {});
+    if (!b.success) return sendValidationError(reply, b.error);
+    return videoRequest(req, reply, b.data.shortVideoId, 'content.video.generate');
+  });
+
+  fastify.post('/content/:id/retry', heavy, async (req, reply) => {
+    const p = IdParams.safeParse(req.params);
+    if (!p.success) return sendValidationError(reply, p.error);
+    return videoRequest(req, reply, p.data.id, 'content.video.retry');
   });
 
   fastify.post('/content/jobs/:id/cancel', guard, async (req, reply) => {
@@ -832,6 +977,14 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
       data: { state: 'CANCELLED', finishedAt: new Date(), failureReason: 'Cancelled by admin' },
     });
     if (r.count === 0) return err(reply, 409, 'Job not found or already finished');
+    const job = await prisma.contentJob.findUnique({ where: { id: p.data.id }, select: { shortVideoId: true } });
+    if (job?.shortVideoId) {
+      // The request is withdrawn: the card is unaffected and the admin may request again.
+      await prisma.shortVideo.updateMany({
+        where: { id: job.shortVideoId, videoState: { in: ['QUEUED', 'GENERATING'] } },
+        data: { videoState: 'NOT_REQUESTED', videoFailureReason: null },
+      });
+    }
     await audit(req, 'content.job.cancel', p.data.id);
     return reply.send({ ok: true });
   });

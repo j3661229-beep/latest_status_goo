@@ -45,7 +45,7 @@ export async function startGeneration(prisma: PrismaClient, videoId: string, q?:
     select: { status: true, script: true, audioKey: true, scriptVersion: true },
   });
   if (!v) return null;
-  const stage: Stage = !v.script ? 'SCRIPT' : v.status === 'GENERATING' && v.audioKey ? 'RENDER' : 'NARRATION';
+  const stage: Stage = !v.script ? 'SCRIPT' : v.audioKey ? 'RENDER' : 'NARRATION';
   await enqueueStage(stage, videoId, v.scriptVersion, q);
   return stage;
 }

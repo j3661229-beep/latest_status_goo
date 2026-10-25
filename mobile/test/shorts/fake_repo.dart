@@ -28,11 +28,14 @@ class FakeRepo extends ShortsRepository {
   Future<void> event(String id, String type) async => events.add('$id:$type');
 }
 
-Map<String, dynamic> newsJson(String id, {String? publishedAt, Map<String, dynamic>? news, String? video}) => {
+Map<String, dynamic> newsJson(String id, {String? publishedAt, Map<String, dynamic>? news, String? video, String? summary, String? format, double? duration}) => {
       'id': id,
       'kind': 'NEWS',
       'title': 'ख़बर $id',
       'category': 'INDIA',
+      if (summary != null) 'summary': summary,
+      if (format != null) 'format': format,
+      if (video != null && duration != null) 'durationSec': duration,
       if (video != null) 'videoUrl': video,
       'disclaimer': 'AI-सहायता प्राप्त सारांश। यह सरकारी घोषणा नहीं है।',
       'news': {
@@ -70,6 +73,6 @@ Map<String, dynamic> schemeJson(String id, {Map<String, dynamic>? scheme, bool d
       },
     };
 
-ShortItem mkNews(String id, {String? publishedAt, Map<String, dynamic>? news, String? video}) =>
-    ShortItem.fromJson(newsJson(id, publishedAt: publishedAt, news: news, video: video));
+ShortItem mkNews(String id, {String? publishedAt, Map<String, dynamic>? news, String? video, String? summary, String? format, double? duration}) =>
+    ShortItem.fromJson(newsJson(id, publishedAt: publishedAt, news: news, video: video, summary: summary, format: format, duration: duration));
 ShortItem mkScheme(String id, {Map<String, dynamic>? scheme}) => ShortItem.fromJson(schemeJson(id, scheme: scheme));

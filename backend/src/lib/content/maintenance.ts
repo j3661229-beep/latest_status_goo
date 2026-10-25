@@ -6,10 +6,11 @@
 // Guarantees:
 //   * publishes nothing unless an admin enabled auto-publish; then only items passing every gate (see autopublish.ts)
 //   * if feeds fail or contain nothing new, no stories/videos are created
-//   * generation spend is bounded per run (maxNewVideosPerRun) and by the pipeline's daily/monthly limits
+//   * it NEVER requests video generation: new items are CARD_ONLY drafts; only an authenticated admin action can queue a video
 import type { PrismaClient } from '@prisma/client';
 import { contentConfig, ContentConfig } from './config';
 import { ingestNews, IngestResult } from './ingest';
+import { newsCardDefaults } from './card-defaults';
 import { FetchFn, safeFetchText } from './safe-fetch';
 import { ContentSettings, ingestDue, loadSettings, markIngestRun } from './settings';
 import { autoPublish, AutoPublishReport } from './autopublish';
@@ -24,7 +25,6 @@ export type Locker = () => Promise<Unlock | null>;
 export interface TickDeps {
   prisma: PrismaClient;
   lock: Locker;
-  startGeneration: (videoId: string) => Promise<unknown>;
   cfg?: ContentConfig;
   now?: () => Date;
   fetchText?: FetchFn;
@@ -40,13 +40,12 @@ export interface TickReport {
   takenDown: number;
   sentBack: number;
   draftsCreated: number;
-  generationQueued: number;
   sourceChecks?: { checked: number; takenDown: number; inconclusive: number };
   autoPublish?: Pick<AutoPublishReport, 'published' | 'capped'> & { held: number };
   reminderRecorded: boolean;
 }
 
-const empty = (): TickReport => ({ expired: 0, rejectedStale: 0, takenDown: 0, sentBack: 0, draftsCreated: 0, generationQueued: 0, reminderRecorded: false });
+const empty = (): TickReport => ({ expired: 0, rejectedStale: 0, takenDown: 0, sentBack: 0, draftsCreated: 0, reminderRecorded: false });
 
 /** Redis SET NX EX lock. Returns an unlock function (only deletes our own token) or null if held. */
 export function redisLocker(
@@ -61,7 +60,7 @@ export function redisLocker(
   };
 }
 
-/** Create DRAFT videos for fresh, not-yet-drafted stories (newest first, capped). Idempotent. */
+/** Create CARD_ONLY drafts for fresh, not-yet-drafted stories (newest first, capped). Idempotent. */
 export async function createNewsDrafts(
   prisma: PrismaClient, s: ContentSettings, now: Date,
 ): Promise<string[]> {
@@ -78,7 +77,10 @@ export async function createNewsDrafts(
   const ids: string[] = [];
   for (const st of stories) {
     const v = await prisma.shortVideo.create({
-      data: { kind: 'NEWS', newsStoryId: st.id, title: st.originalHeadline.slice(0, 200), category: st.category, language: st.language },
+      data: {
+        kind: 'NEWS', newsStoryId: st.id, title: st.originalHeadline.slice(0, 200), category: st.category, language: st.language,
+        format: 'CARD_ONLY', ...newsCardDefaults(st),
+      },
     });
     ids.push(v.id);
   }
@@ -116,12 +118,6 @@ export async function runMaintenanceTick(d: TickDeps, opts: { forceIngest?: bool
 
       const drafts = await createNewsDrafts(d.prisma, s, now);
       report.draftsCreated = drafts.length;
-      if (s.autoGenerate) {
-        for (const id of drafts) {
-          try { await d.startGeneration(id); report.generationQueued++; }
-          catch (e) { d.log?.('could not queue generation', { id, reason: (e as Error).message }); }
-        }
-      }
 
       report.sourceChecks = await checkPublishedSources(d.prisma, fetchText, now);
       report.takenDown += report.sourceChecks.takenDown;
