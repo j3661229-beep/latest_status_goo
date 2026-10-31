@@ -37,7 +37,7 @@ export function contentConfig(e: NodeJS.ProcessEnv = process.env) {
     minNarrationSec: num(e.CONTENT_MIN_NARRATION_SEC, 12),
     maxOutputBytes: num(e.CONTENT_MAX_OUTPUT_BYTES, 25_000_000),
     maxJobsPerDay: num(e.CONTENT_MAX_JOBS_PER_DAY, 60),
-    maxIngestPerDay: num(e.CONTENT_MAX_INGEST_PER_DAY, 40),
+    maxIngestPerDay: num(e.CONTENT_MAX_INGEST_PER_DAY, 200),
     maxConcurrentRenders: num(e.CONTENT_MAX_CONCURRENT_RENDERS, 1),
     maxAttempts: num(e.CONTENT_MAX_ATTEMPTS, 3),
     jobTimeoutMs: num(e.CONTENT_JOB_TIMEOUT_MS, 180_000),

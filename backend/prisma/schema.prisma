@@ -109,9 +109,13 @@ model User {
   isActive          Boolean   @default(true)
   oneSignalPlayerId String?
   timezone          String    @default("Asia/Kolkata")
-  // Location for personalised template feed
+  // Location for personalised template & regional news feed
   state             String?   @db.VarChar(100)
   region            String?   @db.VarChar(100)
+  city              String?   @db.VarChar(100)
+  district          String?   @db.VarChar(100)
+  latitude          Float?
+  longitude         Float?
   onboardingCompleted Boolean @default(false)
   // Business branding & frame customization (Crafto style)
   businessName        String?   @db.VarChar(150)
@@ -629,6 +633,8 @@ model Scheme {
   applicationSteps String[]
   applicationMode  String? // ONLINE | OFFLINE | BOTH
   applicationUrl   String?
+  youtubeUrl       String? // Admin-provided YouTube video link for Yojna
+  youtubeId        String? // Extracted 11-char YouTube ID (e.g. dQw4w9WgXcQ)
   sourceUrls       String[]
   sourceUpdatedAt  DateTime?
   lastCheckedAt    DateTime?
@@ -653,6 +659,9 @@ model NewsStory {
   canonicalUrl     String           @unique
   dedupeKey        String // normalized-title hash, used to group reports of one event
   category         String
+  region           String?          // state code or null = national
+  isRegional       Boolean          @default(false)
+  imageUrl         String?
   language         Language         @default(HINDI)
   publishedAt      DateTime
   retrievedAt      DateTime         @default(now())
@@ -679,10 +688,13 @@ model ShortVideo {
   language       Language      @default(HINDI)
   category       String
   region         String? // state code or null = national
+  subKind        String?       @default("TOP") // "TOP" = Top News, "REGIONAL" = Regional News
   title          String
   hook           String?
   description    String?       @db.Text
   status         ContentStatus @default(DRAFT)
+  youtubeUrl     String?       // YouTube video link for Yojna / video content
+  youtubeId      String?       // Extracted 11-character YouTube ID
   scriptVersion  Int           @default(1)
   script         Json?
   captions       Json?

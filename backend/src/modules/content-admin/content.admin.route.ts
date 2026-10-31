@@ -8,6 +8,8 @@ import { ContentStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { optionalEnum, optionalString, parsePagination, sendValidationError, httpsUrl } from '../../lib/http/validation';
 import { resolveAssetUrl } from '../../lib/content/assets';
+import { extractYoutubeId } from '../../lib/content/youtube';
+import { ingestNews } from '../../lib/content/ingest';
 import { contentConfig } from '../../lib/content/config';
 import { hostAllowed } from '../../lib/content/safe-fetch';
 import { collectAttention } from '../../lib/content/freshness';
@@ -53,6 +55,7 @@ const EditBody = z
       .array(z.object({ text: z.string().min(1).max(500), sourceUrl: httpsUrl, sourceQuote: z.string().max(1000).optional() }))
       .max(50),
     expiresAt: z.string().datetime().nullable(),
+    youtubeUrl: z.string().trim().url().nullable().optional(),
   })
   .partial()
   .refine((b) => Object.keys(b).length > 0, { message: 'No fields to update' });
@@ -88,6 +91,7 @@ const SchemeBody = z.object({
   sourceUpdatedAt: z.string().datetime().nullable().optional(),
   nextReviewAt: z.string().datetime().nullable().optional(),
   expiresAt: z.string().datetime().nullable().optional(),
+  youtubeUrl: z.string().trim().url().nullable().optional(),
 });
 
 const SchemeUpdateBody = SchemeBody.partial();
@@ -519,9 +523,11 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     if (!b.success) return sendValidationError(reply, b.error);
     const d = b.data;
     try {
+      const youtubeId = d.youtubeUrl ? extractYoutubeId(d.youtubeUrl) : null;
       const scheme = await prisma.scheme.create({
         data: {
           ...d,
+          youtubeId,
           sourceUpdatedAt: d.sourceUpdatedAt ? new Date(d.sourceUpdatedAt) : null,
           nextReviewAt: d.nextReviewAt ? new Date(d.nextReviewAt) : null,
           expiresAt: d.expiresAt ? new Date(d.expiresAt) : null,
@@ -544,15 +550,27 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     const existing = await prisma.scheme.findUnique({ where: { id: p.data.id } });
     if (!existing) return err(reply, 404, 'Scheme not found');
     const d = b.data;
+    const youtubeId = d.youtubeUrl !== undefined ? (d.youtubeUrl ? extractYoutubeId(d.youtubeUrl) : null) : undefined;
     const updated = await prisma.scheme.update({
       where: { id: p.data.id },
       data: {
         ...d,
+        ...(youtubeId !== undefined && { youtubeId }),
         sourceUpdatedAt: d.sourceUpdatedAt !== undefined ? (d.sourceUpdatedAt ? new Date(d.sourceUpdatedAt) : null) : undefined,
         nextReviewAt: d.nextReviewAt !== undefined ? (d.nextReviewAt ? new Date(d.nextReviewAt) : null) : undefined,
         expiresAt: d.expiresAt !== undefined ? (d.expiresAt ? new Date(d.expiresAt) : null) : undefined,
       },
     });
+    if (youtubeId !== undefined) {
+      await prisma.shortVideo.updateMany({
+        where: { schemeId: p.data.id },
+        data: {
+          youtubeUrl: d.youtubeUrl || null,
+          youtubeId,
+          format: youtubeId ? 'CARD_WITH_VIDEO' : 'CARD_ONLY',
+        },
+      });
+    }
     await audit(req, 'content.scheme.update', p.data.id, existing, updated);
     return reply.send({ data: updated });
   });
@@ -576,6 +594,7 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     const scheme = await prisma.scheme.findUnique({ where: { id: p.data.id } });
     if (!scheme) return err(reply, 404, 'Scheme not found');
     const title = scheme.nameHi ? scheme.nameHi.slice(0, 200) : scheme.officialName.slice(0, 200);
+    const format = scheme.youtubeId ? 'CARD_WITH_VIDEO' : 'CARD_ONLY';
     const video = await prisma.shortVideo.create({
       data: {
         kind: 'SCHEME',
@@ -585,7 +604,9 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
         region: scheme.stateCode ?? null,
         language: scheme.language,
         status: 'DRAFT',
-        format: 'CARD_ONLY',
+        format,
+        youtubeUrl: scheme.youtubeUrl,
+        youtubeId: scheme.youtubeId,
         ...schemeCardDefaults(scheme),
       },
     });
@@ -967,6 +988,20 @@ export async function contentAdminRoutes(fastify: FastifyInstance, opts: Content
     const p = IdParams.safeParse(req.params);
     if (!p.success) return sendValidationError(reply, p.error);
     return videoRequest(req, reply, p.data.id, 'content.video.retry');
+  });
+
+  fastify.post('/content/ingest-now', guard, async (req, reply) => {
+    const settings = await loadSettings(prisma);
+    const result = await ingestNews(prisma, { feeds: settings.feeds, staleHours: settings.newsStaleHours, maxIngest: 100 });
+    await audit(req, 'content.ingest_now', 'news', undefined, result);
+    return reply.send({ ok: true, result });
+  });
+
+  fastify.post('/content/ingest/run', guard, async (req, reply) => {
+    const settings = await loadSettings(prisma);
+    const result = await ingestNews(prisma, { feeds: settings.feeds, staleHours: settings.newsStaleHours, maxIngest: 100 });
+    await audit(req, 'content.ingest_run', 'news', undefined, result);
+    return reply.send({ ok: true, result });
   });
 
   fastify.post('/content/jobs/:id/cancel', guard, async (req, reply) => {

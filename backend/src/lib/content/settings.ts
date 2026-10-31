@@ -1,11 +1,17 @@
 // src/lib/content/settings.ts
 // Operator-tunable content settings, stored in AppConfig (`content.*`) so admins can change the
-// schedule without a deploy. Everything defaults to the SAFE option: ingestion is off until an
-// admin turns it on, and nothing here can publish.
+// schedule without a deploy. Everything defaults to safe options. News from trusted sources is
+// auto-published directly, while Schemes always require explicit admin approval.
 import { z } from 'zod';
 import type { PrismaClient } from '@prisma/client';
 
-export interface FeedConfig { name: string; url: string; category: string }
+export interface FeedConfig {
+  name: string;
+  url: string;
+  category: string;
+  region?: string | null; // e.g. 'UP', 'MH', 'MP', 'RJ', 'BR', 'GJ', 'DL', 'PB' or null for national
+  isRegional?: boolean;
+}
 
 export interface ContentSettings {
   ingestEnabled: boolean;
@@ -23,25 +29,36 @@ export interface ContentSettings {
 }
 
 export const DEFAULT_FEEDS: FeedConfig[] = [
-  { name: 'Google News (Hindi Top)', url: 'https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi', category: 'NEWS' },
-  { name: 'Google News (National)', url: 'https://news.google.com/rss/headlines/section/topic/NATION?hl=hi&gl=IN&ceid=IN:hi', category: 'NEWS' },
-  { name: 'Amar Ujala (Breaking)', url: 'https://www.amarujala.com/rss/breaking-news.xml', category: 'NEWS' },
-  { name: 'PIB Hindi (Govt)', url: 'https://pib.gov.in/RssMain.aspx?ModId=6&LangId=2', category: 'SCHEMES' },
-  { name: 'PIB National', url: 'https://pib.gov.in/RssMain.aspx?ModId=6&LangId=1', category: 'NEWS' },
+  // ── Top National News (Hindi & English Trusted Sources) ───────────────────────
+  { name: 'Google News (Hindi Top)', url: 'https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi', category: 'TOP_NEWS', region: null, isRegional: false },
+  { name: 'Google News (National)', url: 'https://news.google.com/rss/headlines/section/topic/NATION?hl=hi&gl=IN&ceid=IN:hi', category: 'TOP_NEWS', region: null, isRegional: false },
+  { name: 'Amar Ujala (Breaking)', url: 'https://www.amarujala.com/rss/breaking-news.xml', category: 'TOP_NEWS', region: null, isRegional: false },
+  { name: 'PIB National (Govt Verified)', url: 'https://pib.gov.in/RssMain.aspx?ModId=6&LangId=2', category: 'TOP_NEWS', region: null, isRegional: false },
+
+  // ── Regional News (State-wise trusted news feeds) ──────────────────────────────
+  { name: 'उत्तर प्रदेश (UP Regional)', url: 'https://news.google.com/rss/search?q=Uttar+Pradesh&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'UP', isRegional: true },
+  { name: 'महाराष्ट्र (MH Regional)', url: 'https://news.google.com/rss/search?q=Maharashtra&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'MH', isRegional: true },
+  { name: 'मध्य प्रदेश (MP Regional)', url: 'https://news.google.com/rss/search?q=Madhya+Pradesh&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'MP', isRegional: true },
+  { name: 'राजस्थान (RJ Regional)', url: 'https://news.google.com/rss/search?q=Rajasthan&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'RJ', isRegional: true },
+  { name: 'बिहार (BR Regional)', url: 'https://news.google.com/rss/search?q=Bihar&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'BR', isRegional: true },
+  { name: 'गुजरात (GJ Regional)', url: 'https://news.google.com/rss/search?q=Gujarat&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'GJ', isRegional: true },
+  { name: 'दिल्ली (DL Regional)', url: 'https://news.google.com/rss/search?q=Delhi&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'DL', isRegional: true },
+  { name: 'पंजाब (PB Regional)', url: 'https://news.google.com/rss/search?q=Punjab&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'PB', isRegional: true },
+  { name: 'हरियाणा (HR Regional)', url: 'https://news.google.com/rss/search?q=Haryana&hl=hi&gl=IN&ceid=IN:hi', category: 'REGIONAL', region: 'HR', isRegional: true },
 ];
 
 export const DEFAULTS: ContentSettings = {
-  ingestEnabled: false,
-  ingestIntervalMinutes: 180,
-  autoPublishEnabled: false,
-  autoPublishSchemes: false,
-  autoPublishMaxPerDay: 10,
-  maxNewVideosPerRun: 5,
+  ingestEnabled: true,
+  ingestIntervalMinutes: 60,
+  autoPublishEnabled: true,
+  autoPublishSchemes: false, // Schemes require explicit admin approval!
+  autoPublishMaxPerDay: 50,
+  maxNewVideosPerRun: 20,
   newsStaleHours: 48,
   newsAutoExpireHours: 72,
   schemeVerifyMaxAgeDays: 90,
   developingFreshHours: 1,
-  feeds: [],
+  feeds: DEFAULT_FEEDS,
   lastIngestAt: null,
 };
 
@@ -67,7 +84,7 @@ export const SettingsPatchSchema = z
     autoPublishEnabled: z.boolean(),
     autoPublishSchemes: z.boolean(),
     autoPublishMaxPerDay: z.number().int().min(0).max(100),
-    maxNewVideosPerRun: z.number().int().min(0).max(20),
+    maxNewVideosPerRun: z.number().int().min(0).max(50),
     newsStaleHours: z.number().int().min(1).max(720),
     newsAutoExpireHours: z.number().int().min(0).max(2160),
     schemeVerifyMaxAgeDays: z.number().int().min(7).max(730),
@@ -77,8 +94,10 @@ export const SettingsPatchSchema = z
         name: z.string().trim().min(2).max(80),
         url: z.string().url().max(2048).refine((u) => u.startsWith('https://'), 'Feed URL must use https'),
         category: z.string().trim().min(2).max(64),
+        region: z.string().trim().max(16).nullish(),
+        isRegional: z.boolean().optional(),
       }))
-      .max(30),
+      .max(50),
   })
   .partial()
   .refine((b) => Object.keys(b).length > 0, { message: 'No settings provided' });
@@ -97,9 +116,17 @@ export async function loadSettings(prisma: Pick<PrismaClient, 'appConfig'>): Pro
   try {
     const raw = get(KEYS.feeds);
     const parsed = raw ? JSON.parse(raw) : [];
-    feeds = Array.isArray(parsed) ? parsed.filter((f) => f && typeof f.url === 'string' && typeof f.name === 'string') : [];
+    feeds = Array.isArray(parsed) && parsed.length > 0
+      ? parsed.filter((f) => f && typeof f.url === 'string' && typeof f.name === 'string').map(f => ({
+          name: f.name,
+          url: f.url,
+          category: f.category || (f.isRegional ? 'REGIONAL' : 'TOP_NEWS'),
+          region: f.region || null,
+          isRegional: !!f.isRegional,
+        }))
+      : DEFAULT_FEEDS;
   } catch {
-    feeds = [];
+    feeds = DEFAULT_FEEDS;
   }
   const last = get(LAST_INGEST_KEY);
   return {
@@ -140,8 +167,10 @@ export async function markIngestRun(prisma: Pick<PrismaClient, 'appConfig'>, at:
   });
 }
 
-export function ingestDue(s: ContentSettings, now: Date): boolean {
-  if (!s.ingestEnabled || s.feeds.length === 0) return false;
-  if (!s.lastIngestAt) return true;
-  return now.getTime() - s.lastIngestAt.getTime() >= s.ingestIntervalMinutes * 60_000;
+
+export function ingestDue(settings: ContentSettings, now = new Date()): boolean {
+  if (!settings.ingestEnabled) return false;
+  if (!settings.lastIngestAt) return true;
+  const elapsedMinutes = (now.getTime() - settings.lastIngestAt.getTime()) / 60000;
+  return elapsedMinutes >= settings.ingestIntervalMinutes;
 }

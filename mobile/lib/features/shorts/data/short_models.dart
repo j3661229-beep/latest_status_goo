@@ -71,6 +71,8 @@ class SchemeInfo {
   final String scope;
   final String? stateCode;
   final String? applicationUrl;
+  final String? youtubeUrl;
+  final String? youtubeId;
   final DateTime? lastVerifiedAt;
   // Detail-only
   final List<String> benefits;
@@ -89,6 +91,8 @@ class SchemeInfo {
     this.scope = 'CENTRAL',
     this.stateCode,
     this.applicationUrl,
+    this.youtubeUrl,
+    this.youtubeId,
     this.lastVerifiedAt,
     this.benefits = const [],
     this.eligibility = const [],
@@ -107,6 +111,8 @@ class SchemeInfo {
         scope: (j['scope'] as String?) ?? 'CENTRAL',
         stateCode: j['stateCode'] as String?,
         applicationUrl: safeHttpsUrl(j['applicationUrl']),
+        youtubeUrl: safeHttpsUrl(j['youtubeUrl']),
+        youtubeId: j['youtubeId'] as String?,
         lastVerifiedAt: _date(j['lastVerifiedAt']),
         benefits: _strings(j['benefits']),
         eligibility: _strings(j['eligibility']),
@@ -121,6 +127,8 @@ class SchemeInfo {
 class ShortItem {
   final String id;
   final ShortKind kind;
+  final String subKind; // 'TOP' | 'REGIONAL'
+  final String? region;
   final String title;
   final String? hook;
   final String? summary; // card text (~60 words)
@@ -128,6 +136,9 @@ class ShortItem {
   final ContentFormat? format;
   final String? videoUrl;
   final String? thumbnailUrl;
+  final String? youtubeUrl;
+  final String? youtubeId;
+  final bool hasYoutube;
   final double? durationSec;
   final String? attribution;
   final DateTime? publishedAt;
@@ -145,6 +156,8 @@ class ShortItem {
   const ShortItem({
     required this.id,
     required this.kind,
+    this.subKind = 'TOP',
+    this.region,
     required this.title,
     required this.category,
     this.format,
@@ -152,6 +165,9 @@ class ShortItem {
     this.summary,
     this.videoUrl,
     this.thumbnailUrl,
+    this.youtubeUrl,
+    this.youtubeId,
+    this.hasYoutube = false,
     this.durationSec,
     this.attribution,
     this.publishedAt,
@@ -166,17 +182,18 @@ class ShortItem {
     this.warnings = const [],
   });
 
-  /// True only for an approved, playable admin-generated video. The server omits `videoUrl`
-  /// until then; a CARD_ONLY item never shows a video even if a stale URL slipped through.
-  bool get hasVideo => videoUrl != null && format != ContentFormat.cardOnly;
+  /// True for a video item: either an admin-provided YouTube video for schemes, or an approved video.
+  bool get hasVideo => hasYoutube || (videoUrl != null && format != ContentFormat.cardOnly);
+  bool get isYoutube => hasYoutube && youtubeId != null && youtubeId!.isNotEmpty;
+  bool get isRegional => subKind == 'REGIONAL' || region != null;
 
   /// The one link a user should follow: official application page for schemes,
   /// the publisher's article for news.
   String? get primaryLink => kind == ShortKind.scheme ? scheme?.applicationUrl : news?.url;
 
   ShortItem copyWith({bool? isSaved}) => ShortItem(
-        id: id, kind: kind, title: title, category: category, format: format, hook: hook, summary: summary, videoUrl: videoUrl,
-        thumbnailUrl: thumbnailUrl, durationSec: durationSec, attribution: attribution,
+        id: id, kind: kind, subKind: subKind, region: region, title: title, category: category, format: format, hook: hook, summary: summary, videoUrl: videoUrl,
+        thumbnailUrl: thumbnailUrl, youtubeUrl: youtubeUrl, youtubeId: youtubeId, hasYoutube: hasYoutube, durationSec: durationSec, attribution: attribution,
         publishedAt: publishedAt, correctionNote: correctionNote, disclaimer: disclaimer,
         isSaved: isSaved ?? this.isSaved, news: news, scheme: scheme, description: description,
         narration: narration, keyFacts: keyFacts, warnings: warnings,
@@ -185,9 +202,15 @@ class ShortItem {
   factory ShortItem.fromJson(Map<String, dynamic> j) {
     final newsJson = j['news'];
     final schemeJson = j['scheme'];
+    final yUrl = safeHttpsUrl(j['youtubeUrl'] ?? (schemeJson is Map ? schemeJson['youtubeUrl'] : null));
+    final yId = (j['youtubeId'] ?? (schemeJson is Map ? schemeJson['youtubeId'] : null)) as String?;
+    final hasYt = j['hasYoutube'] == true || (yId != null && yId.isNotEmpty);
+
     return ShortItem(
       id: j['id'] as String,
       kind: j['kind'] == 'NEWS' ? ShortKind.news : ShortKind.scheme,
+      subKind: (j['subKind'] as String?) ?? (j['region'] != null ? 'REGIONAL' : 'TOP'),
+      region: j['region'] as String?,
       title: (j['title'] as String?) ?? '',
       hook: j['hook'] as String?,
       summary: (j['summary'] as String?)?.trim().isEmpty == true ? null : j['summary'] as String?,
@@ -195,6 +218,9 @@ class ShortItem {
       format: _format(j['format']),
       videoUrl: safeHttpsUrl(j['videoUrl']),
       thumbnailUrl: safeHttpsUrl(j['thumbnailUrl']),
+      youtubeUrl: yUrl,
+      youtubeId: yId,
+      hasYoutube: hasYt,
       durationSec: (j['durationSec'] as num?)?.toDouble(),
       attribution: j['attribution'] as String?,
       publishedAt: _date(j['publishedAt']),

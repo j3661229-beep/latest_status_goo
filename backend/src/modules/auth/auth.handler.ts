@@ -1,3 +1,4 @@
+import { resolveStateFromCoords } from '../../lib/content/state-locator';
 // src/modules/auth/auth.handler.ts
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient, Prisma, Language, Plan, UserRole, User } from '@prisma/client';
@@ -580,18 +581,34 @@ export class AuthHandler {
     return reply.status(200).send(this.phoneLoginResponse(user, tokens));
   }
 
-  // POST /auth/complete-profile — saves name, photo URL, state, region, language after OTP
+  // POST /auth/complete-profile — saves name, photo URL, state, region, language, location (lat/lng/city/district)
   async completeProfile(req: FastifyRequest, reply: FastifyReply) {
     const userId = (req.user as any)?.userId ?? (req.user as any)?.sub;
     if (!userId) return reply.status(401).send({ error: 'Unauthorized' });
 
-    const { name, profilePhoto, state, region, language } = req.body as any;
+    const { name, profilePhoto, state, region, language, city, district, latitude, longitude } = req.body as any;
 
     if (!name || name.trim().length < 2) {
       return reply.status(400).send({ error: 'Name must be at least 2 characters' });
     }
     if (profilePhoto && !httpsUrl.safeParse(profilePhoto).success) {
       return reply.status(400).send({ error: 'profilePhoto must be an https URL' });
+    }
+
+    const lat = typeof latitude === 'number' ? latitude : parseFloat(latitude);
+    const lng = typeof longitude === 'number' ? longitude : parseFloat(longitude);
+    const hasCoords = !isNaN(lat) && !isNaN(lng);
+
+    let effectiveState = state ? String(state).trim() : undefined;
+    let effectiveRegion = region ? String(region).trim() : undefined;
+
+    // Auto-detect state and region code from coordinates if not explicitly provided
+    if (hasCoords) {
+      const loc = resolveStateFromCoords(lat, lng);
+      if (loc) {
+        if (!effectiveState) effectiveState = loc.nameEn;
+        if (!effectiveRegion) effectiveRegion = loc.code;
+      }
     }
 
     const validLanguages = ['HINDI', 'MARATHI', 'ENGLISH', 'GUJARATI', 'PUNJABI', 'TAMIL', 'TELUGU'];
@@ -605,8 +622,11 @@ export class AuthHandler {
         name: name.trim(),
         displayName: name.trim(),
         ...(profilePhoto ? { profilePhoto, customPhotoUrl: profilePhoto } : {}),
-        ...(state ? { state } : {}),
-        ...(region ? { region } : {}),
+        ...(effectiveState ? { state: effectiveState } : {}),
+        ...(effectiveRegion ? { region: effectiveRegion } : {}),
+        ...(city ? { city: String(city).trim() } : {}),
+        ...(district ? { district: String(district).trim() } : {}),
+        ...(hasCoords ? { latitude: lat, longitude: lng } : {}),
         ...(chosenLanguage ? { language: chosenLanguage as Language } : {}),
         onboardingCompleted: true,
         lastActiveAt: new Date(),
@@ -614,7 +634,8 @@ export class AuthHandler {
       select: {
         id: true, name: true, email: true, phoneNumber: true,
         plan: true, role: true, language: true, profilePhoto: true,
-        state: true, region: true, onboardingCompleted: true,
+        state: true, region: true, city: true, district: true,
+        latitude: true, longitude: true, onboardingCompleted: true,
       },
     });
 

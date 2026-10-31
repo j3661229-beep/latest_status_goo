@@ -8,6 +8,7 @@ import { invalidateUserCaches, safeUserSelect } from '../../lib/auth/auth-state'
 import { RazorpayService } from '../../lib/payment/razorpay.service';
 import { RefreshTokenStore } from '../../lib/auth/token.store';
 import { httpsUrl, parsePagination, sendValidationError } from '../../lib/http/validation';
+import { resolveStateFromCoords, normalizeStateCode } from '../../lib/content/state-locator';
 
 /** Optional, nullable text field with a max length ('' clears the value). */
 const text = (max: number) =>
@@ -27,6 +28,10 @@ const UpdateMeSchema = z.object({
   profilePhoto: imageUrl,
   state: text(100),
   region: text(100),
+  city: text(100),
+  district: text(100),
+  latitude: z.coerce.number().min(-90).max(90).nullable().optional(),
+  longitude: z.coerce.number().min(-180).max(180).nullable().optional(),
   businessName: text(150),
   businessPhone: text(20),
   businessAddress: text(255),
@@ -76,6 +81,8 @@ export async function userRoutes(fastify: FastifyInstance) {
         displayName: user.displayName, profilePhoto: user.profilePhoto,
         customPhotoUrl: user.customPhotoUrl, language: user.language,
         state: user.state, region: user.region,
+        city: user.city, district: user.district,
+        latitude: user.latitude, longitude: user.longitude,
         businessName: user.businessName, businessPhone: user.businessPhone,
         businessAddress: user.businessAddress, businessDesignation: user.businessDesignation,
         businessLogo: user.businessLogo, frameType: user.frameType,
@@ -109,9 +116,21 @@ export async function userRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return sendValidationError(reply, parsed.error, 'Invalid profile data');
     const {
       name, displayName, language, timezone, profilePhoto,
-      state, region,
+      state, region, city, district, latitude, longitude,
       businessName, businessPhone, businessAddress, businessDesignation, businessLogo, frameType,
     } = parsed.data;
+
+    let finalState = state;
+    let finalRegion = region;
+    if ((finalState === undefined || finalState === null) && latitude != null && longitude != null) {
+      const detected = resolveStateFromCoords(latitude, longitude);
+      if (detected) {
+        finalState = detected.code;
+        finalRegion = finalRegion ?? detected.code;
+      }
+    } else if (finalState) {
+      finalState = normalizeStateCode(finalState);
+    }
 
     const user = await fastify.prisma.user.update({
       where: { id: userId },
@@ -121,8 +140,12 @@ export async function userRoutes(fastify: FastifyInstance) {
         ...(language !== undefined && { language }),
         ...(timezone !== undefined && { timezone }),
         ...(profilePhoto !== undefined && { profilePhoto }),
-        ...(state !== undefined && { state }),
-        ...(region !== undefined && { region }),
+        ...(finalState !== undefined && { state: finalState }),
+        ...(finalRegion !== undefined && { region: finalRegion }),
+        ...(city !== undefined && { city }),
+        ...(district !== undefined && { district }),
+        ...(latitude !== undefined && { latitude }),
+        ...(longitude !== undefined && { longitude }),
         ...(businessName !== undefined && { businessName }),
         ...(businessPhone !== undefined && { businessPhone }),
         ...(businessAddress !== undefined && { businessAddress }),

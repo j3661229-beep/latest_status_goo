@@ -2,6 +2,7 @@
 import type { Prisma } from '@prisma/client';
 import { resolveAssetUrl } from '../../lib/content/assets';
 import { isVideoPublic } from '../../lib/content/lifecycle';
+import { getYoutubeThumbnailUrl } from '../../lib/content/youtube';
 
 export const shortInclude = {
   scheme: true,
@@ -21,38 +22,64 @@ export function cardSummary(v: ShortWithRelations): string | null {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), SUMMARY_MAX_CHARS / 2))}…`;
 }
 
-/** Public-safe projection: no internal ids of reviewers, costs, AI metadata or job state. */
+/** Public-safe projection: includes YouTube video metadata for Yojna / video content. */
 export async function serializeShort(v: ShortWithRelations, opts: { detail?: boolean; saved?: boolean } = {}) {
-  // A video (and the frame taken from it) is public only once it is rendered, validated, uploaded AND approved.
-  const videoPublic = isVideoPublic(v);
-  const [videoUrl, thumbnailUrl] = videoPublic
-    ? await Promise.all([resolveAssetUrl(v.videoKey), resolveAssetUrl(v.thumbnailKey)])
-    : [null, null];
+  const youtubeUrl = v.youtubeUrl || v.scheme?.youtubeUrl || null;
+  const youtubeId = v.youtubeId || v.scheme?.youtubeId || null;
+  const hasYoutube = !!youtubeId;
+
+  // If a YouTube video is attached, video is public through YouTube!
+  let videoUrl: string | null = null;
+  let thumbnailUrl: string | null = null;
+
+  if (hasYoutube) {
+    thumbnailUrl = getYoutubeThumbnailUrl(youtubeId!);
+  } else if (v.thumbnailKey) {
+    thumbnailUrl = v.thumbnailKey.startsWith('http') ? v.thumbnailKey : await resolveAssetUrl(v.thumbnailKey);
+  } else if (v.newsStory?.imageUrl) {
+    thumbnailUrl = v.newsStory.imageUrl;
+  }
+
+  if (!hasYoutube) {
+    const videoPublic = isVideoPublic(v);
+    if (videoPublic) {
+      const [vUrl, tUrl] = await Promise.all([resolveAssetUrl(v.videoKey), resolveAssetUrl(v.thumbnailKey)]);
+      videoUrl = vUrl;
+      if (!thumbnailUrl) thumbnailUrl = tUrl;
+    }
+  }
+
   const base = {
     id: v.id,
     kind: v.kind,
+    subKind: v.subKind || (v.region ? 'REGIONAL' : 'TOP'),
     title: v.title,
     hook: v.hook,
     summary: cardSummary(v),
     category: v.category,
     region: v.region,
     language: v.language,
-    format: v.format,
+    format: hasYoutube ? 'CARD_WITH_VIDEO' : v.format,
     videoUrl,
     thumbnailUrl,
-    durationSec: videoPublic ? v.durationSec : null,
+    youtubeUrl,
+    youtubeId,
+    hasYoutube,
+    durationSec: v.durationSec,
     captions: v.captions,
     attribution: v.attribution,
     publishedAt: v.publishedAt,
     correctionNote: v.correctionNote,
-    disclaimer:
-      'AI-assisted summary of the cited sources. Not an official government announcement.',
+    disclaimer: 'विश्वसनीय स्रोतों से संकलित जानकारी।',
     isSaved: opts.saved ?? false,
     news: v.newsStory
       ? {
           publisher: v.newsStory.publisher,
           originalHeadline: v.newsStory.originalHeadline,
           url: v.newsStory.canonicalUrl,
+          imageUrl: v.newsStory.imageUrl,
+          isRegional: v.newsStory.isRegional,
+          region: v.newsStory.region,
           publishedAt: v.newsStory.publishedAt,
           lastVerifiedAt: v.newsStory.lastVerifiedAt,
           isDeveloping: v.newsStory.isDeveloping,
@@ -68,15 +95,17 @@ export async function serializeShort(v: ShortWithRelations, opts: { detail?: boo
           scope: v.scheme.scope,
           stateCode: v.scheme.stateCode,
           applicationUrl: v.scheme.applicationUrl,
+          youtubeUrl: v.scheme.youtubeUrl,
+          youtubeId: v.scheme.youtubeId,
           lastVerifiedAt: v.scheme.lastVerifiedAt,
         }
       : null,
   };
+
   if (!opts.detail) return base;
   return {
     ...base,
     description: v.description,
-    // Text alternative to the video (accessibility / low-data reading).
     narration: (v.script as { narration?: string } | null)?.narration ?? null,
     keyFacts: (v.script as { keyFacts?: string[] } | null)?.keyFacts ?? [],
     claims: v.claims,

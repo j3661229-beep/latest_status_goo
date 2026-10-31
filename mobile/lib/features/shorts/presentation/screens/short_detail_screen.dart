@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../../../../core/api/api_error.dart';
 import '../../../../core/utils/app_actions.dart';
@@ -107,8 +108,38 @@ class _Body extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
+        if (item.isRegional) ...[
+          Wrap(
+            spacing: 8,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1565C0),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.location_on_rounded, size: 14, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      item.region != null ? 'क्षेत्रीय (${item.region})' : 'क्षेत्रीय समाचार',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         Text(item.title, style: t.headlineSmall),
         const SizedBox(height: 8),
+        if (item.isYoutube && item.youtubeId != null) ...[
+          _YoutubePlayerCard(youtubeId: item.youtubeId!, title: item.title),
+          const SizedBox(height: 12),
+        ],
         _Disclaimer(text: item.disclaimer),
         if (item.correctionNote != null) ...[
           const SizedBox(height: 12),
@@ -371,6 +402,77 @@ class _Numbered extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _YoutubePlayerCard extends StatefulWidget {
+  const _YoutubePlayerCard({required this.youtubeId, required this.title});
+  final String youtubeId;
+  final String title;
+
+  @override
+  State<_YoutubePlayerCard> createState() => _YoutubePlayerCardState();
+}
+
+class _YoutubePlayerCardState extends State<_YoutubePlayerCard> {
+  late final YoutubePlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = YoutubePlayerController(
+      initialVideoId: widget.youtubeId,
+      flags: const YoutubePlayerFlags(
+        autoPlay: false,
+        mute: false,
+        enableCaption: false,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            YoutubePlayer(
+              controller: _controller,
+              showVideoProgressIndicator: true,
+              progressIndicatorColor: const Color(0xFFFF0000),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.smart_display_rounded, size: 18, color: Color(0xFFFF0000)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'आधिकारिक योजना वीडियो (YouTube)',
+                      style: AppText.body(size: 13, weight: FontWeight.w700, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

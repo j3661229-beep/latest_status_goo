@@ -102,6 +102,10 @@ class AuthRepository {
     String? state,
     String? region,
     String? language,
+    double? latitude,
+    double? longitude,
+    String? city,
+    String? district,
   }) async {
     assert(profilePhotoUrl == null || SessionStore.isRemoteUrl(profilePhotoUrl));
     final resp = await _api.post('/auth/complete-profile', data: {
@@ -110,6 +114,10 @@ class AuthRepository {
       if (state != null) 'state': state,
       if (region != null) 'region': region,
       if (language != null) 'language': language,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (city != null) 'city': city,
+      if (district != null) 'district': district,
     });
 
     final user = await _persistServerUser(_extractUser(resp.data));

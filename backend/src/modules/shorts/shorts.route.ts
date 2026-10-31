@@ -8,13 +8,20 @@ import { z } from 'zod';
 import { optionalEnum, optionalString, parsePagination, sendValidationError } from '../../lib/http/validation';
 import { serializeShort, shortInclude } from './shorts.serializer';
 import { checkSchemeEligibility, EligibilityInputSchema } from './schemes.calculator';
+import { resolveStateFromCoords, normalizeStateCode } from '../../lib/content/state-locator';
 
 const KINDS = ['SCHEME', 'NEWS'] as const;
 
+const SUB_KINDS = ['TOP', 'REGIONAL'] as const;
+
 const ListQuery = z.object({
   kind: optionalEnum([...KINDS]),
+  subKind: optionalEnum([...SUB_KINDS]),
   category: optionalString(64),
   region: optionalString(16),
+  state: optionalString(32),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
 });
 
 const EventBody = z.object({ type: z.enum(['VIEW', 'COMPLETE', 'SHARE', 'OPEN_LINK']) });
@@ -48,17 +55,86 @@ async function registerRoutes(fastify: FastifyInstance, forcedKind?: 'SCHEME' | 
     const parsed = ListQuery.safeParse(req.query ?? {});
     if (!parsed.success) return sendValidationError(reply, parsed.error);
     const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 10, maxLimit: 30 });
-    const { kind, category, region } = parsed.data;
+    const { kind, subKind, category, region, state, lat, lng } = parsed.data;
     const effectiveKind = forcedKind ?? kind;
 
-    const where = publicWhere({
-      ...(effectiveKind && { kind: effectiveKind }),
-      ...(category && { category }),
-      // A state filter still includes national (region = null) items.
-      ...(region && { OR: [{ region }, { region: null }] }),
-    });
+    const userId = (req.user as any)?.userId as string | undefined;
 
-    const [rows, total] = await Promise.all([
+    // Resolve user's state / region from params, coordinates, or profile
+    let resolvedState: string | null = null;
+    if (state || region) {
+      resolvedState = normalizeStateCode(state || region);
+    } else if (lat != null && lng != null) {
+      resolvedState = resolveStateFromCoords(lat, lng)?.code ?? null;
+    } else if (userId) {
+      const u = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { state: true, region: true, latitude: true, longitude: true },
+      });
+      if (u?.state || u?.region) {
+        resolvedState = normalizeStateCode(u.state || u.region);
+      } else if (u?.latitude != null && u?.longitude != null) {
+        resolvedState = resolveStateFromCoords(u.latitude, u.longitude)?.code ?? null;
+      }
+    }
+
+    let extraWhere: Prisma.ShortVideoWhereInput = {};
+
+    if (effectiveKind === 'NEWS') {
+      if (subKind === 'TOP') {
+        extraWhere = {
+          kind: 'NEWS',
+          ...(category && { category }),
+          OR: [{ subKind: 'TOP' }, { region: null }],
+        };
+      } else if (subKind === 'REGIONAL') {
+        if (resolvedState) {
+          extraWhere = {
+            kind: 'NEWS',
+            ...(category && { category }),
+            OR: [
+              { subKind: 'REGIONAL', region: resolvedState },
+              { region: resolvedState },
+            ],
+          };
+        } else {
+          extraWhere = {
+            kind: 'NEWS',
+            ...(category && { category }),
+            subKind: 'REGIONAL',
+          };
+        }
+      } else {
+        if (resolvedState) {
+          extraWhere = {
+            kind: 'NEWS',
+            ...(category && { category }),
+            OR: [{ subKind: 'TOP' }, { region: resolvedState }, { region: null }],
+          };
+        } else {
+          extraWhere = {
+            kind: 'NEWS',
+            ...(category && { category }),
+          };
+        }
+      }
+    } else if (effectiveKind === 'SCHEME') {
+      extraWhere = {
+        kind: 'SCHEME',
+        ...(category && { category }),
+        ...(resolvedState ? { OR: [{ region: resolvedState }, { region: null }] } : {}),
+      };
+    } else {
+      extraWhere = {
+        ...(effectiveKind ? { kind: effectiveKind as any } : {}),
+        ...(category ? { category } : {}),
+        ...(resolvedState ? { OR: [{ region: resolvedState }, { region: null }] } : {}),
+      };
+    }
+
+    const where = publicWhere(extraWhere);
+
+    let [rows, total] = await Promise.all([
       prisma.shortVideo.findMany({
         where,
         include: shortInclude,
@@ -69,7 +145,30 @@ async function registerRoutes(fastify: FastifyInstance, forcedKind?: 'SCHEME' | 
       prisma.shortVideo.count({ where }),
     ]);
 
-    const userId = (req.user as any)?.userId as string | undefined;
+    // If regional news specifically requested but nothing found for this specific state yet,
+    // fallback to all regional news so the user gets fresh content
+    if (rows.length === 0 && effectiveKind === 'NEWS' && subKind === 'REGIONAL' && resolvedState) {
+      const fallbackWhere = publicWhere({
+        kind: 'NEWS',
+        ...(category && { category }),
+        subKind: 'REGIONAL',
+      });
+      const [fRows, fTotal] = await Promise.all([
+        prisma.shortVideo.findMany({
+          where: fallbackWhere,
+          include: shortInclude,
+          orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
+          skip,
+          take: limit,
+        }),
+        prisma.shortVideo.count({ where: fallbackWhere }),
+      ]);
+      if (fRows.length > 0) {
+        rows = fRows;
+        total = fTotal;
+      }
+    }
+
     const saved = new Set<string>();
     if (userId && rows.length) {
       const marks = await prisma.contentBookmark.findMany({

@@ -22,6 +22,10 @@ class UserModel {
   // Location for personalised feed
   final String? state;
   final String? region;
+  final String? city;
+  final String? district;
+  final double? latitude;
+  final double? longitude;
   final bool onboardingCompleted;
 
   // Business Branding & Frame Customization (Crafto Suite)
@@ -48,6 +52,10 @@ class UserModel {
     this.totalSaves = 0,
     this.state,
     this.region,
+    this.city,
+    this.district,
+    this.latitude,
+    this.longitude,
     this.onboardingCompleted = false,
     this.businessName,
     this.businessPhone,
@@ -77,6 +85,10 @@ class UserModel {
     int? totalSaves,
     String? state,
     String? region,
+    String? city,
+    String? district,
+    double? latitude,
+    double? longitude,
     bool? onboardingCompleted,
     String? businessName,
     String? businessPhone,
@@ -101,6 +113,10 @@ class UserModel {
       totalSaves: totalSaves ?? this.totalSaves,
       state: state ?? this.state,
       region: region ?? this.region,
+      city: city ?? this.city,
+      district: district ?? this.district,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       businessName: businessName ?? this.businessName,
       businessPhone: businessPhone ?? this.businessPhone,

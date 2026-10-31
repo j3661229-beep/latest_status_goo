@@ -220,18 +220,26 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="aspect-[9/16] bg-slate-900 rounded-xl overflow-hidden flex flex-col items-center justify-center">
-              {v.videoUrl
-                ? <video src={v.videoUrl} poster={v.thumbnailUrl ?? undefined} controls playsInline className="w-full h-full object-contain" />
-                : (
-                  <div className="p-4 text-center space-y-2">
-                    <div className="text-slate-400 text-xs">{withVideo ? 'No rendered video yet' : 'News card only — no video'}</div>
-                    {['QUEUED', 'GENERATING'].includes(videoState) && (
-                      <div className="text-xs text-blue-400 animate-pulse flex items-center justify-center gap-1">
-                        <Loader2 size={12} className="animate-spin" /> {videoState === 'QUEUED' ? 'Queued…' : 'Generating…'}
-                      </div>
-                    )}
-                  </div>
-                )}
+              {v.youtubeId ? (
+                <iframe
+                  src={`https://www.youtube.com/embed/${v.youtubeId}`}
+                  title={v.title}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              ) : v.videoUrl ? (
+                <video src={v.videoUrl} poster={v.thumbnailUrl ?? undefined} controls playsInline className="w-full h-full object-contain" />
+              ) : (
+                <div className="p-4 text-center space-y-2">
+                  <div className="text-slate-400 text-xs">{withVideo ? 'No rendered video yet' : 'News card only — no video'}</div>
+                  {['QUEUED', 'GENERATING'].includes(videoState) && (
+                    <div className="text-xs text-blue-400 animate-pulse flex items-center justify-center gap-1">
+                      <Loader2 size={12} className="animate-spin" /> {videoState === 'QUEUED' ? 'Queued…' : 'Generating…'}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-3 text-sm">
               {v.audioUrl && <div><div className="text-xs text-slate-500 mb-1">Narration</div><audio src={v.audioUrl} controls className="w-full" /></div>}
@@ -700,6 +708,18 @@ function SchemesView({ onOpenDraft }: { onOpenDraft: (id: string) => void }) {
                   </p>
                 )}
 
+                {s.youtubeUrl ? (
+                  <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-50/80 px-2.5 py-1 rounded-lg border border-red-200 font-medium">
+                    <Play size={11} className="text-red-600 fill-red-600 shrink-0" />
+                    <span className="truncate">YouTube Video Attached</span>
+                    <a href={s.youtubeUrl} target="_blank" rel="noreferrer" className="text-red-800 underline ml-auto inline-flex items-center gap-0.5 text-[11px] shrink-0 font-semibold">
+                      Watch <ExternalLink size={9} />
+                    </a>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-400 italic">No YouTube video linked yet</div>
+                )}
+
                 <div className="flex items-center gap-3 text-xs text-slate-500 pt-1">
                   {s.applicationUrl && (
                     <a href={s.applicationUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1 font-medium">
@@ -779,6 +799,7 @@ function AddSchemeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
     applicationSteps: '',
     applicationUrl: '',
     sourceUrls: '',
+    youtubeUrl: '',
   });
 
   const create = useMutation({
@@ -813,6 +834,7 @@ function AddSchemeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
       applicationSteps: toArr(form.applicationSteps),
       applicationUrl: form.applicationUrl.trim() || null,
       sourceUrls: toArr(form.sourceUrls).filter(u => u.startsWith('https://')),
+      youtubeUrl: form.youtubeUrl.trim() || null,
     });
   };
 
@@ -912,6 +934,23 @@ function AddSchemeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
                 className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none"
               />
             </div>
+          </div>
+
+          <div className="bg-red-50/50 p-2.5 rounded-xl border border-red-100">
+            <label className="font-semibold text-red-900 flex items-center gap-1.5 mb-1 text-xs">
+              <Play size={13} className="text-red-600 fill-red-600" />
+              YouTube Video Link (योजना वीडियो लिंक)
+            </label>
+            <input
+              type="url"
+              value={form.youtubeUrl}
+              onChange={e => setForm({ ...form, youtubeUrl: e.target.value })}
+              placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+              className="w-full border border-red-200 bg-white rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-red-500 focus:border-red-500"
+            />
+            <p className="text-[10px] text-red-700/80 mt-1">
+              AI वीडियो के स्थान पर यह YouTube वीडियो मोबाइल ऐप में सीधे दिखाया जाएगा। (YouTube URL optional but recommended).
+            </p>
           </div>
 
           <div>

@@ -7,12 +7,32 @@ import '../../data/shorts_repository.dart';
 class ShortsQuery {
   final ShortsFeed feed;
   final String? category;
-  const ShortsQuery(this.feed, [this.category]);
+  final String? subKind;
+  final String? state;
+  final double? lat;
+  final double? lng;
+
+  const ShortsQuery(
+    this.feed, [
+    this.category,
+    this.subKind,
+    this.state,
+    this.lat,
+    this.lng,
+  ]);
 
   @override
-  bool operator ==(Object other) => other is ShortsQuery && other.feed == feed && other.category == category;
+  bool operator ==(Object other) =>
+      other is ShortsQuery &&
+      other.feed == feed &&
+      other.category == category &&
+      other.subKind == subKind &&
+      other.state == state &&
+      other.lat == lat &&
+      other.lng == lng;
+
   @override
-  int get hashCode => Object.hash(feed, category);
+  int get hashCode => Object.hash(feed, category, subKind, state, lat, lng);
 }
 
 class ShortsFeedState {
@@ -76,7 +96,15 @@ class ShortsFeedNotifier extends StateNotifier<ShortsFeedState> {
     // Keep old items visible during a refresh so the pager doesn't collapse.
     state = state.copyWith(loading: state.items.isEmpty, clearError: true, clearLoadMoreError: true, loadingMore: false);
     try {
-      final p = await _repo.list(feed: query.feed, category: query.category, page: 1);
+      final p = await _repo.list(
+        feed: query.feed,
+        category: query.category,
+        subKind: query.subKind,
+        state: query.state,
+        lat: query.lat,
+        lng: query.lng,
+        page: 1,
+      );
       if (gen != _generation) return;
       state = ShortsFeedState(items: p.items, page: 1, hasMore: p.hasMore, loading: false);
     } catch (e) {
@@ -90,7 +118,15 @@ class ShortsFeedNotifier extends StateNotifier<ShortsFeedState> {
     final gen = _generation;
     state = state.copyWith(loadingMore: true, clearLoadMoreError: true);
     try {
-      final p = await _repo.list(feed: query.feed, category: query.category, page: state.page + 1);
+      final p = await _repo.list(
+        feed: query.feed,
+        category: query.category,
+        subKind: query.subKind,
+        state: query.state,
+        lat: query.lat,
+        lng: query.lng,
+        page: state.page + 1,
+      );
       if (gen != _generation) return;
       final known = state.items.map((e) => e.id).toSet();
       state = state.copyWith(

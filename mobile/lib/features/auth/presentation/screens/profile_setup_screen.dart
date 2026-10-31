@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -109,6 +110,8 @@ class _SetupState {
   final String? uploadedPhotoUrl;
   final IndianState? selectedState;
   final String? selectedRegion;
+  final double? latitude;
+  final double? longitude;
 
   const _SetupState({
     this.step = _SetupStep.language,
@@ -120,6 +123,8 @@ class _SetupState {
     this.uploadedPhotoUrl,
     this.selectedState,
     this.selectedRegion,
+    this.latitude,
+    this.longitude,
   });
 
   _SetupState copyWith({
@@ -137,6 +142,8 @@ class _SetupState {
     bool clearState = false,
     String? selectedRegion,
     bool clearRegion = false,
+    double? latitude,
+    double? longitude,
   }) =>
       _SetupState(
         step: step ?? this.step,
@@ -148,6 +155,8 @@ class _SetupState {
         uploadedPhotoUrl: clearUploadedPhotoUrl ? null : (uploadedPhotoUrl ?? this.uploadedPhotoUrl),
         selectedState: clearState ? null : (selectedState ?? this.selectedState),
         selectedRegion: clearRegion ? null : (selectedRegion ?? this.selectedRegion),
+        latitude: latitude ?? this.latitude,
+        longitude: longitude ?? this.longitude,
       );
 }
 
@@ -423,6 +432,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             state: selectedState?.name,
             region: region,
             language: language,
+            latitude: _state.latitude,
+            longitude: _state.longitude,
           );
       // State / language drive the home feed query.
       ref.invalidate(homeDataProvider);
@@ -819,6 +830,114 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     if (picked != null && mounted) _selectState(picked);
   }
 
+  bool _detectingLocation = false;
+
+  Future<void> _detectLocationViaGps() async {
+    if (_detectingLocation) return;
+    setState(() => _detectingLocation = true);
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) AppSnack.info(context, 'कृपया डिवाइस की लोकेशन (GPS) चालू करें');
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) AppSnack.info(context, 'लोकेशन अनुमति नहीं दी गई');
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) AppSnack.info(context, 'सेटिंग्स में जाकर लोकेशन की अनुमति दें');
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+
+      final lat = position.latitude;
+      final lng = position.longitude;
+
+      final stateCentroids = {
+        'MH': const [19.75, 75.71],
+        'UP': const [26.84, 80.94],
+        'MP': const [22.97, 78.65],
+        'RJ': const [27.02, 74.21],
+        'BR': const [25.09, 85.31],
+        'GJ': const [22.25, 71.19],
+        'DL': const [28.70, 77.10],
+        'PB': const [31.14, 75.34],
+        'HR': const [29.05, 76.08],
+        'WB': const [22.98, 87.85],
+        'KA': const [15.31, 75.71],
+        'TN': const [11.12, 78.65],
+        'AP': const [15.91, 79.74],
+        'TS': const [18.11, 79.01],
+        'KL': const [10.85, 76.27],
+        'OD': const [20.95, 85.09],
+        'JH': const [23.61, 85.27],
+        'CG': const [21.27, 81.86],
+        'AS': const [26.20, 92.93],
+        'UK': const [30.06, 79.01],
+        'HP': const [31.10, 77.17],
+        'JK': const [33.77, 76.57],
+      };
+
+      double minDistance = double.maxFinite;
+      String? closestCode;
+      stateCentroids.forEach((code, coords) {
+        final dLat = lat - coords[0];
+        final dLng = lng - coords[1];
+        final dist = dLat * dLat + dLng * dLng;
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestCode = code;
+        }
+      });
+
+      IndianState? matchedState;
+      if (closestCode != null) {
+        for (final s in IndianStates.all) {
+          if (s.code == closestCode) {
+            matchedState = s;
+            break;
+          }
+        }
+      }
+
+      setState(() {
+        _state = _state.copyWith(
+          latitude: lat,
+          longitude: lng,
+          selectedState: matchedState ?? _state.selectedState,
+        );
+      });
+
+      if (mounted) {
+        AppSnack.success(
+          context,
+          matchedState != null
+              ? '📍 आपका स्थान पहचाना गया: ${matchedState.name} (${matchedState.emoji})'
+              : '📍 लोकेशन प्राप्त हुई (${lat.toStringAsFixed(2)}, ${lng.toStringAsFixed(2)})',
+        );
+      }
+    } catch (e) {
+      debugPrint('Location detection error: $e');
+      if (mounted) AppSnack.info(context, 'लोकेशन प्राप्त नहीं हो सकी। कृपया सूची से चुनें।');
+    } finally {
+      if (mounted) setState(() => _detectingLocation = false);
+    }
+  }
+
   AppLanguage get _currentLanguage =>
       kAppLanguages.firstWhere((l) => l.code == _state.language, orElse: () => kAppLanguages.first);
 
@@ -831,8 +950,56 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'आपके राज्य के प्रमुख त्यौहार और लोकल स्टेटस प्राथमिकता से दिखाए जाएंगे।',
+          'आपके राज्य के प्रमुख त्यौहार, क्षेत्रीय समाचार और योजनाएं प्राथमिकता से दिखाई जाएंगी।',
           style: AppText.body(size: 14.5, color: p.textSecondary),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        PressableScale(
+          onTap: _detectLocationViaGps,
+          semanticLabel: 'वर्तमान स्थान पहचानें (Auto Detect Location)',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 12),
+            decoration: BoxDecoration(
+              color: p.primarySurface,
+              borderRadius: AppRadius.lgAll,
+              border: Border.all(color: p.primary.withOpacity(0.3), width: 1.2),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: p.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.my_location_rounded, color: p.primary, size: 20),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '📍 वर्तमान स्थान पहचानें (Auto-Detect)',
+                        style: AppText.body(size: 14, weight: FontWeight.w700, color: p.primary),
+                      ),
+                      Text(
+                        _state.latitude != null
+                            ? 'स्थान: ${selected?.name ?? 'सफलतापूर्वक प्राप्त'} (${_state.latitude!.toStringAsFixed(2)}, ${_state.longitude!.toStringAsFixed(2)})'
+                            : 'GPS से अपने राज्य की खबरें व योजनाएं तुरंत पाएं',
+                        style: AppText.body(size: 12, color: p.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_detectingLocation)
+                  SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: p.primary))
+                else
+                  Icon(Icons.arrow_forward_ios_rounded, size: 14, color: p.primary),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         PressableScale(

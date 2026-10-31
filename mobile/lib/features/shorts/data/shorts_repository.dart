@@ -16,12 +16,28 @@ class ShortsRepository {
 
   static const pageSize = 10;
 
-  Future<ShortPage> list({required ShortsFeed feed, String? category, int page = 1}) async {
+  Future<ShortPage> list({
+    required ShortsFeed feed,
+    String? category,
+    String? subKind,
+    String? state,
+    double? lat,
+    double? lng,
+    int page = 1,
+  }) async {
     final res = feed == ShortsFeed.saved
         ? await _dio.get('/shorts/bookmarks/list', queryParameters: {'page': page, 'limit': pageSize})
         : await _dio.get(
             feed == ShortsFeed.news ? '/news' : '/schemes',
-            queryParameters: {'page': page, 'limit': pageSize, if (category != null) 'category': category},
+            queryParameters: {
+              'page': page,
+              'limit': pageSize,
+              if (category != null) 'category': category,
+              if (subKind != null) 'subKind': subKind,
+              if (state != null) 'state': state,
+              if (lat != null) 'lat': lat,
+              if (lng != null) 'lng': lng,
+            },
           );
     final body = res.data;
     if (body is! Map || body['data'] is! List) throw const FormatException('Invalid shorts response');

@@ -13,9 +13,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../../../../core/api/api_error.dart';
+import '../../../../core/theme/theme_mode_provider.dart';
 import '../../../../core/widgets/app_ui.dart';
+import '../../../auth/domain/models/user_model.dart';
+import '../../../auth/presentation/providers/current_user_provider.dart';
 import '../../data/short_models.dart';
 import '../../data/shorts_repository.dart';
 import '../providers/shorts_feed_provider.dart';
@@ -38,6 +42,7 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
   late final ShortPlaybackController _playback;
   PageController _pager = PageController();
   ShortsFeed _feed = ShortsFeed.news;
+  String _newsSubKind = 'TOP'; // 'TOP' | 'REGIONAL'
   String? _category;
   int _index = 0;
   final Set<String> _viewed = {};
@@ -45,7 +50,14 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
   // Content is published automatically, so a long-idle feed is refreshed when the app returns.
   static const _staleAfter = Duration(minutes: 10);
 
-  ShortsQuery get _query => ShortsQuery(_feed, _feed == ShortsFeed.saved ? null : _category);
+  ShortsQuery _buildQuery(UserModel? user) => ShortsQuery(
+        _feed,
+        _feed == ShortsFeed.saved ? null : _category,
+        _feed == ShortsFeed.news ? _newsSubKind : null,
+        user?.state,
+        user?.latitude,
+        user?.longitude,
+      );
 
   @override
   void initState() {
@@ -69,7 +81,8 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
     } else if (state == AppLifecycleState.resumed &&
         DateTime.now().difference(_backgroundedAt) > _staleAfter &&
         _feed != ShortsFeed.saved) {
-      ref.read(shortsFeedProvider(_query).notifier).refresh();
+      final user = ref.read(currentUserProvider);
+      ref.read(shortsFeedProvider(_buildQuery(user)).notifier).refresh();
     }
   }
 
@@ -78,6 +91,16 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
     HapticFeedback.selectionClick();
     setState(() {
       _feed = f;
+      _category = null;
+    });
+    _resetPager();
+  }
+
+  void _selectNewsSubKind(String sub) {
+    if (sub == _newsSubKind) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _newsSubKind = sub;
       _category = null;
     });
     _resetPager();
@@ -111,6 +134,13 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
   Future<void> _watchVideo(ShortItem item) async {
     if (!item.hasVideo) return;
     HapticFeedback.selectionClick();
+    if (item.isYoutube && item.youtubeId != null) {
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _YoutubeVideoViewer(item: item),
+      ));
+      return;
+    }
     unawaited(_playback.activate(item.id, item.videoUrl));
     await Navigator.of(context).push(MaterialPageRoute<void>(
       fullscreenDialog: true,
@@ -147,8 +177,10 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(shortsFeedProvider(_query));
-    final notifier = ref.read(shortsFeedProvider(_query).notifier);
+    final user = ref.watch(currentUserProvider);
+    final query = _buildQuery(user);
+    final state = ref.watch(shortsFeedProvider(query));
+    final notifier = ref.read(shortsFeedProvider(query).notifier);
     final topInset = MediaQuery.of(context).padding.top;
     _syncActive(state.items);
 
@@ -160,17 +192,24 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
             topInset: topInset,
             feed: _feed,
             category: _category,
+            newsSubKind: _newsSubKind,
+            userState: user?.state ?? (user?.city != null ? '${user!.city}' : null),
             onFeed: _selectFeed,
             onCategory: _selectCategory,
+            onNewsSubKind: _selectNewsSubKind,
             onRefresh: notifier.refresh,
+            onToggleTheme: () {
+              final next = context.isDarkTheme ? ThemeMode.light : ThemeMode.dark;
+              ref.read(themeModeProvider.notifier).setMode(next);
+            },
           ),
-          Expanded(child: _content(state, notifier)),
+          Expanded(child: _content(state, notifier, query)),
         ],
       ),
     );
   }
 
-  Widget _content(ShortsFeedState state, ShortsFeedNotifier notifier) {
+  Widget _content(ShortsFeedState state, ShortsFeedNotifier notifier, ShortsQuery query) {
     const pad = EdgeInsets.only(top: 24);
     if (state.loading && state.items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -195,14 +234,16 @@ class _ShortsScreenState extends ConsumerState<ShortsScreen> with WidgetsBinding
           title: _feed == ShortsFeed.saved ? 'कुछ भी सहेजा नहीं गया' : 'अभी कोई खबर नहीं',
           message: _feed == ShortsFeed.saved
               ? 'पसंद आने वाली खबर या योजना को बुकमार्क करें।'
-              : 'एडमिन द्वारा प्रकाशित खबरें और योजनाएँ यहाँ दिखेंगी।',
+              : (_feed == ShortsFeed.news && _newsSubKind == 'REGIONAL'
+                  ? 'आपके क्षेत्र के लिए अभी कोई खबर उपलब्ध नहीं है। मुख्य समाचार देखें।'
+                  : 'एडमिन द्वारा प्रकाशित खबरें और योजनाएँ यहाँ दिखेंगी।'),
           actionLabel: 'रीफ़्रेश करें',
           onAction: notifier.refresh,
         ),
       );
     }
     final pager = PageView.builder(
-      key: ValueKey(_query),
+      key: ValueKey(query),
       controller: _pager,
       scrollDirection: Axis.vertical,
       physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
@@ -251,17 +292,25 @@ class _TopBar extends StatelessWidget {
     required this.topInset,
     required this.feed,
     required this.category,
+    required this.newsSubKind,
+    this.userState,
     required this.onFeed,
     required this.onCategory,
+    required this.onNewsSubKind,
     required this.onRefresh,
+    required this.onToggleTheme,
   });
 
   final double topInset;
   final ShortsFeed feed;
   final String? category;
+  final String newsSubKind;
+  final String? userState;
   final ValueChanged<ShortsFeed> onFeed;
   final ValueChanged<String?> onCategory;
+  final ValueChanged<String> onNewsSubKind;
   final VoidCallback onRefresh;
+  final VoidCallback onToggleTheme;
 
   @override
   Widget build(BuildContext context) {
@@ -303,7 +352,15 @@ class _TopBar extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   ),
                 ),
-                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: context.isDarkTheme ? 'लाइट मोड चालू करें' : 'डार्क मोड चालू करें',
+                  onPressed: onToggleTheme,
+                  icon: Icon(
+                    context.isDarkTheme ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                    color: p.textPrimary,
+                    size: 22,
+                  ),
+                ),
                 IconButton(
                   tooltip: 'रीफ़्रेश करें',
                   onPressed: onRefresh,
@@ -311,6 +368,33 @@ class _TopBar extends StatelessWidget {
                 ),
               ],
             ),
+            if (feed == ShortsFeed.news)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _NewsSubTab(
+                        icon: Icons.whatshot_rounded,
+                        label: 'मुख्य समाचार (Top)',
+                        selected: newsSubKind == 'TOP',
+                        onTap: () => onNewsSubKind('TOP'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _NewsSubTab(
+                        icon: Icons.location_on_rounded,
+                        label: userState != null && userState!.isNotEmpty
+                            ? '$userState (Regional)'
+                            : 'क्षेत्रीय समाचार',
+                        selected: newsSubKind == 'REGIONAL',
+                        onTap: () => onNewsSubKind('REGIONAL'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (feed != ShortsFeed.saved)
               SizedBox(
                 height: 44,
@@ -341,6 +425,55 @@ class _TopBar extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NewsSubTab extends StatelessWidget {
+  const _NewsSubTab({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Material(
+      color: selected ? AppColors.primary : p.surfaceMuted,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: selected ? Colors.white : p.textSecondary),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(
+                    size: 13,
+                    weight: FontWeight.w700,
+                    color: selected ? Colors.white : p.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -446,7 +579,7 @@ class _ShortPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Image (+ optional admin-generated video behind a button)
+              // Image (+ optional admin-generated video / YouTube video behind a button)
               AspectRatio(
                 aspectRatio: 16 / 10,
                 child: Stack(
@@ -456,16 +589,34 @@ class _ShortPage extends StatelessWidget {
                     Positioned(
                       left: 10,
                       top: 10,
-                      child: _Pill(item.kind == ShortKind.scheme ? 'सरकारी योजना' : 'समाचार', color: AppColors.primary),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _Pill(
+                            item.kind == ShortKind.scheme
+                                ? 'सरकारी योजना'
+                                : (item.isRegional ? 'क्षेत्रीय' : 'मुख्य समाचार'),
+                            color: item.kind == ShortKind.scheme
+                                ? AppColors.primary
+                                : (item.isRegional ? const Color(0xFF1565C0) : AppColors.primary),
+                          ),
+                          if (item.region != null && item.region!.isNotEmpty)
+                            _Pill(item.region!, color: const Color(0xFF0D47A1)),
+                          if (item.isYoutube)
+                            const _Pill('यूट्यूब', color: Color(0xFFD32F2F)),
+                        ],
+                      ),
                     ),
                     if (hasVideo)
                       Center(
                         child: Semantics(
                           button: true,
-                          label: 'वीडियो देखें',
+                          label: item.isYoutube ? 'यूट्यूब वीडियो देखें' : 'वीडियो देखें',
                           child: Material(
-                            color: Colors.black54,
+                            color: item.isYoutube ? const Color(0xFFCC0000) : Colors.black54,
                             shape: const CircleBorder(),
+                            elevation: 4,
                             child: InkWell(
                               customBorder: const CircleBorder(),
                               onTap: onWatch,
@@ -478,7 +629,32 @@ class _ShortPage extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (hasVideo && item.durationSec != null)
+                    if (item.isYoutube)
+                      Positioned(
+                        right: 10,
+                        bottom: 8,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.smart_display_rounded, size: 14, color: Color(0xFFFF0000)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'YouTube',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (hasVideo && item.durationSec != null)
                       Positioned(
                         right: 10,
                         bottom: 4,
@@ -673,6 +849,76 @@ class _VideoViewer extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Full-screen player for YouTube scheme video
+class _YoutubeVideoViewer extends StatefulWidget {
+  const _YoutubeVideoViewer({required this.item});
+  final ShortItem item;
+
+  @override
+  State<_YoutubeVideoViewer> createState() => _YoutubeVideoViewerState();
+}
+
+class _YoutubeVideoViewerState extends State<_YoutubeVideoViewer> {
+  late final YoutubePlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = YoutubePlayerController(
+      initialVideoId: widget.item.youtubeId ?? '',
+      flags: const YoutubePlayerFlags(
+        autoPlay: true,
+        mute: false,
+        enableCaption: false,
+        showLiveFullscreenButton: false,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return YoutubePlayerBuilder(
+      player: YoutubePlayer(
+        controller: _controller,
+        showVideoProgressIndicator: true,
+        progressIndicatorColor: const Color(0xFFFF0000),
+        progressColors: const ProgressBarColors(
+          playedColor: Color(0xFFFF0000),
+          handleColor: Color(0xFFFF0000),
+        ),
+      ),
+      builder: (context, player) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            leading: IconButton(
+              tooltip: 'बंद करें',
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+            title: Text(
+              widget.item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.heading(size: 16, weight: FontWeight.w700, color: Colors.white),
+            ),
+          ),
+          body: Center(child: player),
+        );
+      },
     );
   }
 }

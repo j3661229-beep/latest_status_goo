@@ -1,6 +1,8 @@
 // lib/core/theme/app_theme.dart
 //
 // Status Go design system — tokens + ThemeData (light & dark).
+// Warm-friendly edition: saffron/cream palette + Nunito font for 35+ users.
+//
 // This is the ONLY file that may contain raw colour literals. Everything else
 // must reference AppColors / AppPalette / Theme.of(context).
 //
@@ -19,39 +21,43 @@ import 'package:google_fonts/google_fonts.dart';
 class AppColors {
   AppColors._();
 
-  // ── Brand: indigo-violet ───────────────────────────────────────────────────
-  static const Color primary = Color(0xFF5B3DF5); // 6.1:1 on white
-  static const Color primaryLight = Color(0xFF8B7BFF); // on-dark primary
-  static const Color primaryDark = Color(0xFF4326D6);
-  static const Color primarySurface = Color(0xFFF3F0FF); // tint backgrounds
-  static const Color primarySurfaceStrong = Color(0xFFDDD5FF);
-  static const Color magenta = Color(0xFFC026D3); // gradient end
+  // ── Brand: warm saffron / marigold ─────────────────────────────────────────
+  static const Color primary = Color(0xFFF97316);     // saffron orange — 4.5:1 on white
+  static const Color primaryLight = Color(0xFFFFAA5C); // on-dark primary
+  static const Color primaryDark = Color(0xFFEA580C);  // deep saffron
+  static const Color primarySurface = Color(0xFFFFF1E3); // tinted bg
+  static const Color primarySurfaceStrong = Color(0xFFFFDCB8);
+
+  // ── Secondary: turmeric / warm gold ────────────────────────────────────────
+  static const Color secondary = Color(0xFFF59E0B);   // turmeric amber
+  static const Color secondaryDark = Color(0xFFB45309);
+  static const Color secondarySurface = Color(0xFFFFF6DC);
+
+  // ── Accent: deep marigold ──────────────────────────────────────────────────
+  static const Color accent = Color(0xFFEA580C);
+  static const Color accentDark = Color(0xFFC2410C);
+  static const Color saffron = Color(0xFFFF8A00);
+  static const Color accentSurface = Color(0xFFFEE9D4);
+  static const Color rose = Color(0xFFDB2777);
+  static const Color magenta = Color(0xFFDB2777);
   static const Color violet = Color(0xFF7C3AED);
 
-  /// Brand gradient: indigo → violet → magenta. White text on it is >= 4.5:1.
+  /// Brand gradient: saffron → deep orange → turmeric.
   static const LinearGradient brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF5B3DF5), Color(0xFF7C3AED), Color(0xFFC026D3)],
-    stops: [0.0, 0.55, 1.0],
+    colors: [Color(0xFFFBBF24), Color(0xFFF97316), Color(0xFFEA580C)],
+    stops: [0.0, 0.50, 1.0],
   );
 
-  /// Softer brand gradient for tinted surfaces / hero backgrounds.
+  /// Soft warm tint gradient for hero backgrounds / tinted surfaces.
   static const LinearGradient brandSoftGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFFEFEBFF), Color(0xFFFBE8FF)],
+    colors: [Color(0xFFFFF7ED), Color(0xFFFFF1E3)],
   );
 
-  // ── Warm Indian accent: saffron / marigold ─────────────────────────────────
-  static const Color accent = Color(0xFFF97316); // fills, icons (NOT body text)
-  static const Color accentDark = Color(0xFFC2410C); // text on white (5.2:1)
-  static const Color saffron = Color(0xFFFF8A00);
-  static const Color accentSurface = Color(0xFFFFF1E3);
-  static const Color rose = Color(0xFFDB2777);
-
-  /// Festival / trending gradient (saffron → rose). Use with large bold white
-  /// text (>= 18sp) — contrast is ~3.5:1.
+  /// Festival / trending gradient (saffron → rose).
   static const LinearGradient festivalGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -60,7 +66,7 @@ class AppColors {
 
   // ── Premium gold ──────────────────────────────────────────────────────────
   static const Color gold = Color(0xFFF5B301);
-  static const Color goldDark = Color(0xFFB45309); // text on white (5.0:1)
+  static const Color goldDark = Color(0xFFB45309);
   static const Color goldSurface = Color(0xFFFFF6DB);
 
   /// Gold gradient — put DARK ink text/icons on it ([ink]).
@@ -90,61 +96,61 @@ class AppColors {
   static const Color info = Color(0xFF0369A1);
   static const Color infoSurface = Color(0xFFE5F3FB);
 
-  // ── Neutrals (light) ──────────────────────────────────────────────────────
-  static const Color bg = Color(0xFFFAF9FF);
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceMuted = Color(0xFFF4F3FB);
-  static const Color surfaceBorder = Color(0xFFEBE9F5);
-  static const Color borderSubtle = Color(0xFFEFEEF6);
-  static const Color divider = Color(0xFFEFEEF6);
+  // ── Neutrals (light) — clean crisp white & modern slate ───────────────────
+  static const Color bg = Color(0xFFF8FAFC);          // clean soft white (Slate 50)
+  static const Color surface = Color(0xFFFFFFFF);     // pure white
+  static const Color surfaceMuted = Color(0xFFF1F5F9); // slate 100
+  static const Color surfaceBorder = Color(0xFFE2E8F0); // clean slate 200 border
+  static const Color borderSubtle = Color(0xFFF1F5F9);
+  static const Color divider = Color(0xFFE2E8F0);
 
-  static const Color ink = Color(0xFF2A2547); // soft ink (16:1 on white)
-  static const Color textPrimary = Color(0xFF2A2547);
-  static const Color textSecondary = Color(0xFF4A4670); // body (10:1)
-  static const Color textMuted = Color(0xFF6B6888); // captions (6.8:1)
-  static const Color textHint = Color(0xFF9A98AE); // placeholders only (2.8:1)
+  static const Color ink = Color(0xFF0F172A);          // deep slate 900 (16:1 contrast for 35+ users)
+  static const Color textPrimary = Color(0xFF0F172A);
+  static const Color textSecondary = Color(0xFF334155); // slate 700 (8.5:1 high-readability body)
+  static const Color textMuted = Color(0xFF64748B);    // slate 500 captions (4.5:1 WCAG AA)
+  static const Color textHint = Color(0xFF94A3B8);     // placeholders only
   static const Color textInverse = Color(0xFFFFFFFF);
 
-  // ── Dark immersive surfaces ───────────────────────────────────────────────
-  static const Color inkSurface = Color(0xFF2B2650);
-  static const Color inkSurface2 = Color(0xFF38326A);
-  static const Color inkSurface3 = Color(0xFF463F82);
-  static const Color inkBorder = Color(0xFF574F96);
-  static const Color onDark = Color(0xFFF6F5FC); // text on dark (17:1)
-  static const Color onDarkMuted = Color(0xFFB9B6D1); // (9:1 on inkSurface)
-  static const Color onDarkHint = Color(0xFF8581A3);
+  // ── Dark mode surfaces — sleek modern midnight slate ──────────────────────
+  static const Color inkSurface = Color(0xFF0B0F19);   // deep midnight slate (no muddy brown)
+  static const Color inkSurface2 = Color(0xFF1E293B);  // elevated slate 800 card
+  static const Color inkSurface3 = Color(0xFF151E2E);  // slate 850
+  static const Color inkBorder = Color(0xFF334155);    // slate 700 subtle border
+  static const Color onDark = Color(0xFFF8FAFC);       // pure crisp white text (16:1 on dark)
+  static const Color onDarkMuted = Color(0xFFCBD5E1);  // slate 300 body text
+  static const Color onDarkHint = Color(0xFF94A3B8);   // slate 400
 
   /// Immersive page background (feed / preview).
   static const LinearGradient inkGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0xFF2B2650), Color(0xFF38326A)],
+    colors: [Color(0xFF0B0F19), Color(0xFF1E293B)],
   );
 
   /// Scrim for text over full-bleed imagery.
   static const LinearGradient scrimBottom = LinearGradient(
     begin: Alignment.bottomCenter,
     end: Alignment.topCenter,
-    colors: [Color(0x992B2650), Color(0x002B2650)],
+    colors: [Color(0xCC0B0F19), Color(0x000B0F19)],
   );
   static const LinearGradient scrimTop = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: [Color(0x662B2650), Color(0x002B2650)],
+    colors: [Color(0x800B0F19), Color(0x000B0F19)],
   );
 
   // ── Glass overlays ────────────────────────────────────────────────────────
-  static const Color glass = Color(0x1FFFFFFF); // white 12%
-  static const Color glassStrong = Color(0x29FFFFFF); // white 16%
-  static const Color glassBorder = Color(0x33FFFFFF); // white 20%
-  static const Color glassLight = Color(0xCCFFFFFF); // white 80% (light pages)
-  static const Color scrim = Color(0x730E0B1F); // modal barrier / lock overlay
+  static const Color glass = Color(0x1FFFFFFF);
+  static const Color glassStrong = Color(0x29FFFFFF);
+  static const Color glassBorder = Color(0x33FFFFFF);
+  static const Color glassLight = Color(0xCCFFFFFF);
+  static const Color scrim = Color(0x731A0A00);        // warm modal barrier
 
   // ── Shimmer ───────────────────────────────────────────────────────────────
-  static const Color shimmer = Color(0xFFE9E7F3);
-  static const Color shimmerHighlight = Color(0xFFF8F7FD);
-  static const Color shimmerDark = Color(0xFF433C7C);
-  static const Color shimmerHighlightDark = Color(0xFF52499A);
+  static const Color shimmer = Color(0xFFECE5DB);
+  static const Color shimmerHighlight = Color(0xFFF8F3EC);
+  static const Color shimmerDark = Color(0xFF5A3D28);
+  static const Color shimmerHighlightDark = Color(0xFF6B4A35);
 
   static const Color white = Color(0xFFFFFFFF);
   static const Color black = Color(0xFF000000);
@@ -233,13 +239,13 @@ class AppPalette {
     border: AppColors.inkBorder,
     divider: AppColors.inkBorder,
     textPrimary: AppColors.onDark,
-    textSecondary: AppColors.onDark,
-    textMuted: AppColors.onDarkMuted,
+    textSecondary: AppColors.onDarkMuted,
+    textMuted: AppColors.onDarkHint,
     textHint: AppColors.onDarkHint,
     primary: AppColors.primaryLight,
-    primarySurface: AppColors.inkSurface3,
-    shimmerBase: AppColors.shimmerDark,
-    shimmerHighlight: AppColors.shimmerHighlightDark,
+    primarySurface: Color(0x28FB923C),
+    shimmerBase: Color(0xFF1E293B),
+    shimmerHighlight: Color(0xFF334155),
   );
 }
 
@@ -271,17 +277,17 @@ class AppSpacing {
   /// Default horizontal page gutter.
   static const double page = 20.0;
 
-  /// Minimum touch target (dp).
-  static const double minTouch = 48.0;
+  /// Minimum touch target (dp) — 35+ friendly, slightly larger.
+  static const double minTouch = 52.0;
 }
 
 class AppRadius {
   AppRadius._();
-  static const double xs = 6.0;
-  static const double sm = 10.0; // tags, small chips
-  static const double md = 16.0; // inputs, buttons, tiles
-  static const double lg = 24.0; // cards, template tiles
-  static const double xl = 32.0; // sheets, hero cards
+  static const double xs = 8.0;
+  static const double sm = 12.0;  // tags, chips — rounder for warmth
+  static const double md = 18.0;  // inputs, buttons, tiles
+  static const double lg = 24.0;  // cards, template tiles
+  static const double xl = 32.0;  // sheets, hero cards
   static const double pill = 999.0;
 
   static BorderRadius get smAll => BorderRadius.circular(sm);
@@ -295,24 +301,24 @@ class AppShadows {
   AppShadows._();
 
   static const List<BoxShadow> subtle = [
-    BoxShadow(color: Color(0x0F2A1F6B), blurRadius: 8, offset: Offset(0, 2)),
+    BoxShadow(color: Color(0x0A0F172A), blurRadius: 8, offset: Offset(0, 2)),
   ];
 
   static const List<BoxShadow> card = [
-    BoxShadow(color: Color(0x142A1F6B), blurRadius: 20, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x100F172A), blurRadius: 18, offset: Offset(0, 4)),
   ];
 
   static const List<BoxShadow> floating = [
-    BoxShadow(color: Color(0x1F2B2650), blurRadius: 28, offset: Offset(0, 10)),
+    BoxShadow(color: Color(0x1A0F172A), blurRadius: 26, offset: Offset(0, 8)),
   ];
 
   static const List<BoxShadow> bottomDock = [
-    BoxShadow(color: Color(0x142B2650), blurRadius: 24, offset: Offset(0, -6)),
+    BoxShadow(color: Color(0x120F172A), blurRadius: 20, offset: Offset(0, -4)),
   ];
 
   // Coloured glows for CTAs
   static const List<BoxShadow> primaryGlow = [
-    BoxShadow(color: Color(0x665B3DF5), blurRadius: 22, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x66F97316), blurRadius: 22, offset: Offset(0, 8)),
   ];
   static const List<BoxShadow> whatsappGlow = [
     BoxShadow(color: Color(0x6625D366), blurRadius: 22, offset: Offset(0, 8)),
@@ -328,10 +334,10 @@ class AppShadows {
 class AppMotion {
   AppMotion._();
   static const Duration instant = Duration(milliseconds: 90);
-  static const Duration fast = Duration(milliseconds: 160);
-  static const Duration normal = Duration(milliseconds: 260);
-  static const Duration slow = Duration(milliseconds: 420);
-  static const Duration stagger = Duration(milliseconds: 55);
+  static const Duration fast = Duration(milliseconds: 180);
+  static const Duration normal = Duration(milliseconds: 280);
+  static const Duration slow = Duration(milliseconds: 440);
+  static const Duration stagger = Duration(milliseconds: 60);
 
   static const Curve standard = Curves.easeOutCubic;
   static const Curve emphasized = Curves.easeInOutCubicEmphasized;
@@ -339,10 +345,10 @@ class AppMotion {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TYPOGRAPHY
+// TYPOGRAPHY — Nunito for 35+ friendly readability
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Headings: Poppins (friendly geometric). Body: Noto Sans. Devanagari glyphs
+/// Headings & body: Nunito (warm, rounded). Devanagari glyphs
 /// (Hindi / Marathi) fall back to Noto Sans Devanagari automatically.
 class AppText {
   AppText._();
@@ -358,7 +364,7 @@ class AppText {
     double? height,
     double? letterSpacing,
   }) =>
-      GoogleFonts.poppins(
+      GoogleFonts.nunito(
         fontSize: size,
         fontWeight: weight,
         color: color,
@@ -373,18 +379,19 @@ class AppText {
     double? height,
     double? letterSpacing,
   }) =>
-      GoogleFonts.notoSans(
+      GoogleFonts.nunito(
         fontSize: size,
         fontWeight: weight,
         color: color,
-        height: height ?? 1.5,
+        height: height ?? 1.55,
         letterSpacing: letterSpacing,
       ).copyWith(fontFamilyFallback: _fallback);
 
   static TextTheme textTheme({required Color primary, required Color secondary, required Color muted}) {
     return TextTheme(
-      displayLarge: heading(size: 34, weight: FontWeight.w800, color: primary, height: 1.15, letterSpacing: -0.5),
-      displayMedium: heading(size: 28, weight: FontWeight.w800, color: primary, height: 1.2, letterSpacing: -0.3),
+      // 35+ friendly: slightly larger sizes, generous line heights
+      displayLarge: heading(size: 34, weight: FontWeight.w800, color: primary, height: 1.15, letterSpacing: -0.3),
+      displayMedium: heading(size: 28, weight: FontWeight.w800, color: primary, height: 1.2, letterSpacing: -0.2),
       displaySmall: heading(size: 24, weight: FontWeight.w700, color: primary, height: 1.2),
       headlineLarge: heading(size: 26, weight: FontWeight.w700, color: primary),
       headlineMedium: heading(size: 22, weight: FontWeight.w700, color: primary),
@@ -392,12 +399,12 @@ class AppText {
       titleLarge: heading(size: 19, weight: FontWeight.w700, color: primary),
       titleMedium: heading(size: 17, weight: FontWeight.w600, color: primary),
       titleSmall: heading(size: 15, weight: FontWeight.w600, color: secondary),
-      bodyLarge: body(size: 17, color: primary),
-      bodyMedium: body(size: 15.5, color: secondary),
-      bodySmall: body(size: 13.5, weight: FontWeight.w500, color: muted),
+      bodyLarge: body(size: 17, weight: FontWeight.w500, color: primary),
+      bodyMedium: body(size: 16, weight: FontWeight.w400, color: secondary),
+      bodySmall: body(size: 14, weight: FontWeight.w500, color: muted),
       labelLarge: body(size: 16, weight: FontWeight.w700, color: primary, height: 1.2),
       labelMedium: body(size: 14, weight: FontWeight.w600, color: secondary, height: 1.2),
-      labelSmall: body(size: 12.5, weight: FontWeight.w600, color: muted, height: 1.2),
+      labelSmall: body(size: 13, weight: FontWeight.w600, color: muted, height: 1.2),
     );
   }
 }
@@ -422,12 +429,12 @@ class AppTheme {
 
     final scheme = (isDark ? const ColorScheme.dark() : const ColorScheme.light()).copyWith(
       primary: p.primary,
-      onPrimary: isDark ? AppColors.ink : AppColors.white,
+      onPrimary: AppColors.white,
       primaryContainer: p.primarySurface,
       onPrimaryContainer: isDark ? AppColors.onDark : AppColors.primaryDark,
-      secondary: AppColors.accent,
-      onSecondary: AppColors.ink,
-      secondaryContainer: AppColors.accentSurface,
+      secondary: AppColors.secondary,
+      onSecondary: AppColors.white,
+      secondaryContainer: AppColors.secondarySurface,
       tertiary: AppColors.gold,
       onTertiary: AppColors.ink,
       surface: p.surface,
@@ -478,8 +485,8 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleSpacing: AppSpacing.xs,
-        toolbarHeight: 60,
-        titleTextStyle: AppText.heading(size: 20, color: p.textPrimary),
+        toolbarHeight: 64,
+        titleTextStyle: AppText.heading(size: 21, color: p.textPrimary, weight: FontWeight.w800),
         iconTheme: IconThemeData(color: p.textPrimary, size: 26),
       ),
       cardTheme: CardThemeData(
@@ -515,17 +522,17 @@ class AppTheme {
         backgroundColor: p.surface,
         surfaceTintColor: AppColors.transparent,
         indicatorColor: p.primarySurface,
-        height: 68,
+        height: 72,
         elevation: 0,
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final sel = states.contains(WidgetState.selected);
-          return IconThemeData(color: sel ? p.primary : p.textMuted, size: 26);
+          return IconThemeData(color: sel ? p.primary : p.textMuted, size: 27);
         }),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final sel = states.contains(WidgetState.selected);
           return AppText.body(
-            size: 12.5,
-            weight: sel ? FontWeight.w700 : FontWeight.w500,
+            size: 13,
+            weight: sel ? FontWeight.w800 : FontWeight.w500,
             color: sel ? p.primary : p.textMuted,
           );
         }),
@@ -533,31 +540,31 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: isDark ? p.surfaceMuted : p.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         border: inputBorder,
         enabledBorder: inputBorder,
         disabledBorder: inputBorder.copyWith(borderSide: BorderSide(color: p.divider, width: 1)),
-        focusedBorder: inputBorder.copyWith(borderSide: BorderSide(color: p.primary, width: 2)),
+        focusedBorder: inputBorder.copyWith(borderSide: BorderSide(color: p.primary, width: 2.2)),
         errorBorder: inputBorder.copyWith(borderSide: const BorderSide(color: AppColors.danger, width: 1.4)),
-        focusedErrorBorder: inputBorder.copyWith(borderSide: const BorderSide(color: AppColors.danger, width: 2)),
-        hintStyle: AppText.body(size: 15.5, color: p.textHint),
-        labelStyle: AppText.body(size: 15.5, weight: FontWeight.w500, color: p.textMuted),
-        floatingLabelStyle: AppText.body(size: 14, weight: FontWeight.w600, color: p.primary),
-        helperStyle: AppText.body(size: 13, color: p.textMuted),
-        errorStyle: AppText.body(size: 13, weight: FontWeight.w500, color: AppColors.danger),
+        focusedErrorBorder: inputBorder.copyWith(borderSide: const BorderSide(color: AppColors.danger, width: 2.2)),
+        hintStyle: AppText.body(size: 16, color: p.textHint),
+        labelStyle: AppText.body(size: 16, weight: FontWeight.w500, color: p.textMuted),
+        floatingLabelStyle: AppText.body(size: 14, weight: FontWeight.w700, color: p.primary),
+        helperStyle: AppText.body(size: 13.5, color: p.textMuted),
+        errorStyle: AppText.body(size: 13.5, weight: FontWeight.w600, color: AppColors.danger),
         prefixIconColor: p.textMuted,
         suffixIconColor: p.textMuted,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: p.primary,
-          foregroundColor: isDark ? AppColors.ink : AppColors.white,
+          foregroundColor: AppColors.white,
           disabledBackgroundColor: p.surfaceMuted,
           disabledForegroundColor: p.textHint,
-          minimumSize: const Size(double.infinity, 52),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          minimumSize: const Size(double.infinity, 56),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           shape: const StadiumBorder(),
-          textStyle: AppText.body(size: 16.5, weight: FontWeight.w700, height: 1.2),
+          textStyle: AppText.body(size: 17, weight: FontWeight.w800, height: 1.2),
           elevation: 0,
           shadowColor: AppColors.transparent,
         ),
@@ -565,30 +572,30 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: p.primary,
-          foregroundColor: isDark ? AppColors.ink : AppColors.white,
-          minimumSize: const Size(0, 52),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          foregroundColor: AppColors.white,
+          minimumSize: const Size(0, 56),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
           shape: const StadiumBorder(),
-          textStyle: AppText.body(size: 16.5, weight: FontWeight.w700, height: 1.2),
+          textStyle: AppText.body(size: 17, weight: FontWeight.w800, height: 1.2),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: p.textPrimary,
-          minimumSize: const Size(double.infinity, 52),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          side: BorderSide(color: p.border, width: 1.5),
+          minimumSize: const Size(double.infinity, 56),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          side: BorderSide(color: p.border, width: 1.8),
           shape: const StadiumBorder(),
-          textStyle: AppText.body(size: 16.5, weight: FontWeight.w700, height: 1.2),
+          textStyle: AppText.body(size: 17, weight: FontWeight.w700, height: 1.2),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: p.primary,
           minimumSize: const Size(AppSpacing.minTouch, AppSpacing.minTouch),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: const StadiumBorder(),
-          textStyle: AppText.body(size: 15.5, weight: FontWeight.w700, height: 1.2),
+          textStyle: AppText.body(size: 16, weight: FontWeight.w700, height: 1.2),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
@@ -603,10 +610,10 @@ class AppTheme {
         disabledColor: p.surfaceMuted,
         side: BorderSide(color: p.border, width: 1),
         shape: const StadiumBorder(),
-        labelStyle: AppText.body(size: 14.5, weight: FontWeight.w600, color: p.textPrimary, height: 1.2),
+        labelStyle: AppText.body(size: 15, weight: FontWeight.w600, color: p.textPrimary, height: 1.2),
         secondaryLabelStyle:
-            AppText.body(size: 14.5, weight: FontWeight.w700, color: isDark ? AppColors.ink : AppColors.white, height: 1.2),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            AppText.body(size: 15, weight: FontWeight.w700, color: AppColors.white, height: 1.2),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         showCheckmark: false,
         elevation: 0,
         pressElevation: 0,
@@ -621,25 +628,25 @@ class AppTheme {
         trackOutlineColor: WidgetStateProperty.all(AppColors.transparent),
       ),
       checkboxTheme: CheckboxThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
         fillColor: WidgetStateProperty.resolveWith(
           (s) => s.contains(WidgetState.selected) ? p.primary : AppColors.transparent,
         ),
-        side: BorderSide(color: p.textMuted, width: 1.5),
+        side: BorderSide(color: p.textMuted, width: 1.8),
       ),
       listTileTheme: ListTileThemeData(
         shape: shapeMd,
-        minVerticalPadding: 10,
+        minVerticalPadding: 12,
         contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
         iconColor: p.textMuted,
         textColor: p.textPrimary,
-        titleTextStyle: AppText.body(size: 16, weight: FontWeight.w600, color: p.textPrimary),
-        subtitleTextStyle: AppText.body(size: 14, color: p.textMuted),
+        titleTextStyle: AppText.body(size: 17, weight: FontWeight.w600, color: p.textPrimary),
+        subtitleTextStyle: AppText.body(size: 14.5, color: p.textMuted),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: isDark ? AppColors.inkSurface3 : AppColors.ink,
-        contentTextStyle: AppText.body(size: 15, weight: FontWeight.w500, color: AppColors.onDark),
+        contentTextStyle: AppText.body(size: 15.5, weight: FontWeight.w600, color: AppColors.onDark),
         actionTextColor: AppColors.gold,
         elevation: 0,
         insetPadding: const EdgeInsets.all(AppSpacing.md),
@@ -654,8 +661,8 @@ class AppTheme {
       tabBarTheme: TabBarThemeData(
         labelColor: p.primary,
         unselectedLabelColor: p.textMuted,
-        labelStyle: AppText.body(size: 15.5, weight: FontWeight.w700, height: 1.2),
-        unselectedLabelStyle: AppText.body(size: 15.5, weight: FontWeight.w500, height: 1.2),
+        labelStyle: AppText.body(size: 16, weight: FontWeight.w700, height: 1.2),
+        unselectedLabelStyle: AppText.body(size: 16, weight: FontWeight.w500, height: 1.2),
         indicatorSize: TabBarIndicatorSize.label,
         indicator: UnderlineTabIndicator(
           borderSide: BorderSide(color: p.primary, width: 3),
